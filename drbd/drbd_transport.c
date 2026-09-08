@@ -431,6 +431,76 @@ int drbd_bio_add_page(struct drbd_transport *transport, struct bio_list *bios,
 	return -ENOENT;
 }
 
+/* The coarsest queue dma_alignment (as a byte count) among the resource's
+ * attached backing devices; 0 if none is attached. Received payload submitted
+ * to any of them must honour it, see set_rx_alignment.
+ */
+static unsigned int drbd_resource_rx_alignment(struct drbd_resource *resource)
+{
+	struct drbd_device *device;
+	unsigned int align = 0;
+	int vnr;
+
+	rcu_read_lock();
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		if (!get_ldev_if_state(device, D_ATTACHING))
+			continue;
+		if (device->ldev) {
+			struct request_queue *q = bdev_get_queue(device->ldev->backing_bdev);
+
+			align = max_t(unsigned int, align, queue_dma_alignment(q) + 1);
+		}
+		put_ldev(device);
+	}
+	rcu_read_unlock();
+
+	return align;
+}
+
+void drbd_connection_update_rx_alignment(struct drbd_resource *resource,
+					 struct drbd_connection *connection)
+{
+	struct drbd_transport_ops *tr_ops = &connection->transport.class->ops;
+
+	if (tr_ops->set_rx_alignment)
+		tr_ops->set_rx_alignment(&connection->transport,
+					 drbd_resource_rx_alignment(resource));
+}
+
+void drbd_resource_update_rx_alignment(struct drbd_resource *resource)
+{
+	struct drbd_connection *connection;
+
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource)
+		drbd_connection_update_rx_alignment(resource, connection);
+	rcu_read_unlock();
+}
+
+/* Like drbd_bio_add_page(), but never merges into the tail bvec: the range
+ * becomes a bvec of its own, even if it is physically contiguous with the
+ * previous one. For a transport whose received chunks may share a page (the
+ * chunk boundary falls mid-page), one bvec then owns exactly one page
+ * reference per page it touches, which is what drbd_peer_req_strip_bio()
+ * releases.
+ */
+int drbd_bio_add_page_nomerge(struct drbd_transport *transport, struct bio_list *bios,
+			      struct page *page, unsigned int len, unsigned int offset)
+{
+	struct bio *bio = bios->tail;
+
+	if (bio->bi_vcnt >= bio->bi_max_vecs || bio->bi_iter.bi_size > UINT_MAX - len) {
+		struct bio *new_bio = drbd_bio_alloc_next(bio);
+
+		if (!new_bio)
+			return -ENOMEM;
+		bio_list_add(bios, new_bio);
+		bio = new_bio;
+	}
+	__bio_add_page(bio, page, len, offset);
+	return len;
+}
+
 void drbd_transport_lock(struct drbd_transport *transport)
 {
 	struct drbd_connection *connection =
@@ -464,3 +534,4 @@ EXPORT_SYMBOL_GPL(drbd_path_event);
 EXPORT_SYMBOL_GPL(drbd_listener_destroy);
 EXPORT_SYMBOL_GPL(__drbd_next_path_ref);
 EXPORT_SYMBOL_GPL(drbd_bio_add_page);
+EXPORT_SYMBOL_GPL(drbd_bio_add_page_nomerge);

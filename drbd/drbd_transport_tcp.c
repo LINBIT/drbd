@@ -111,7 +111,8 @@ static int dtt_prepare_connect(struct drbd_transport *transport);
 static int dtt_connect(struct drbd_transport *transport);
 static void dtt_finish_connect(struct drbd_transport *transport);
 static int dtt_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags);
-static int dtt_recv_bio(struct drbd_transport *transport, struct bio_list *bios, size_t size);
+static int dtt_recv_bio(struct drbd_transport *transport, struct bio_list *bios, size_t size,
+			unsigned int *misalign_bits);
 static void dtt_stats(struct drbd_transport *transport, struct drbd_transport_stats *stats);
 static int dtt_net_conf_change(struct drbd_transport *transport, struct net_conf *new_net_conf);
 static void dtt_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream, long timeout);
@@ -355,7 +356,8 @@ static int dtt_recv(struct drbd_transport *transport, enum drbd_stream stream, v
 }
 
 
-static int dtt_recv_bio(struct drbd_transport *transport, struct bio_list *bios, size_t size)
+static int dtt_recv_bio(struct drbd_transport *transport, struct bio_list *bios, size_t size,
+			unsigned int *misalign_bits)
 {
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
@@ -364,6 +366,7 @@ static int dtt_recv_bio(struct drbd_transport *transport, struct bio_list *bios,
 	struct page *page;
 	int err;
 
+	*misalign_bits = 0;
 	if (!socket)
 		return -ENOTCONN;
 

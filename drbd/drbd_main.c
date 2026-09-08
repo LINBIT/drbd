@@ -4000,6 +4000,7 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	connection->transport.log_prefix = resource->name;
 	if (tc->ops.init(&connection->transport))
 		goto fail;
+	drbd_connection_update_rx_alignment(resource, connection);
 
 	return connection;
 
@@ -4150,6 +4151,7 @@ static void drbd_ldev_destroy(struct work_struct *ws)
 	drbd_backing_dev_free(device, device->ldev);
 	/* ldev_safe: final teardown, no other user possible */
 	device->ldev = NULL;
+	drbd_resource_update_rx_alignment(device->resource);
 
 	clear_bit(GOING_DISKLESS, &device->flags);
 	wake_up(&device->misc_wait);

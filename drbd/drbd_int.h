@@ -1352,6 +1352,10 @@ struct drbd_connection {
 	void *int_dig_vv;
 
 	/* receiver side */
+	/* Payload copies to satisfy the backing device's alignment;
+	 * receiver thread only.
+	 */
+	unsigned int rx_misaligned_copies;
 	struct drbd_epoch *current_epoch;
 	spinlock_t epoch_lock;
 	unsigned int epochs;
@@ -2697,6 +2701,11 @@ struct drbd_peer_request *drbd_alloc_peer_req(struct drbd_peer_device *peer_devi
 void drbd_free_peer_req(struct drbd_peer_request *peer_req);
 void drbd_peer_req_strip_bio(struct drbd_peer_request *peer_req);
 int drbd_connected(struct drbd_peer_device *peer_device);
+
+/* drbd_transport.c */
+void drbd_connection_update_rx_alignment(struct drbd_resource *resource,
+					 struct drbd_connection *connection);
+void drbd_resource_update_rx_alignment(struct drbd_resource *resource);
 void conn_connect2(struct drbd_connection *connection);
 void wait_initial_states_received(struct drbd_connection *connection);
 void abort_connect(struct drbd_connection *connection);

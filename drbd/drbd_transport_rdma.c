@@ -575,7 +575,8 @@ out:
 }
 
 
-static int dtr_recv_bio(struct drbd_transport *transport, struct bio_list *bios, size_t size)
+static int dtr_recv_bio(struct drbd_transport *transport, struct bio_list *bios, size_t size,
+			unsigned int *misalign_bits)
 {
 	struct dtr_transport *rdma_transport =
 		container_of(transport, struct dtr_transport, transport);
@@ -584,6 +585,7 @@ static int dtr_recv_bio(struct drbd_transport *transport, struct bio_list *bios,
 	struct page *page;
 	int err;
 
+	*misalign_bits = 0;
 	if (!dtr_transport_ok(transport))
 		return -ECONNRESET;
 
@@ -619,6 +621,8 @@ static int dtr_recv_bio(struct drbd_transport *transport, struct bio_list *bios,
 		err = drbd_bio_add_page(transport, bios, page, rx_desc->size, 0);
 		if (err < 0)
 			return err;
+		if (remaining)
+			*misalign_bits |= rx_desc->size;
 
 		atomic_dec(&rx_desc->cm->path->flow[DATA_STREAM].rx_descs_allocated);
 		dtr_free_rx_desc(rx_desc);

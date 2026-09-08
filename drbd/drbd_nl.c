@@ -3576,6 +3576,7 @@ int drbd_adm_attach(struct drbd_adm_ctx *adm_ctx)
 	device->ldev = nbc;
 	nbc = NULL;
 	new_disk_conf = NULL;
+	drbd_resource_update_rx_alignment(device->resource);
 
 	if (drbd_md_dax_active(device->ldev)) {
 		/* The on-disk activity log is always initialized with the

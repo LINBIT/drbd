@@ -886,7 +886,8 @@ static int connection_transport_show(struct seq_file *m, void *ignored)
 	struct drbd_transport_ops *tr_ops = &transport->class->ops;
 	enum drbd_stream i;
 
-	seq_printf(m, "v: %u\n\n", 0);
+	/* BUMP me if you change the file format/content/presentation */
+	seq_printf(m, "v: %u\n\n", 1);
 
 	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
 		struct drbd_send_buffer *sbuf = &connection->send_buffer[i];
@@ -896,7 +897,9 @@ static int connection_transport_show(struct seq_file *m, void *ignored)
 		seq_printf(m, "  allocated: %d bytes\n", sbuf->allocated_size);
 	}
 
-	seq_printf(m, "\ntransport_type: %s\n", transport->class->name);
+	seq_printf(m, "\nrx_misaligned_copies: %u\n", connection->rx_misaligned_copies);
+
+	seq_printf(m, "transport_type: %s\n", transport->class->name);
 
 	tr_ops->debugfs_show(transport, m);
 

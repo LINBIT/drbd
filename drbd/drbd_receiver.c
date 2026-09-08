@@ -325,32 +325,38 @@ static void rs_sectors_came_in(struct drbd_peer_device *peer_device, int size)
 		drbd_rs_all_in_flight_came_back(peer_device, rs_sect_in);
 }
 
-void drbd_peer_req_strip_bio(struct drbd_peer_request *peer_req)
+static void drbd_strip_bio_list(struct drbd_transport *transport, struct bio_list *bios)
 {
-	struct drbd_transport *transport = &peer_req->peer_device->connection->transport;
 	struct bvec_iter iter;
 	struct bio_vec bvec;
 	struct bio *bio;
 
-	while ((bio = bio_list_pop(&peer_req->bios))) {
+	while ((bio = bio_list_pop(bios))) {
 		bio_for_each_bvec(bvec, bio, iter) {
 			struct page *page = bvec.bv_page;
-			unsigned int len = bvec.bv_len;
+			unsigned int end = bvec.bv_offset + bvec.bv_len;
+			unsigned int pos = 0;
 
 			/* bio_add_page() may have merged contiguous pages from
-			 * separate allocations into a single bvec. Step through
-			 * by compound_order to free each allocation unit.
+			 * separate allocations into a single bvec, and a bvec may
+			 * start mid-page. Drop one reference per allocation unit the bvec
+			 * touches, stepping by compound_order.
 			 */
-			while (len) {
+			while (pos < end) {
 				unsigned int order = compound_order(page);
 
 				drbd_free_page(transport, page);
 				page += 1 << order;
-				len -= min_t(unsigned int, PAGE_SIZE << order, len);
+				pos += PAGE_SIZE << order;
 			}
 		}
 		bio_put(bio);
 	}
+}
+
+void drbd_peer_req_strip_bio(struct drbd_peer_request *peer_req)
+{
+	drbd_strip_bio_list(&peer_req->peer_device->connection->transport, &peer_req->bios);
 }
 
 static struct page *
@@ -432,6 +438,21 @@ void drbd_free_page(struct drbd_transport *transport, struct page *page)
 		drbd_warn(connection, "ASSERTION FAILED: pp_in_use: %d < 0\n", i);
 }
 EXPORT_SYMBOL(drbd_free_page);
+
+/* Take an additional reference on a page from drbd_alloc_pages() /
+ * drbd_alloc_pages_split(), to be released with drbd_free_page(). pp_in_use
+ * counts references, so a page shared by two holders counts twice while
+ * shared. Safe from irq context.
+ */
+void drbd_get_page(struct drbd_transport *transport, struct page *page)
+{
+	struct drbd_connection *connection =
+		container_of(transport, struct drbd_connection, transport);
+
+	get_page(page);
+	atomic_add(1 << compound_order(page), &connection->pp_in_use);
+}
+EXPORT_SYMBOL(drbd_get_page);
 
 static int
 peer_req_alloc_bio(struct drbd_peer_request *peer_req, size_t size, gfp_t gfp_mask, blk_opf_t opf)
@@ -2350,6 +2371,93 @@ static bool in_range_after_size_change(struct drbd_device *device, sector_t sect
 	return sector + (size >> 9) <= get_capacity(device->vdisk);
 }
 
+static void copy_bio_list(struct bio_list *dst, struct bio_list *src)
+{
+	struct bio *sb = src->head, *db = dst->head;
+	struct bvec_iter si = sb->bi_iter, di = db->bi_iter;
+
+	while (sb && db) {
+		struct bio_vec sv = bio_iter_iovec(sb, si);
+		struct bio_vec dv = bio_iter_iovec(db, di);
+		unsigned int len = min(sv.bv_len, dv.bv_len);
+		void *s, *d;
+
+		s = kmap_local_page(sv.bv_page);
+		d = kmap_local_page(dv.bv_page);
+		memcpy(d + dv.bv_offset, s + sv.bv_offset, len);
+		kunmap_local(d);
+		kunmap_local(s);
+
+		bio_advance_iter(sb, &si, len);
+		if (!si.bi_size) {
+			sb = sb->bi_next;
+			if (sb)
+				si = sb->bi_iter;
+		}
+		bio_advance_iter(db, &di, len);
+		if (!di.bi_size) {
+			db = db->bi_next;
+			if (db)
+				di = db->bi_iter;
+		}
+	}
+}
+
+/* The backing device's queue dma_alignment constrains the offset and length of
+ * every bvec submitted to it; a violating bio fails in the block layer. A
+ * transport that lands received payload at sub-page offsets (rdma2) aligns it
+ * to the value the core announces via set_rx_alignment(), but a region
+ * announced before that value changed (a later attach of a device with a
+ * coarser requirement) can still deliver misaligned payload for a while. Copy
+ * such payload into freshly allocated, page-aligned pages.
+ */
+static int peer_req_align_bios(struct drbd_peer_request *peer_req, unsigned int size)
+{
+	struct drbd_connection *connection = peer_req->peer_device->connection;
+	struct drbd_transport *transport = &connection->transport;
+	struct bio_list received;
+	unsigned int remaining;
+	int err;
+
+	received = peer_req->bios;
+	bio_list_init(&peer_req->bios);
+
+	err = peer_req_alloc_bio(peer_req, size, GFP_NOIO, received.head->bi_opf);
+	if (err)
+		goto out_restore;
+
+	remaining = size;
+	while (remaining) {
+		struct page *page;
+		int len;
+
+		page = drbd_alloc_pages(transport, GFP_NOIO, remaining);
+		if (!page) {
+			err = -ENOMEM;
+			goto out_strip_restore;
+		}
+		len = min_t(unsigned int, PAGE_SIZE << compound_order(page), remaining);
+		len = drbd_bio_add_page(transport, &peer_req->bios, page, len, 0);
+		if (len < 0) {
+			drbd_free_page(transport, page);
+			err = len;
+			goto out_strip_restore;
+		}
+		remaining -= len;
+	}
+
+	copy_bio_list(&peer_req->bios, &received);
+	drbd_strip_bio_list(transport, &received);
+	connection->rx_misaligned_copies++;
+	return 0;
+
+out_strip_restore:
+	drbd_strip_bio_list(transport, &peer_req->bios);
+out_restore:
+	peer_req->bios = received;
+	return err;
+}
+
 /* used from receive_RSDataReply (recv_resync_read)
  * and from receive_Data.
  * data_size: actual payload ("data in")
@@ -2370,6 +2478,7 @@ read_in_block(struct drbd_peer_request *peer_req, struct drbd_peer_request_detai
 	void *dig_vv = connection->int_dig_vv;
 	struct drbd_transport *transport = &connection->transport;
 	struct drbd_transport_ops *tr_ops = &transport->class->ops;
+	unsigned int misalign_bits;
 	int size, err;
 
 	if (d->digest_size) {
@@ -2417,7 +2526,7 @@ read_in_block(struct drbd_peer_request *peer_req, struct drbd_peer_request_detai
 			return err;
 	}
 
-	err = tr_ops->recv_bio(transport, &peer_req->bios, size);
+	err = tr_ops->recv_bio(transport, &peer_req->bios, size, &misalign_bits);
 	if (err < 0) {
 		if (err == -ECONNRESET)
 			drbd_info(connection, "sock was reset by peer while receiving data\n");
@@ -2431,6 +2540,12 @@ read_in_block(struct drbd_peer_request *peer_req, struct drbd_peer_request_detai
 	if (err != size) {
 		change_cstate(connection, C_BROKEN_PIPE, CS_HARD);
 		return err;
+	}
+
+	if (misalign_bits & queue_dma_alignment(bdev_get_queue(device->ldev->backing_bdev))) {
+		err = peer_req_align_bios(peer_req, size);
+		if (err)
+			return err;
 	}
 
 	if (drbd_insert_fault(device, DRBD_FAULT_RECEIVE)) {
