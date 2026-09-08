@@ -3775,6 +3775,9 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 
 		if (should_try_become_up_to_date(device, disk_state, NEW))
 			set_bit(TRY_BECOME_UP_TO_DATE_PENDING, &resource->flags);
+
+		if (disk_state[OLD] != D_DISKLESS && disk_state[NEW] == D_DISKLESS)
+			clear_bit(FORCE_DETACH, &device->flags);
 	}
 
 	for_each_connection(connection, resource) {
@@ -4996,7 +4999,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				 * So aborting local requests may cause crashes,
 				 * or even worse, silent data corruption.
 				 */
-				if (test_and_clear_bit(FORCE_DETACH, &device->flags))
+				if (test_bit(FORCE_DETACH, &device->flags))
 					tl_abort_disk_io(device);
 
 				send_new_state_to_all_peer_devices(state_change, n_device);
