@@ -643,6 +643,8 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 			resource->cached_all_devices_have_quorum : true;
 
 		m->error = ok && quorum ? 0 : (error ?: -EIO);
+		if (!m->error && (req->local_rq_state & RQ_WRITE))
+			req->local_rq_state |= RQ_COMPLETED_OK;
 		m->bio = req->master_bio;
 		req->master_bio = NULL;
 
