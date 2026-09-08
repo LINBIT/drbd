@@ -37,3 +37,19 @@ b->bi_private = ...;
 ...
 + b->bi_opf = _opf;
 submit_bio(b);
+
+// a bio_alloc_bioset() whose result is returned directly; the assignments the
+// old signature needs have to go somewhere, so give the result a variable
+@@
+expression ebdev, _opf, gfp_mask, nr_vecs, bioset;
+@@
+- return bio_alloc_bioset(ebdev, nr_vecs, _opf, gfp_mask, bioset);
++ {
++ 	struct bio *new_bio = bio_alloc_bioset(gfp_mask, nr_vecs, bioset);
++
++ 	if (new_bio) {
++ 		bio_set_dev(new_bio, ebdev);
++ 		new_bio->bi_opf = _opf;
++ 	}
++ 	return new_bio;
++ }

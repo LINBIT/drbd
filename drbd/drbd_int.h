@@ -2424,6 +2424,18 @@ extern struct bio_set drbd_md_io_bio_set;
 /* And a bio_set for cloning */
 extern struct bio_set drbd_io_bio_set;
 
+/* Peer request bios are allocated from drbd_peer_bio_set with this front pad. The
+ * block layer consumes bi_iter during I/O; drbd_submit_peer_request() saves
+ * what drbd_peer_request_endio() needs to restore it here.
+ */
+struct drbd_peer_bio {
+	unsigned int size;           /* bi_iter.bi_size at submit */
+	unsigned int sector_offset;  /* bi_sector - peer_req->i.sector at submit */
+	struct bio bio;
+};
+#define to_drbd_peer_bio(b) container_of(b, struct drbd_peer_bio, bio)
+extern struct bio_set drbd_peer_bio_set;
+
 struct drbd_peer_device *create_peer_device(struct drbd_device *device,
 					    struct drbd_connection *connection);
 enum drbd_ret_code drbd_create_device(struct drbd_adm_ctx *adm_ctx,

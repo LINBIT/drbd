@@ -451,7 +451,8 @@ peer_req_alloc_bio(struct drbd_peer_request *peer_req, size_t size, gfp_t gfp_ma
 	if (drbd_insert_fault(device, DRBD_FAULT_BIO_TOO_SMALL))
 		nr_vecs = DIV_ROUND_UP(nr_vecs, 4);
 
-	bio = bio_alloc(device->ldev->backing_bdev, nr_vecs, opf, gfp_mask);
+	bio = bio_alloc_bioset(device->ldev->backing_bdev, nr_vecs, opf, gfp_mask,
+			       &drbd_peer_bio_set);
 	if (!bio)
 		return -ENOMEM;
 
@@ -2021,7 +2022,6 @@ int drbd_submit_peer_request(struct drbd_peer_request *peer_req)
 	struct bio *bio, *next_bio;
 	sector_t sector = peer_req->i.sector;
 	struct bio_list bios;
-	struct page *page;
 	int fault_type, err, nr_bios = 0;
 
 	if (peer_req->flags & EE_SET_OUT_OF_SYNC)
@@ -2083,10 +2083,9 @@ int drbd_submit_peer_request(struct drbd_peer_request *peer_req)
 		bio->bi_private = peer_req;
 		bio->bi_end_io = drbd_peer_request_endio;
 
-		/* Store sector and size in first struct page for restoration after I/O. */
-		page = bio->bi_io_vec[0].bv_page;
-		page->private = sector - peer_req->i.sector;
-		page->lru.next = (void *)(unsigned long)bio->bi_iter.bi_size;
+		/* Save sector offset and size for restoration after I/O. */
+		to_drbd_peer_bio(bio)->sector_offset = sector - peer_req->i.sector;
+		to_drbd_peer_bio(bio)->size = bio->bi_iter.bi_size;
 
 		sector += bio_sectors(bio);
 

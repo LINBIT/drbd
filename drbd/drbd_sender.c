@@ -242,7 +242,6 @@ void drbd_peer_request_endio(struct bio *bio)
 			  bio_op(bio) == REQ_OP_DISCARD;
 	blk_status_t status = bio->bi_status;
 	unsigned long flags;
-	struct page *page;
 	struct bio **pos;
 
 	if (status && drbd_device_ratelimit(device, BACKEND))
@@ -256,10 +255,9 @@ void drbd_peer_request_endio(struct bio *bio)
 
 	bio->bi_next = NULL; /* bi_next was used by the kernel during I/O; reinitialize */
 	/* Reset iter and restore sector and size for bio_for_each_segment(). */
-	page = bio->bi_io_vec[0].bv_page;
 	bio->bi_iter = (struct bvec_iter) {
-		.bi_sector = peer_req->i.sector + page->private,
-		.bi_size = (unsigned int)(unsigned long)page->lru.next,
+		.bi_sector = peer_req->i.sector + to_drbd_peer_bio(bio)->sector_offset,
+		.bi_size = to_drbd_peer_bio(bio)->size,
 	};
 
 	spin_lock_irqsave(&device->peer_req_bio_completion_lock, flags);

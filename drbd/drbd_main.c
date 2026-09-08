@@ -176,6 +176,7 @@ mempool_t drbd_md_io_page_pool;
 mempool_t drbd_buffer_page_pool;
 struct bio_set drbd_md_io_bio_set;
 struct bio_set drbd_io_bio_set;
+struct bio_set drbd_peer_bio_set;
 
 static const struct block_device_operations drbd_ops = {
 	.owner		= THIS_MODULE,
@@ -3300,6 +3301,7 @@ static void drbd_set_defaults(struct drbd_device *device)
 
 static void drbd_destroy_mempools(void)
 {
+	bioset_exit(&drbd_peer_bio_set);
 	bioset_exit(&drbd_io_bio_set);
 	bioset_exit(&drbd_md_io_bio_set);
 	mempool_exit(&drbd_buffer_page_pool);
@@ -3348,6 +3350,11 @@ static int drbd_create_mempools(void)
 
 	ret = bioset_init(&drbd_md_io_bio_set, DRBD_MIN_POOL_PAGES, 0,
 			  BIOSET_NEED_BVECS);
+	if (ret)
+		goto Enomem;
+
+	ret = bioset_init(&drbd_peer_bio_set, BIO_POOL_SIZE,
+			  offsetof(struct drbd_peer_bio, bio), BIOSET_NEED_BVECS);
 	if (ret)
 		goto Enomem;
 

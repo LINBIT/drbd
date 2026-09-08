@@ -402,6 +402,12 @@ struct drbd_path *__drbd_next_path_ref(struct drbd_path *drbd_path,
 	return drbd_path;
 }
 
+static struct bio *drbd_bio_alloc_next(struct bio *bio)
+{
+	return bio_alloc_bioset(bio->bi_bdev, bio->bi_max_vecs, bio->bi_opf, GFP_NOIO,
+				bio->bi_pool);
+}
+
 int drbd_bio_add_page(struct drbd_transport *transport, struct bio_list *bios,
 		      struct page *page, unsigned int len, unsigned int offset)
 {
@@ -413,7 +419,7 @@ int drbd_bio_add_page(struct drbd_transport *transport, struct bio_list *bios,
 	if (r)
 		return r;
 
-	new_bio = bio_alloc(bio->bi_bdev, bio->bi_max_vecs, bio->bi_opf, GFP_NOIO);
+	new_bio = drbd_bio_alloc_next(bio);
 	if (!new_bio)
 		return -ENOMEM;
 

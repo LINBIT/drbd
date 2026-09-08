@@ -11,7 +11,7 @@ b->
 struct bio *b1;
 symbol bio;
 @@
-drbd_bio_add_page(...)
+drbd_bio_alloc_next(...)
 {
 <...
 - bio_set_dev(b1, bio->bi_bdev)
