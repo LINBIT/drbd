@@ -2,7 +2,79 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.3.3 (api:genl2/proto:86-101,118-124/transport:21)
+9.3.4-rc.1 (api:genl2/proto:86-101,118-124/transport:22)
+--------
+ * Generate the netlink interface code with the upstream YNL generator
+   instead of the genl_magic macro system
+ * Fix a ProtocolError disconnect loop ("BAD! BarrierAck received with
+   n_writes=...") when two volumes of one connection replicate and
+   resync without replication at the same time
+ * Tolerate a verify-alg mismatch when connecting, and refuse to start
+   an online verify while the algorithms differ, instead of rejecting
+   the connection outright
+ * Fix several bitmap lifetime bugs around attach and detach: a NULL
+   bitmap dereference in the peer device statistics, a missing bitmap
+   in drbd_set_sync(), concurrent drbd_bm_free() callers, and freeing
+   a bitmap that a later attach published
+ * Fix a device reference leak and a NULL pointer dereference when a
+   peer request's bio allocation fails under memory pressure
+ * Hold state_rwlock while walking the transfer log from debugfs
+ * All fixes from 9.2.20
+  - Fix a sync target overwriting acknowledged writes with older resync
+    data when the sync source lost the diskless primary; such writes are
+    now held back or postponed (new feature flag WRITE_POSTPONE) instead
+    of being silently rolled back
+  - Fix data corruption when a peer bitmap that is being cleared by a
+    running resync was copied for a second peer
+  - Fix several ways a Primary lost its obligation to start a new data
+    generation after losing a peer, each ending in silent divergence,
+    and a spurious I/O error when a deferred generation resumes; the
+    obligation is now tracked per volume and logged
+  - Fix a diskless Primary losing a peer: rotate the current UUID so the
+    stale peer resyncs on return, outdate far-away members before
+    resuming I/O, and keep the sole UpToDate survivor UpToDate; also
+    fixes promotions freezing I/O on nodes not connected to every member
+  - Fix a resync target ending with stale data or an old data generation
+    when a crashed primary rejoins or a diskless primary announces a new
+    generation mid-resync
+  - Fix al-updates=no: honour it at attach time, and mark all bitmap
+    slots out of sync after a primary crash
+  - Fix kernel memory corruption by a malicious or man-in-the-middle
+    peer sending out-of-range payload, drain or digest sizes, and a
+    divide error caused by bogus peer block sizes
+  - Fix a use-after-free of the resource when a connections dump is
+    interrupted, and a refcount imbalance flooding the log with put_ldev
+    assertions after a resync request allocation failure
+  - Fix soft lockups: the sender thread pinning a CPU while its
+    connection is down, and IRQ-disabled bitmap scans on multi-TiB
+    volumes
+  - Fix several deadlocks and hangs: whole-bitmap IO vs clear_peer_slot()
+    or online resize, WFBitMapS on an equal-UUID reconnect with leftover
+    out-of-sync bits, demotion starved by a failing connect handshake,
+    and connection teardown blocked behind an unacknowledged resync
+    conflict
+  - Fix many two-phase-commit issues: stale replies answering the wrong
+    transaction, prepared peers that disconnected, forwarding node
+    handling, a state_sem leak on timeout, and unbounded connect
+    retries; log which volume a connect is waiting for
+  - Fix resyncs stalling short of completion, and a connection dropping
+    to StandAlone when a crashed primary rejoins during a resync
+  - Fix drbd_suspend_io() not waiting for in-flight writes; a detach
+    hanging on a dead backing device stays interruptible
+  - Fix restoring quorum after a reboot when the remaining members are
+    diskless
+  - Fix connection losses: online resize ending in ProtocolError,
+    volume-less connections reconnecting every ping-timeout, lb-tcp
+    "drbdadm down" stalling for a connect-int, and a TLS control socket
+    close going unnoticed
+  - Declare a connection broken where a two-phase-commit send failed,
+    and repeat a disconnect without delay and with a bound; together
+    they end a hanging "drbdadm disconnect"
+  - Do not account requests as waiting for the activity log while it is
+    suspended; the stale counters throttled resync to c-min-rate and
+    drained the epoch for every incoming peer write
+
+9.3.3 (api:genl2/proto:86-101,118-124/transport:22)
 --------
  * Support adding and removing paths on established lb-tcp connections
  * Fix a page-reference leak on TLS connections by copying instead of
@@ -43,7 +115,7 @@ Latest:
     out-of-sync amount grows
   - Do not throttle a resync that is losing ground to ongoing writes
 
-9.3.2 (api:genl2/proto:86-101,118-124/transport:21)
+9.3.2 (api:genl2/proto:86-101,118-124/transport:22)
 --------
  * Use genl pre_doit/post_doit for netlink request setup and teardown
  * Handle recv returning 0 (EOF) in recv_bio

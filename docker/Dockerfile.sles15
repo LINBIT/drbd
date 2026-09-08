@@ -8,7 +8,7 @@ FROM $BASE
 
 LABEL org.opencontainers.image.authors="Moritz Wanzenböck <moritz.wanzenboeck@linbit.com>"
 
-ENV DRBD_VERSION 9.2.13-rc.1
+ENV DRBD_VERSION 9.3.4-rc.1
 
 ARG release=1
 LABEL name="DRBD Kernel module load container" \
