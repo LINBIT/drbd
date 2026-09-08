@@ -36,4 +36,7 @@ const char *drbd_buildtag(void);
  * DRBD_FF_RESYNC_DAGTAG.
  */
 
+/* Features supported in meta data format. */
+#define DRBD_MD_FEATURES (DRBD_MDFF_DIVERGENCE_BITMAP)
+
 #endif

@@ -3073,6 +3073,7 @@ static void decode_md_9(struct meta_data_on_disk_9 *on_disk, struct drbd_md *md)
 	md->effective_size = be64_to_cpu(on_disk->effective_size);
 	md->current_uuid = be64_to_cpu(on_disk->current_uuid);
 	md->prev_members = be64_to_cpu(on_disk->members);
+	md->prev_features = be64_to_cpu(on_disk->features);
 	md->device_uuid = be64_to_cpu(on_disk->device_uuid);
 	md->md_size_sect = be32_to_cpu(on_disk->md_size_sect);
 	md->al_offset = be32_to_cpu(on_disk->al_offset);
@@ -3107,6 +3108,37 @@ static void decode_md_9(struct meta_data_on_disk_9 *on_disk, struct drbd_md *md)
 	BUILD_BUG_ON(ARRAY_SIZE(md->history_uuids) != ARRAY_SIZE(on_disk->history_uuids));
 }
 
+/* Drop the peer flags which the DRBD that last wrote this meta data did not
+ * understand. Such a DRBD preserves a flag without updating its value, so the
+ * value we read is not necessarily current. This protects against downgrade -
+ * upgrade sequences.
+ */
+static void distrust_unsupported_peer_flags(struct drbd_device *device, struct drbd_md *md)
+{
+	u64 nodes = 0;
+	int i;
+
+	if (md->prev_features & DRBD_MDFF_DIVERGENCE_BITMAP)
+		return;
+
+	for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
+		struct drbd_peer_md *peer_md = &md->peers[i];
+
+		if (!test_and_clear_bit(__MDF_PEER_DIVERGENCE_BITMAP, &peer_md->flags))
+			continue;
+
+		/* A slot without a bitmap of its own is a divergence bitmap in
+		 * any case, so clearing the flag changes nothing there. Report
+		 * only the slots where it makes a difference.
+		 */
+		if (test_bit(__MDF_HAVE_BITMAP, &peer_md->flags))
+			nodes |= NODE_MASK(i);
+	}
+
+	if (nodes)
+		drbd_info(device, "Meta data written without the divergence bitmap feature; "
+			  "not trusting MDF_PEER_DIVERGENCE_BITMAP of node(s) 0x%llX\n", nodes);
+}
 
 static void decode_magic(struct meta_data_on_disk_9 *on_disk, u32 *magic, u32 *flags)
 {
@@ -3150,6 +3182,7 @@ int drbd_md_decode(struct drbd_config_context *adm_ctx,
 	if (magic == DRBD_MD_MAGIC_09) {
 		clear_bit(LEGACY_84_MD, &device->flags);
 		decode_md_9(buffer, &bdev->md);
+		distrust_unsupported_peer_flags(device, &bdev->md);
 	} else {
 		if (!device->resource->res_opts.drbd8_compat_mode) {
 			drbd_err_and_skb_info(adm_ctx,
