@@ -6046,6 +6046,31 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 	return rv;
 }
 
+/* Which participants of a size transaction are expected to have a disk, as far
+ * as this node can tell: itself, and every configured peer this node keeps a
+ * bitmap for, connected or not.  A peer configured with "bitmap no" is a client
+ * by intent.  Anything less certain counts: a peer with a bitmap that is
+ * detached or not connected, and a participant this node has no peer device
+ * for, since nothing here says it is a client.
+ */
+static u64 diskful_participants(struct drbd_device *device, u64 reachable_nodes)
+{
+	struct drbd_resource *resource = device->resource;
+	struct drbd_peer_device *peer_device;
+	u64 known = NODE_MASK(resource->res_opts.node_id);
+	u64 diskful = known;
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		known |= NODE_MASK(peer_device->node_id);
+		if (want_bitmap(peer_device))
+			diskful |= NODE_MASK(peer_device->node_id);
+	}
+	rcu_read_unlock();
+
+	return diskful | (reachable_nodes & ~known);
+}
+
 enum determine_dev_size
 change_cluster_wide_device_size(struct drbd_device *device,
 				sector_t local_max_size,
@@ -6163,11 +6188,13 @@ retry:
 		}
 
 		if (commit_it && require_common_view) {
-			u64 need = reply->reachable_nodes;
+			u64 need = diskful_participants(device, reply->reachable_nodes);
 
 			/* A node that can not see the whole cluster derives
 			 * the size again on apply, and one from before that
-			 * took DDSF_2PC there keeps the size it had.
+			 * took DDSF_2PC there keeps the size it had.  A diskless
+			 * one takes the agreed size as it is, on every version,
+			 * so what a client sees decides no size.
 			 */
 			if ((reply->common_reachable_nodes & need) != need) {
 				drbd_info(device, "Not growing: of 0x%llx only 0x%llx are seen by every node\n",
