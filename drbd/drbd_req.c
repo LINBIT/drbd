@@ -1855,8 +1855,10 @@ drbd_submit_req_private_bio(struct drbd_request *req)
 
 static void drbd_queue_write(struct drbd_device *device, struct drbd_request *req)
 {
-	if (req->private_bio)
+	if (req->local_rq_state & RQ_WAIT_FOR_AL_ECNT) {
+		req->local_rq_state |= RQ_AP_ACTLOG_CNT;
 		atomic_inc(&device->ap_actlog_cnt);
+	}
 	spin_lock_irq(&device->pending_completion_lock);
 	list_add_tail(&req->req_pending_master_completion,
 			&device->pending_master_completion[1 /* WRITE */]);
@@ -1869,11 +1871,20 @@ static void drbd_queue_write(struct drbd_device *device, struct drbd_request *re
 	wake_up(&device->al_wait);
 }
 
+static void drbd_req_al_ecnt_done(struct drbd_request *req)
+{
+	if (!(req->local_rq_state & RQ_WAIT_FOR_AL_ECNT))
+		return;
+
+	req->local_rq_state &= ~RQ_WAIT_FOR_AL_ECNT;
+	atomic_sub(interval_to_al_extents(&req->i), &req->device->wait_for_actlog_ecnt);
+}
+
 static void drbd_req_in_actlog(struct drbd_request *req)
 {
 	req->local_rq_state |= RQ_IN_ACT_LOG;
 	ktime_get_accounting(req->in_actlog_kt);
-	atomic_sub(interval_to_al_extents(&req->i), &req->device->wait_for_actlog_ecnt);
+	drbd_req_al_ecnt_done(req);
 }
 
 /* returns the new drbd_request pointer, if the caller is expected to submit it
@@ -1890,6 +1901,7 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio,
 {
 	const int rw = bio_data_dir(bio);
 	struct drbd_request *req;
+	bool al_suspended;
 
 	/* allocate outside of all locks; */
 	req = drbd_req_new(device, bio);
@@ -1925,15 +1937,18 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio,
 	 * See also how peer_requests are handled
 	 * in receive_Data() { ... drbd_wait_for_activity_log_extents(); ... }
 	 */
-	if (req->private_bio)
+	al_suspended = test_bit(AL_SUSPENDED, &device->flags);
+	if (req->private_bio && !al_suspended) {
+		req->local_rq_state |= RQ_WAIT_FOR_AL_ECNT;
 		atomic_add(interval_to_al_extents(&req->i), &device->wait_for_actlog_ecnt);
+	}
 
 	/* process discards always from our submitter thread */
 	if ((bio_op(bio) == REQ_OP_WRITE_ZEROES) ||
 	    (bio_op(bio) == REQ_OP_DISCARD))
 		goto queue_for_submitter_thread;
 
-	if (req->private_bio && !test_bit(AL_SUSPENDED, &device->flags)) {
+	if (req->private_bio && !al_suspended) {
 		/* ldev_safe: have private_bio */
 		if (!drbd_al_begin_io_fastpath(device, &req->i))
 			goto queue_for_submitter_thread;
@@ -2437,6 +2452,19 @@ static void __drbd_submit_peer_request(struct drbd_peer_request *peer_req)
 		drbd_cleanup_after_failed_submit_peer_write(peer_req);
 }
 
+/* The only place where a request leaves the submitter thread's queue. */
+static void drbd_submit_queued_write(struct drbd_device *device, struct drbd_request *req)
+{
+	if (req->local_rq_state & RQ_AP_ACTLOG_CNT) {
+		req->local_rq_state &= ~RQ_AP_ACTLOG_CNT;
+		atomic_dec(&device->ap_actlog_cnt);
+	}
+	drbd_req_al_ecnt_done(req);
+
+	list_del_init(&req->list);
+	drbd_conflict_submit_write(req);
+}
+
 static void submit_fast_path(struct drbd_device *device, struct waiting_for_act_log *wfa)
 {
 	struct blk_plug plug;
@@ -2459,11 +2487,9 @@ static void submit_fast_path(struct drbd_device *device, struct waiting_for_act_
 				continue;
 
 			drbd_req_in_actlog(req);
-			atomic_dec(&device->ap_actlog_cnt);
 		}
 
-		list_del_init(&req->list);
-		drbd_conflict_submit_write(req);
+		drbd_submit_queued_write(device, req);
 	}
 	blk_finish_plug(&plug);
 }
@@ -2539,9 +2565,7 @@ static void send_and_submit_pending(struct drbd_device *device, struct waiting_f
 	}
 	list_for_each_entry_safe(req, tmp, &wfa->requests.pending, list) {
 		drbd_req_in_actlog(req);
-		atomic_dec(&device->ap_actlog_cnt);
-		list_del_init(&req->list);
-		drbd_conflict_submit_write(req);
+		drbd_submit_queued_write(device, req);
 	}
 	blk_finish_plug(&plug);
 }
