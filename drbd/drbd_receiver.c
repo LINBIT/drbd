@@ -2864,6 +2864,18 @@ static unsigned int rs_depth_target_sect(struct drbd_device *device)
 	return sect < RS_DEPTH_MIN_SECT ? RS_DEPTH_MIN_SECT : sect;
 }
 
+/* Sectors the backing device delivers in one sample interval at the rate
+ * measured so far, and RS_DEPTH_MIN_SECT until there is a rate.
+ */
+static unsigned int rs_drain_sample_sect(struct drbd_device *device)
+{
+	u64 sect = (u64)READ_ONCE(device->rs_drain_rate) * RS_DRAIN_SAMPLE_NS;
+
+	do_div(sect, NSEC_PER_SEC);
+
+	return max_t(u64, sect, RS_DEPTH_MIN_SECT);
+}
+
 bool drbd_rs_depth_exceeded(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
@@ -2949,19 +2961,32 @@ void drbd_rs_depth_queued(struct drbd_device *device, unsigned int sect)
  */
 void drbd_rs_depth_completed(struct drbd_device *device, unsigned int sect)
 {
-	ktime_t now = ktime_get();
+	unsigned int drained, sect_since;
 	s64 busy_ns, elapsed_ns;
-	unsigned int drained;
+	ktime_t now;
+	bool idle;
 
 	drained = atomic_add_return(sect, &device->rs_drain_sect);
+	idle = atomic_sub_return(sect, &device->rs_sect_queued) == 0;
+	sect_since = drained - device->rs_drain_mark;
+
+	/* Reading the clock can be costly.
+	 * Read it only where the answer is used: when the queue just ran empty
+	 * and the busy time has to stop there, or when this completion carries
+	 * enough sectors to end the sample.
+	 */
+	if (!idle && sect_since < rs_drain_sample_sect(device))
+		goto release;
+
+	now = ktime_get();
 	elapsed_ns = ktime_to_ns(ktime_sub(now, device->rs_drain_since));
 	busy_ns = device->rs_drain_busy_ns + (elapsed_ns > 0 ? elapsed_ns : 0);
 
-	if (atomic_sub_return(sect, &device->rs_sect_queued) == 0)
+	if (idle)
 		device->rs_drain_busy_ns = busy_ns;  /* idle from here */
 
 	if (busy_ns >= RS_DRAIN_SAMPLE_NS) {
-		u64 rate = (u64)(drained - device->rs_drain_mark) * NSEC_PER_SEC;
+		u64 rate = (u64)sect_since * NSEC_PER_SEC;
 
 		WRITE_ONCE(device->rs_drain_rate,
 			   min_t(u64, div64_u64(rate, busy_ns), UINT_MAX));
@@ -2970,6 +2995,7 @@ void drbd_rs_depth_completed(struct drbd_device *device, unsigned int sect)
 		device->rs_drain_since = now;
 	}
 
+release:
 	drbd_rs_depth_release(device);
 }
 
