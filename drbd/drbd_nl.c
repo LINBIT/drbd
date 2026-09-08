@@ -5515,7 +5515,7 @@ static int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 	bool resolve_by_node_id = true;
 	bool has_up_to_date_primary;
 	bool traditional_resize = false;
-	sector_t local_max_size;
+	sector_t local_max_size, wanted_size;
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
@@ -5552,10 +5552,16 @@ static int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 	}
 
 
+	/* Without --size, check the size the device already presents: a backing
+	 * device that shrank below it can not hold the data plus the meta data.
+	 */
 	local_max_size = drbd_local_max_size(device);
-	if (rs.resize_size && local_max_size < (sector_t)rs.resize_size) {
-		drbd_err(device, "requested %llu sectors, backend seems only able to support %llu\n",
-			 (unsigned long long)(sector_t)rs.resize_size,
+	wanted_size = rs.resize_size ? (sector_t)rs.resize_size :
+				       get_capacity(device->vdisk);
+	if (local_max_size < wanted_size) {
+		drbd_err(device, "%s %llu sectors, backend seems only able to support %llu\n",
+			 rs.resize_size ? "requested" : "device presents",
+			 (unsigned long long)wanted_size,
 			 (unsigned long long)local_max_size);
 		retcode = ERR_DISK_TOO_SMALL;
 		goto fail_ldev;
@@ -5652,6 +5658,16 @@ static int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 	if (dd == DS_2PC_NOT_SUPPORTED) {
 		traditional_resize = true;
 		dd = drbd_determine_dev_size(device, 0, ddsf, change_al_layout ? &rs : NULL);
+	} else if (dd == DS_UNCHANGED &&
+		   drbd_md_ss(device->ldev) != device->ldev->md.md_offset) {
+		/* The device keeps its size, but this node's backing device is
+		 * not the size it was, which moves internal meta data.  Only
+		 * drbd_determine_dev_size() recomputes the layout, and the size
+		 * change calls it only when it commits: apply the unchanged size
+		 * here so the meta data is written where it now belongs.
+		 */
+		dd = drbd_determine_dev_size(device, get_capacity(device->vdisk),
+					     ddsf | DDSF_2PC, NULL);
 	}
 
 	drbd_md_sync_if_dirty(device);
