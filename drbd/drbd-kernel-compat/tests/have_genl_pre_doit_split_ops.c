@@ -5,7 +5,9 @@
 int foo(const struct genl_split_ops *ops,
 	struct sk_buff *skb, struct genl_info *info)
 {
-	return 0;
+	/* Dereference ops, so that a kernel without struct genl_split_ops
+	 * fails this test with an error instead of just a warning. */
+	return ops->cmd;
 }
 
 struct genl_family test_family __attribute__((unused)) = {
