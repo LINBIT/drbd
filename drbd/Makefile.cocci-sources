@@ -11,6 +11,8 @@ __git_ls_sources := $(shell			\
 	drbd-kernel-compat/handshake/*.[ch]	\
 	drbd-headers/linux/*.[ch]		\
 	drbd-headers/uapi/linux/*.h		\
+	drbd-84/*.[ch]				\
+	drbd-84/uapi/linux/*.h			\
 )
 
 # no need to patch our headers (yet)
@@ -71,6 +73,12 @@ sources-ignored += drbd-headers/linux/drbd_nl_types.h
 sources-ignored += drbd-headers/linux/drbd2_nl_gen.c
 sources-ignored += drbd-headers/linux/drbd2_nl_gen.h
 sources-ignored += drbd-headers/uapi/linux/drbd2.h
+
+# vendored verbatim from mainline; the split ops table must not be rewritten
+# by genl_pre_doit_split_ops__no_present.cocci, see drbd-84/check-84-vendored.sh
+sources-ignored += drbd-84/drbd_nl_gen.c
+sources-ignored += drbd-84/drbd_nl_gen.h
+sources-ignored += drbd-84/uapi/linux/drbd_genl.h
 
 # generated for drbd-utils' userspace netlink, never compiled into the module
 sources-ignored += drbd-headers/linux/drbd_genl_userspace.c

@@ -6,6 +6,8 @@ __drbd-module-sources := $(sort $(shell     \
   git ls-files --recurse                    \
  	*.[ch]                              \
  	linux/                              \
+ 	drbd-84/*.[ch]                      \
+ 	drbd-84/uapi/                       \
  	drbd-headers/*.[ch]                 \
  	drbd-headers/linux/                 \
 	drbd-headers/uapi/                  \
@@ -63,6 +65,9 @@ drbd-kernel-compat/net/handshake.h
 drbd-kernel-compat/nsecs_to_jiffies.c
 drbd-kernel-compat/uapi/linux/handshake.h
 drbd-kernel-compat/uapi/linux/sched/types.h
+drbd-84/drbd_nl_gen.c
+drbd-84/drbd_nl_gen.h
+drbd-84/uapi/linux/drbd_genl.h
 drbd_actlog.c
 drbd_bitmap.c
 drbd_dax_pmem.c

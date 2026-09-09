@@ -177,6 +177,32 @@ check:nl-core-boundary:
         echo "drbd_nl.c is the wire-format-neutral netlink core; genetlink code belongs in a dialect adapter (drbd_nl_legacy.c)"; exit 1
       fi
 
+check:84-vendored:
+  stage: check
+  # .rules-build's triggers, but a merge request only runs this when it
+  # touches something that can alter the vendored files: the files
+  # themselves, the Coccinelle source list or rules that could rewrite
+  # them, or this job. The kernel fetch below is not worth repeating for
+  # every unrelated merge request. Release-branch pushes always run it.
+  rules:
+    - if: $CI_MERGE_REQUEST_ID
+      changes:
+        - .gitlab-ci.yml
+        - drbd/drbd-84/**/*
+        - drbd/Makefile.cocci-sources
+        - drbd/drbd-kernel-compat/cocci/**/*
+    - if: $CI_COMMIT_BRANCH == $RELEASE_BRANCH
+  image: docker.io/library/alpine:3
+  variables:
+    MAINLINE_COMMIT: 8098eeb693c4cc4e774c62fbd4875197cb5578ce
+  script:
+    - apk add --no-cache git bash diffutils
+    - git init -q /tmp/linux
+    - git -C /tmp/linux fetch -q --depth 1
+        https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git
+        $MAINLINE_COMMIT
+    - KDIR=/tmp/linux drbd/drbd-84/check-84-vendored.sh
+
 build:for-tests:
   stage: build
   extends: [ .setup-lbbuild ]
