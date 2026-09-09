@@ -4374,6 +4374,18 @@ static int dtr_max_region_pages(struct dtr_transport *rdma_transport)
 	return min(rdma_transport->max_mr_pages, 1 << MAX_PAGE_ORDER);
 }
 
+/* Order for the next region to register towards @target when @registered bytes
+ * are already armed: at most half the window, so a stream ends up with two or
+ * more comparable regions. With a single one the stream has no landing place at
+ * all while that region is invalidated, re-armed and re-announced, and the
+ * peer's writes in that window find no receive region -- which costs the
+ * connection (dtr_consume_local_buffer()).
+ */
+static int dtr_next_region_order(struct dtr_transport *rdma_transport, u32 target, u32 registered)
+{
+	return dtr_region_order(rdma_transport, min(target - registered, target / 2));
+}
+
 /* Drop the region's own reference on each of its pages. Pages a consumer still
  * references (an rx_desc read in place, or a bvec handed up to the core) stay
  * alive until that holder's drbd_free_page(); the last reference returns the
@@ -4878,7 +4890,7 @@ static void dtr_register_buffers_work_fn(struct work_struct *work)
 		list_del(&buf->list);
 
 		if (registered < target && dtr_invalidate_local_buffer(path, buf) == 0) {
-			int order = dtr_region_order(rdma_transport, target - registered);
+			int order = dtr_next_region_order(rdma_transport, target, registered);
 
 			dtr_disarm_local_buffer(path, buf);
 			if (!dtr_arm_local_buffer(path, buf, order, stride)) {
@@ -4903,7 +4915,7 @@ static void dtr_register_buffers_work_fn(struct work_struct *work)
 	 * write into a region this side has not yet armed in local_buffers.
 	 */
 	while (registered < target) {
-		int order = dtr_region_order(rdma_transport, target - registered);
+		int order = dtr_next_region_order(rdma_transport, target, registered);
 
 		buf = dtr_register_local_buffer(path, order, stride);
 		if (!buf)
