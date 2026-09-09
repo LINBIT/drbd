@@ -4764,11 +4764,26 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 
 			/* A backing device that grew under DRBD reaches the
 			 * cluster only through a size transaction; see
-			 * drbd_auto_grow().  Ask on the edges that allow one:
-			 * a connection that has settled, and the end of a
-			 * resync, which a transaction has to wait for anyway.
+			 * drbd_auto_grow().  A peer that was not here may
+			 * bring space with it, so what the cluster answered
+			 * before says nothing about what it answers now.
 			 */
-			if (repl_state[OLD] != L_ESTABLISHED && repl_state[NEW] == L_ESTABLISHED)
+			if (repl_state[OLD] == L_OFF && repl_state[NEW] >= L_ESTABLISHED)
+				device->auto_grow_asked = 0;
+
+			/* Ask where the answer can be a new one: a connection
+			 * that has settled, and the end of a resync, which a
+			 * transaction has to wait for anyway.  An online
+			 * verify and a pull-ahead phase both start from
+			 * L_ESTABLISHED, where this was asked already, so
+			 * coming back from them is no edge.
+			 */
+			if (repl_state[NEW] == L_ESTABLISHED &&
+			    repl_state[OLD] != L_ESTABLISHED &&
+			    repl_state[OLD] != L_VERIFY_S &&
+			    repl_state[OLD] != L_VERIFY_T &&
+			    repl_state[OLD] != L_AHEAD &&
+			    repl_state[OLD] != L_BEHIND)
 				drbd_device_post_work(device, AUTO_GROW);
 
 			/* Disks got bigger while they were detached */
@@ -6201,6 +6216,12 @@ retry:
 					  (unsigned long long)need,
 					  (unsigned long long)reply->common_reachable_nodes);
 				commit_it = false;
+				/* This is about the cluster's connectivity, not
+				 * about its space: it can heal between nodes
+				 * this one sees nothing of, so let the next
+				 * arming edge ask again.
+				 */
+				device->auto_grow_asked = 0;
 			}
 		}
 
