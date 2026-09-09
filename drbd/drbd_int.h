@@ -26,8 +26,7 @@
 #include <linux/lru_cache.h>
 #include <linux/prefetch.h>
 #include <linux/drbd.h>
-#include <uapi/linux/drbd_genl.h>
-#include <linux/drbd_nl_gen.h>
+#include <linux/drbd_nl_types.h>
 #include <linux/drbd_config.h>
 
 #include "drbd_strings.h"

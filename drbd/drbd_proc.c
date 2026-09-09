@@ -5,6 +5,7 @@
 
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
+#include <uapi/linux/drbd_genl.h>
 #include "drbd_int.h"
 #include "drbd_transport.h"
 #include "drbd_legacy_84.h"

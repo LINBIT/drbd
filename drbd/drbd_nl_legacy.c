@@ -22,6 +22,9 @@
 #include "drbd_int.h"
 #include "drbd_nl.h"
 
+#include <uapi/linux/drbd_genl.h>
+#include <linux/drbd_nl_gen.h>
+
 static const struct drbd_nl_dialect drbd_nl_legacy_dialect;
 
 /* Per-request state of the legacy dialect; hangs off drbd_adm_ctx.req. */

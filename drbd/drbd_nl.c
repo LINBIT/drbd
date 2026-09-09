@@ -26,6 +26,7 @@
 #include <linux/kthread.h>
 #include <linux/security.h>
 #include <linux/netlink.h>
+#include <net/net_namespace.h>
 
 #include "drbd_meta_data.h"
 #include "drbd_legacy_84.h"

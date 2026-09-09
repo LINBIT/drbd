@@ -33,6 +33,7 @@
 #include <linux/swab.h>
 #include <linux/overflow.h>
 
+#include <uapi/linux/drbd_genl.h>
 #include <linux/drbd_limits.h>
 #include "drbd_int.h"
 #include "drbd_protocol.h"

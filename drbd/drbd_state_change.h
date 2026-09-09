@@ -72,6 +72,7 @@ struct drbd_state_change *remember_state_change(struct drbd_resource *resource,
 void copy_old_to_new_state_change(struct drbd_state_change *state_change);
 void forget_state_change(struct drbd_state_change *state_change);
 
+struct sk_buff;
 struct drbd_nl_dialect;
 
 /*

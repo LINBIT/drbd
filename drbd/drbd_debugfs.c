@@ -11,6 +11,7 @@
 #include <linux/jiffies.h>
 #include <linux/list.h>
 #include <generated/utsrelease.h>
+#include <uapi/linux/drbd_genl.h>
 
 #include "drbd_int.h"
 #include "drbd_req.h"

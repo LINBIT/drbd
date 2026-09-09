@@ -9,13 +9,13 @@
 #include <linux/pkt_sched.h>
 #include <linux/sched/signal.h>
 #include <linux/net.h>
+#include <linux/skbuff.h>
 #include <linux/file.h>
 #include <linux/tcp.h>
 #include <linux/highmem.h>
 #include <linux/bio.h>
 #include <linux/drbd.h>
-#include <uapi/linux/drbd_genl.h>
-#include <linux/drbd_nl_gen.h>
+#include <linux/drbd_nl_types.h>
 #include <linux/drbd_config.h>
 #include <linux/tls.h>
 #include <net/tcp.h>
