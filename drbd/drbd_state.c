@@ -6086,12 +6086,28 @@ static u64 diskful_participants(struct drbd_device *device, u64 reachable_nodes)
 	return diskful | (reachable_nodes & ~known);
 }
 
+/* A size change nobody asked for reports its progress as debug detail: on a
+ * node with thousands of volumes, one prepare and one abort per volume is what
+ * a connect storm would otherwise leave in the log for changing nothing.  What
+ * it does change is logged either way.
+ */
+#define size_change_info(automatic, device, fmt, args...) do {		\
+	if (automatic)							\
+		dynamic_drbd_dbg(device, fmt, ## args);			\
+	else								\
+		drbd_info(device, fmt, ## args);			\
+} while (0)
+
+/* automatic: this is drbd_auto_grow(), not an administrative resize.  Commit
+ * only what every participant applies, keep the log quiet, and leave a
+ * transaction that could not be run to the next arming edge.
+ */
 enum determine_dev_size
 change_cluster_wide_device_size(struct drbd_device *device,
 				sector_t local_max_size,
 				uint64_t new_user_size,
 				enum dds_flags dds_flags,
-				bool require_common_view,
+				bool automatic,
 				struct resize_parms *rs)
 {
 	struct drbd_resource *resource = device->resource;
@@ -6150,7 +6166,7 @@ retry:
 	rcu_read_unlock();
 	state_change_unlock(resource, &irq_flags);
 
-	drbd_info(device, "Preparing cluster-wide size change %u "
+	size_change_info(automatic, device, "Preparing cluster-wide size change %u "
 		  "(local_max_size = %llu KB, user_cap = %llu KB)\n",
 		  request.tid,
 		  (unsigned long long)local_max_size >> 1,
@@ -6167,7 +6183,7 @@ retry:
 		else
 			rv = SS_TIMEOUT;
 
-		if (rv == SS_TIMEOUT || rv == SS_CONCURRENT_ST_CHG) {
+		if (!automatic && (rv == SS_TIMEOUT || rv == SS_CONCURRENT_ST_CHG)) {
 			long timeout = twopc_retry_timeout(resource, retries++);
 
 			drbd_info(device, "Retrying cluster-wide size change after %ums\n",
@@ -6202,7 +6218,7 @@ retry:
 			implicit_shrink = true;
 		}
 
-		if (commit_it && require_common_view) {
+		if (commit_it && automatic) {
 			u64 need = diskful_participants(device, reply->reachable_nodes);
 
 			/* A node that can not see the whole cluster derives
@@ -6212,7 +6228,7 @@ retry:
 			 * so what a client sees decides no size.
 			 */
 			if ((reply->common_reachable_nodes & need) != need) {
-				drbd_info(device, "Not growing: of 0x%llx only 0x%llx are seen by every node\n",
+				dynamic_drbd_dbg(device, "Not growing: of 0x%llx only 0x%llx are seen by every node\n",
 					  (unsigned long long)need,
 					  (unsigned long long)reply->common_reachable_nodes);
 				commit_it = false;
@@ -6232,13 +6248,13 @@ retry:
 				  request.tid,
 				  jiffies_to_msecs(jiffies - start_time));
 		} else {
-			drbd_info(device, "Aborting cluster-wide size change %u (%ums) size unchanged\n",
+			size_change_info(automatic, device, "Aborting cluster-wide size change %u (%ums) size unchanged\n",
 				  request.tid,
 				  jiffies_to_msecs(jiffies - start_time));
 		}
 	} else {
 		commit_it = false;
-		drbd_info(device, "Aborting cluster-wide size change %u (%ums) rv = %d\n",
+		size_change_info(automatic, device, "Aborting cluster-wide size change %u (%ums) rv = %d\n",
 			  request.tid,
 			  jiffies_to_msecs(jiffies - start_time),
 			  rv);
@@ -6271,6 +6287,7 @@ retry:
 	clear_remote_state_change(resource);
 	return dd;
 }
+#undef size_change_info
 
 static enum drbd_packet reply_cmd_from(enum drbd_state_rv rv)
 {

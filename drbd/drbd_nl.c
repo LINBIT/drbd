@@ -5578,16 +5578,14 @@ void drbd_auto_grow(struct drbd_device *device)
 	if (local_max_size == device->auto_grow_asked)
 		goto out;
 
-	drbd_info(device, "Growing to at most %llu KB: the backing device allows more than the device exposes\n",
-		  (unsigned long long)local_max_size >> 1);
-
 	/* dds_flags = 0: a peer this node can not see keeps whatever it
 	 * allowed when the cluster last agreed on a size, so this can never
 	 * settle above what an administrative resize would.  Growing past an
 	 * absent peer stays the explicit --assume-peer-has-space promise,
 	 * which comes with the duty to grow that peer's backend.
 	 *
-	 * require_common_view: commit only what every participant applies.
+	 * automatic: commit only what every participant applies, and leave
+	 * the log to what the transaction changes.
 	 */
 	device->auto_grow_asked = local_max_size;
 	dd = change_cluster_wide_device_size(device, local_max_size, u_size, 0, true, NULL);
@@ -5599,7 +5597,7 @@ void drbd_auto_grow(struct drbd_device *device)
 		 */
 		device->auto_grow_asked = 0;
 	if (dd == DS_2PC_NOT_SUPPORTED)
-		drbd_info(device, "Not growing: a peer is too old for cluster-wide size changes\n");
+		dynamic_drbd_dbg(device, "Not growing: a peer is too old for cluster-wide size changes\n");
 	drbd_md_sync_if_dirty(device);
 out:
 	put_ldev(device);

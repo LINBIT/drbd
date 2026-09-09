@@ -9019,7 +9019,7 @@ retry:
 		flags |= CS_PREPARE;
 		break;
 	case P_TWOPC_PREP_RSZ:
-		drbd_info(connection, "Preparing remote state change %u "
+		dynamic_drbd_dbg(connection, "Preparing remote state change %u "
 			  "(local_max_size = %llu KiB)\n",
 			  reply->tid, (unsigned long long)reply->max_possible_size >> 1);
 		flags |= CS_PREPARE;
