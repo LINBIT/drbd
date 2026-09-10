@@ -32,6 +32,62 @@ struct compat84_req {
 	struct genl_info *info;
 	struct sk_buff *reply_skb;
 	struct drbd_genlmsghdr *reply_dh;
+
+	/*
+	 * Some v1 attributes arrive nested under a DRBD_NLA_* container
+	 * whose overlay() call hands out a "dst" of a different type than
+	 * the DRBD 9 struct that attribute's value actually belongs to
+	 * (DRBD 9 split or relocated these options into structs of their
+	 * own). compat84_overlay() stashes them here while parsing the
+	 * container that actually carries them on the wire; the handler that
+	 * implements the command owning their real struct applies them
+	 * from here. Every stashed field carries its own "has_*" flag, set
+	 * only when that specific field's own attribute was present in the
+	 * request, not merely the enclosing container: each of these
+	 * fields is independently optional on the wire (a disk-options or
+	 * net-options call can legitimately touch just one sibling and
+	 * leave the rest unsent), so a single container-level flag would
+	 * misreport the unsent siblings as "sent as zero". A handler must
+	 * check a field's own flag before applying it, exactly as
+	 * overlay() itself only ever changes the attributes a request
+	 * actually sent.
+	 */
+
+	/* the v1 disk_conf's six resync-tuning fields -> struct drbd_peer_device_conf
+	 * (an exact six-for-six match by field name); parsed while
+	 * overlaying DRBD_NL_SET_DISK_CONF. Applied later in this series.
+	 */
+	struct {
+		bool has_resync_rate;
+		u32 resync_rate;
+		bool has_c_plan_ahead;
+		u32 c_plan_ahead;
+		bool has_c_delay_target;
+		u32 c_delay_target;
+		bool has_c_fill_target;
+		u32 c_fill_target;
+		bool has_c_max_rate;
+		u32 c_max_rate;
+		bool has_c_min_rate;
+		u32 c_min_rate;
+	} peer_device_conf_84;
+
+	/* v1 disk_conf.fencing -> drbd_net_conf.fencing_policy; parsed while
+	 * overlaying DRBD_NL_SET_DISK_CONF. Applied later in this series.
+	 */
+	bool has_fencing_policy_84;
+	u32 fencing_policy_84;
+
+	/* v1 net_conf.{discard_my_data, tentative} -> struct drbd_connect_parms
+	 * (an exact two-for-two match); parsed while overlaying
+	 * DRBD_NL_SET_NET_CONF. Applied later in this series.
+	 */
+	struct {
+		bool has_discard_my_data;
+		unsigned char discard_my_data;
+		bool has_tentative;
+		unsigned char tentative;
+	} connect_parms_84;
 };
 
 /* One allocation for both, so that pre_doit zeroes the context only once. */
@@ -377,17 +433,410 @@ void drbd_post_doit(const struct genl_split_ops *ops, struct sk_buff *skb,
 
 static bool compat84_has_set(struct drbd_adm_ctx *ctx, enum drbd_nl_attr_set set)
 {
-	return false;
+	static const u16 tla[__DRBD_NL_SET_MAX] = {
+		[DRBD_NL_SET_DISK_CONF]		= DRBD_NLA_DISK_CONF,
+		[DRBD_NL_SET_NET_CONF]		= DRBD_NLA_NET_CONF,
+		[DRBD_NL_SET_RES_OPTS]		= DRBD_NLA_RESOURCE_OPTS,
+		[DRBD_NL_SET_SET_ROLE_PARMS]	= DRBD_NLA_SET_ROLE_PARMS,
+		[DRBD_NL_SET_RESIZE_PARMS]	= DRBD_NLA_RESIZE_PARMS,
+		[DRBD_NL_SET_START_OV_PARMS]	= DRBD_NLA_START_OV_PARMS,
+		[DRBD_NL_SET_NEW_C_UUID_PARMS]	= DRBD_NLA_NEW_C_UUID_PARMS,
+		[DRBD_NL_SET_DISCONNECT_PARMS]	= DRBD_NLA_DISCONNECT_PARMS,
+		[DRBD_NL_SET_DETACH_PARMS]	= DRBD_NLA_DETACH_PARMS,
+	};
+
+	if (!tla[set])
+		return false;
+	return compat84_req(ctx)->info->attrs[tla[set]] != NULL;
 }
 
+/*
+ * The generated *_from_attrs() parsers fill the vendored v1 wire
+ * structs (struct disk_conf, struct net_conf, ...), whose field sets
+ * differ from the core's neutral structs, so every set below parses into
+ * a local v1 struct and translates field by field into dst.
+ *
+ * For the persistent config sets (disk_conf, net_conf, res_opts), dst
+ * already holds the object's current values. The parser only writes a
+ * field whose attribute is present, so the local struct is pre-seeded
+ * from dst and copied back whole: an absent attribute round-trips its
+ * old value, preserving drbd_nl.h's "absent attributes leave dst
+ * untouched" contract. The one-shot action parms start from a zeroed
+ * dst, so a zeroed local struct already matches.
+ *
+ * The v1 disk_conf treats backing_dev/meta_dev/meta_dev_idx as required, so
+ * a plain disk-options call parses with err == -ENOMSG while every other
+ * field is still filled in. drbd_nl.c tolerates -ENOMSG as non-fatal, so
+ * each case copies back (and stashes) before returning err, never on an
+ * early return.
+ */
 static int compat84_overlay(struct drbd_adm_ctx *ctx, enum drbd_nl_attr_set set, void *dst)
 {
+	struct genl_info *info = compat84_req(ctx)->info;
+	struct compat84_req *req = compat84_req(ctx);
+
+	switch (set) {
+	case DRBD_NL_SET_DISK_CONF: {
+		struct drbd_disk_conf *d = dst;
+		struct disk_conf c = {
+			.meta_dev_idx			= d->meta_dev_idx,
+			.disk_size			= d->disk_size,
+			.on_io_error			= d->on_io_error,
+			.resync_after			= d->resync_after,
+			.al_extents			= d->al_extents,
+			.disk_barrier			= d->disk_barrier,
+			.disk_flushes			= d->disk_flushes,
+			.disk_drain			= d->disk_drain,
+			.md_flushes			= d->md_flushes,
+			.disk_timeout			= d->disk_timeout,
+			.read_balancing			= d->read_balancing,
+			.al_updates			= d->al_updates,
+			.discard_zeroes_if_aligned	= d->discard_zeroes_if_aligned,
+			.rs_discard_granularity		= d->rs_discard_granularity,
+			.disable_write_same		= d->disable_write_same,
+		};
+		struct nlattr **ntb;
+		int err, ntb_err;
+
+		memcpy(c.backing_dev, d->backing_dev, sizeof(c.backing_dev));
+		c.backing_dev_len = d->backing_dev_len;
+		memcpy(c.meta_dev, d->meta_dev, sizeof(c.meta_dev));
+		c.meta_dev_len = d->meta_dev_len;
+
+		err = disk_conf_from_attrs(&c, info);
+
+		/*
+		 * Copy back and stash before returning err: -ENOMSG from a
+		 * plain disk-options call (see above) must not discard the
+		 * fields it did send. Any other error leaves c at its
+		 * pre-seeded values, so copying back is a no-op.
+		 */
+		memcpy(d->backing_dev, c.backing_dev, sizeof(d->backing_dev));
+		d->backing_dev_len = c.backing_dev_len;
+		memcpy(d->meta_dev, c.meta_dev, sizeof(d->meta_dev));
+		d->meta_dev_len = c.meta_dev_len;
+		d->meta_dev_idx = c.meta_dev_idx;
+		d->disk_size = c.disk_size;
+		d->on_io_error = c.on_io_error;
+		d->resync_after = c.resync_after;
+		d->al_extents = c.al_extents;
+		d->disk_barrier = c.disk_barrier;
+		d->disk_flushes = c.disk_flushes;
+		d->disk_drain = c.disk_drain;
+		d->md_flushes = c.md_flushes;
+		d->disk_timeout = c.disk_timeout;
+		d->read_balancing = c.read_balancing;
+		d->al_updates = c.al_updates;
+		d->discard_zeroes_if_aligned = c.discard_zeroes_if_aligned;
+		d->rs_discard_granularity = c.rs_discard_granularity;
+		d->disable_write_same = c.disable_write_same;
+		/* max_bio_bvecs: no DRBD 9 equivalent, dropped. */
+
+		/*
+		 * The resync-tuning fields belong to struct drbd_peer_device_conf,
+		 * fencing to net_conf.fencing_policy; neither is reachable
+		 * through this dst. Re-parse the nested table for per-field
+		 * presence and stash them for the attach/disk-options
+		 * handlers.
+		 */
+		ntb_err = disk_conf_ntb_from_attrs(&ntb, info);
+		if ((!ntb_err || ntb_err == -ENOMSG) && ntb) {
+			req->peer_device_conf_84.resync_rate = c.resync_rate;
+			req->peer_device_conf_84.has_resync_rate =
+				ntb[DRBD_A_DISK_CONF_RESYNC_RATE] != NULL;
+			req->peer_device_conf_84.c_plan_ahead = c.c_plan_ahead;
+			req->peer_device_conf_84.has_c_plan_ahead =
+				ntb[DRBD_A_DISK_CONF_C_PLAN_AHEAD] != NULL;
+			req->peer_device_conf_84.c_delay_target = c.c_delay_target;
+			req->peer_device_conf_84.has_c_delay_target =
+				ntb[DRBD_A_DISK_CONF_C_DELAY_TARGET] != NULL;
+			req->peer_device_conf_84.c_fill_target = c.c_fill_target;
+			req->peer_device_conf_84.has_c_fill_target =
+				ntb[DRBD_A_DISK_CONF_C_FILL_TARGET] != NULL;
+			req->peer_device_conf_84.c_max_rate = c.c_max_rate;
+			req->peer_device_conf_84.has_c_max_rate =
+				ntb[DRBD_A_DISK_CONF_C_MAX_RATE] != NULL;
+			req->peer_device_conf_84.c_min_rate = c.c_min_rate;
+			req->peer_device_conf_84.has_c_min_rate =
+				ntb[DRBD_A_DISK_CONF_C_MIN_RATE] != NULL;
+
+			req->fencing_policy_84 = c.fencing;
+			req->has_fencing_policy_84 =
+				ntb[DRBD_A_DISK_CONF_FENCING] != NULL;
+		}
+		kfree(ntb);
+
+		return err;
+	}
+	case DRBD_NL_SET_NET_CONF: {
+		struct drbd_net_conf *d = dst;
+		struct net_conf c = {
+			.wire_protocol			= d->wire_protocol,
+			.connect_int			= d->connect_int,
+			.timeout			= d->timeout,
+			.ping_int			= d->ping_int,
+			.ping_timeo			= d->ping_timeo,
+			.sndbuf_size			= d->sndbuf_size,
+			.rcvbuf_size			= d->rcvbuf_size,
+			.ko_count			= d->ko_count,
+			.max_buffers			= d->max_buffers,
+			.max_epoch_size			= d->max_epoch_size,
+			.after_sb_0p			= d->after_sb_0p,
+			.after_sb_1p			= d->after_sb_1p,
+			.after_sb_2p			= d->after_sb_2p,
+			.rr_conflict			= d->rr_conflict,
+			.on_congestion			= d->on_congestion,
+			.cong_fill			= d->cong_fill,
+			.cong_extents			= d->cong_extents,
+			.two_primaries			= d->two_primaries,
+			.tcp_cork			= d->tcp_cork,
+			.always_asbp			= d->always_asbp,
+			.use_rle			= d->use_rle,
+			.csums_after_crash_only		= d->csums_after_crash_only,
+			.sock_check_timeo		= d->sock_check_timeo,
+		};
+		struct nlattr **ntb;
+		int err, ntb_err;
+
+		memcpy(c.shared_secret, d->shared_secret, sizeof(c.shared_secret));
+		c.shared_secret_len = d->shared_secret_len;
+		memcpy(c.cram_hmac_alg, d->cram_hmac_alg, sizeof(c.cram_hmac_alg));
+		c.cram_hmac_alg_len = d->cram_hmac_alg_len;
+		memcpy(c.integrity_alg, d->integrity_alg, sizeof(c.integrity_alg));
+		c.integrity_alg_len = d->integrity_alg_len;
+		memcpy(c.verify_alg, d->verify_alg, sizeof(c.verify_alg));
+		c.verify_alg_len = d->verify_alg_len;
+		memcpy(c.csums_alg, d->csums_alg, sizeof(c.csums_alg));
+		c.csums_alg_len = d->csums_alg_len;
+
+		err = net_conf_from_attrs(&c, info);
+
+		/* Copy back and stash before returning err, as for DISK_CONF. */
+		memcpy(d->shared_secret, c.shared_secret, sizeof(d->shared_secret));
+		d->shared_secret_len = c.shared_secret_len;
+		memcpy(d->cram_hmac_alg, c.cram_hmac_alg, sizeof(d->cram_hmac_alg));
+		d->cram_hmac_alg_len = c.cram_hmac_alg_len;
+		memcpy(d->integrity_alg, c.integrity_alg, sizeof(d->integrity_alg));
+		d->integrity_alg_len = c.integrity_alg_len;
+		memcpy(d->verify_alg, c.verify_alg, sizeof(d->verify_alg));
+		d->verify_alg_len = c.verify_alg_len;
+		memcpy(d->csums_alg, c.csums_alg, sizeof(d->csums_alg));
+		d->csums_alg_len = c.csums_alg_len;
+		d->wire_protocol = c.wire_protocol;
+		d->connect_int = c.connect_int;
+		d->timeout = c.timeout;
+		d->ping_int = c.ping_int;
+		d->ping_timeo = c.ping_timeo;
+		d->sndbuf_size = c.sndbuf_size;
+		d->rcvbuf_size = c.rcvbuf_size;
+		d->ko_count = c.ko_count;
+		d->max_buffers = c.max_buffers;
+		d->max_epoch_size = c.max_epoch_size;
+		d->after_sb_0p = c.after_sb_0p;
+		d->after_sb_1p = c.after_sb_1p;
+		d->after_sb_2p = c.after_sb_2p;
+		d->rr_conflict = c.rr_conflict;
+		d->on_congestion = c.on_congestion;
+		d->cong_fill = c.cong_fill;
+		d->cong_extents = c.cong_extents;
+		d->two_primaries = c.two_primaries;
+		d->tcp_cork = c.tcp_cork;
+		d->always_asbp = c.always_asbp;
+		d->use_rle = c.use_rle;
+		d->csums_after_crash_only = c.csums_after_crash_only;
+		d->sock_check_timeo = c.sock_check_timeo;
+
+		/*
+		 * unplug_watermark is dropped: no DRBD 9 code reads it, and
+		 * net_conf is connection-scoped while disk_conf, its DRBD 9
+		 * home, is per device. discard_my_data/tentative belong to
+		 * struct drbd_connect_parms; stash them for the connect handler.
+		 */
+		ntb_err = net_conf_ntb_from_attrs(&ntb, info);
+		if ((!ntb_err || ntb_err == -ENOMSG) && ntb) {
+			req->connect_parms_84.discard_my_data = c.discard_my_data;
+			req->connect_parms_84.has_discard_my_data =
+				ntb[DRBD_A_NET_CONF_DISCARD_MY_DATA] != NULL;
+			req->connect_parms_84.tentative = c.tentative;
+			req->connect_parms_84.has_tentative =
+				ntb[DRBD_A_NET_CONF_TENTATIVE] != NULL;
+		}
+		kfree(ntb);
+
+		return err;
+	}
+	case DRBD_NL_SET_RES_OPTS: {
+		struct drbd_res_opts *d = dst;
+		struct res_opts c = {
+			.on_no_data = d->on_no_data,
+		};
+		int err;
+
+		memcpy(c.cpu_mask, d->cpu_mask, sizeof(c.cpu_mask));
+		c.cpu_mask_len = d->cpu_mask_len;
+
+		err = res_opts_from_attrs(&c, info);
+
+		/*
+		 * The other fourteen DRBD 9 res_opts fields have no v1
+		 * attribute, so v1's --set-defaults must not reset them
+		 * either: that would drop drbd8_compat_mode and
+		 * explicit_drbd8_compat and turn auto_promote back on.
+		 * drbd_adm_resource_opts() holds adm_mutex, so the live
+		 * res_opts are stable here.
+		 */
+		if (ctx->set_defaults && ctx->resource)
+			*d = ctx->resource->res_opts;
+
+		/* Copy back before returning err, as for DISK_CONF. */
+		memcpy(d->cpu_mask, c.cpu_mask, sizeof(d->cpu_mask));
+		d->cpu_mask_len = c.cpu_mask_len;
+		d->on_no_data = c.on_no_data;
+		return err;
+	}
+	case DRBD_NL_SET_SET_ROLE_PARMS: {
+		struct drbd_set_role_parms *d = dst;
+		struct set_role_parms c = { };
+		int err = set_role_parms_from_attrs(&c, info);
+
+		if (err)
+			return err;
+		/* v1's assume_uptodate is drbd-utils 8.9.x's wire name for --force. */
+		d->force = c.assume_uptodate;
+		return 0;
+	}
+	case DRBD_NL_SET_RESIZE_PARMS: {
+		struct drbd_resize_parms *d = dst;
+		/* drbd_adm_resize() pre-fills the current AL layout. */
+		struct resize_parms c = {
+			.resize_size = d->resize_size,
+			.resize_force = d->resize_force,
+			.no_resync = d->no_resync,
+			.al_stripes = d->al_stripes,
+			.al_stripe_size = d->al_stripe_size,
+		};
+		int err = resize_parms_from_attrs(&c, info);
+
+		if (err)
+			return err;
+		d->resize_size = c.resize_size;
+		d->resize_force = c.resize_force;
+		d->no_resync = c.no_resync;
+		d->al_stripes = c.al_stripes;
+		d->al_stripe_size = c.al_stripe_size;
+		return 0;
+	}
+	case DRBD_NL_SET_START_OV_PARMS: {
+		struct drbd_start_ov_parms *d = dst;
+		/* drbd_adm_start_ov() pre-fills the resume position. */
+		struct start_ov_parms c = {
+			.ov_start_sector = d->ov_start_sector,
+			.ov_stop_sector = d->ov_stop_sector,
+		};
+		int err = start_ov_parms_from_attrs(&c, info);
+
+		if (err)
+			return err;
+		d->ov_start_sector = c.ov_start_sector;
+		d->ov_stop_sector = c.ov_stop_sector;
+		return 0;
+	}
+	case DRBD_NL_SET_NEW_C_UUID_PARMS: {
+		struct drbd_new_c_uuid_parms *d = dst;
+		struct new_c_uuid_parms c = { };
+		int err = new_c_uuid_parms_from_attrs(&c, info);
+
+		if (err)
+			return err;
+		d->clear_bm = c.clear_bm;
+		/* force_resync: DRBD 9 only, no v1 attribute; leave untouched. */
+		return 0;
+	}
+	case DRBD_NL_SET_DISCONNECT_PARMS: {
+		struct drbd_disconnect_parms *d = dst;
+		struct disconnect_parms c = { };
+		int err = disconnect_parms_from_attrs(&c, info);
+
+		if (err)
+			return err;
+		d->force_disconnect = c.force_disconnect;
+		return 0;
+	}
+	case DRBD_NL_SET_DETACH_PARMS: {
+		struct drbd_detach_parms *d = dst;
+		struct detach_parms c = { };
+		int err = detach_parms_from_attrs(&c, info);
+
+		if (err)
+			return err;
+		d->force_detach = c.force_detach;
+		/* intentional_diskless_detach: DRBD 9 only; leave untouched. */
+		return 0;
+	}
+	case DRBD_NL_SET_PEER_DEVICE_CONF:
+	case DRBD_NL_SET_DEVICE_CONF:
+	case DRBD_NL_SET_INVALIDATE_PARMS:
+	case DRBD_NL_SET_INVALIDATE_PEER_PARMS:
+	case DRBD_NL_SET_FORGET_PEER_PARMS:
+	case DRBD_NL_SET_CONNECT_PARMS:
+	case DRBD_NL_SET_PATH_PARMS:
+	case DRBD_NL_SET_RENAME_RESOURCE_PARMS:
+	case DRBD_NL_SET_SUSPEND_IO_PARMS:
+		/* No v1 counterpart: report a missing required attribute
+		 * rather than silently proceeding with defaults.
+		 */
+		return -ENOMSG;
+	case __DRBD_NL_SET_MAX:
+		break;
+	}
 	return -EINVAL;
 }
 
+/*
+ * The generated parser returns the nested attribute table both on success
+ * and on -ENOMSG (some required attrs missing), which is the typical case
+ * for a change op since drbdsetup omits the invariant attrs. Inspect and
+ * free the table in both cases. It is NULL when the nested container
+ * attribute is absent entirely (command without any options).
+ */
 static bool compat84_attr_present(struct drbd_adm_ctx *ctx, enum drbd_adm_field field)
 {
-	return false;
+	static const struct {
+		int (*ntb_from_attrs)(struct nlattr ***ntb, struct genl_info *info);
+		int attr;
+		const char *name;
+	} invariant[] = {
+		[DRBD_ADM_F_DISK_BACKING_DEV] = { disk_conf_ntb_from_attrs,
+			DRBD_A_DISK_CONF_BACKING_DEV, "DRBD_A_DISK_CONF_BACKING_DEV" },
+		[DRBD_ADM_F_DISK_META_DEV] = { disk_conf_ntb_from_attrs,
+			DRBD_A_DISK_CONF_META_DEV, "DRBD_A_DISK_CONF_META_DEV" },
+		[DRBD_ADM_F_DISK_META_DEV_IDX] = { disk_conf_ntb_from_attrs,
+			DRBD_A_DISK_CONF_META_DEV_IDX, "DRBD_A_DISK_CONF_META_DEV_IDX" },
+		[DRBD_ADM_F_DISK_SIZE] = { disk_conf_ntb_from_attrs,
+			DRBD_A_DISK_CONF_DISK_SIZE, "DRBD_A_DISK_CONF_DISK_SIZE" },
+	};
+	struct nlattr **ntb;
+	bool found;
+	int err;
+
+	/* v1 has no transport name, no load-balance-paths and no explicit
+	 * node id: none of these can be an invariant-change attempt.
+	 */
+	switch (field) {
+	case DRBD_ADM_F_NET_TRANSPORT_NAME:
+	case DRBD_ADM_F_NET_LOAD_BALANCE_PATHS:
+	case DRBD_ADM_F_RES_NODE_ID:
+		return false;
+	default:
+		break;
+	}
+
+	err = invariant[field].ntb_from_attrs(&ntb, compat84_req(ctx)->info);
+	found = (!err || err == -ENOMSG) && ntb && ntb[invariant[field].attr];
+	kfree(ntb);
+	if (found)
+		pr_info("must not change invariant attr: %s\n", invariant[field].name);
+	return found;
 }
 
 static int compat84_put_timeout_type(struct drbd_adm_ctx *ctx, enum drbd_timeout_flag type)
