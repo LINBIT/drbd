@@ -1886,6 +1886,12 @@ struct drbd_device {
 				 */
 	bool cached_state_unstable; /* updates with each state change */
 	bool cached_err_io; /* complete all IOs with error */
+	sector_t auto_grow_asked; /* the backing-device maximum a cluster-wide
+				   * size change already answered for; see
+				   * drbd_auto_grow().  No lock: a lost update
+				   * costs one transaction, or one more arming
+				   * edge to start it.
+				   */
 	u32 gen_obligation;	/* state, auxiliary bits and reason set of the
 				 * data-generation obligation; see enum
 				 * drbd_gen_obl_state.  Read with the accessors

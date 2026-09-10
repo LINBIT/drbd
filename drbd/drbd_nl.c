@@ -5903,6 +5903,8 @@ void drbd_auto_grow(struct drbd_device *device)
 		local_max_size = min(local_max_size, u_size);
 	if (local_max_size <= get_capacity(device->vdisk))
 		goto out;
+	if (local_max_size == device->auto_grow_asked)
+		goto out;
 
 	drbd_info(device, "Growing to at most %llu KB: the backing device allows more than the device exposes\n",
 		  (unsigned long long)local_max_size >> 1);
@@ -5915,7 +5917,15 @@ void drbd_auto_grow(struct drbd_device *device)
 	 *
 	 * require_common_view: commit only what every participant applies.
 	 */
+	device->auto_grow_asked = local_max_size;
 	dd = change_cluster_wide_device_size(device, local_max_size, u_size, 0, true, NULL);
+	if (dd == DS_2PC_ERR)
+		/* A timeout or a competing state change is no answer at all,
+		 * so forget what was asked and let the next arming edge ask
+		 * again.  Every other outcome answers what this cluster can
+		 * do, and stands until a peer connects.
+		 */
+		device->auto_grow_asked = 0;
 	if (dd == DS_2PC_NOT_SUPPORTED)
 		drbd_info(device, "Not growing: a peer is too old for cluster-wide size changes\n");
 	drbd_md_sync_if_dirty(device);
