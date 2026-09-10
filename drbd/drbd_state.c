@@ -3337,10 +3337,14 @@ static bool primary_and_data_present(struct drbd_device *device)
 	bool up_to_date_data = device->disk_state[NEW] == D_UP_TO_DATE;
 	struct drbd_resource *resource = device->resource;
 	bool primary = resource->role[NEW] == R_PRIMARY;
+	bool readable_peer_data = false, peer_data = false;
 	struct drbd_peer_device *peer_device;
+	bool remote_primary = false;
 
-	for_each_peer_device(peer_device, device) {
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
 		struct drbd_connection *connection = peer_device->connection;
+		struct net_conf *nc;
 
 		/* Do not consider the peer if we are disconnecting. */
 		if (resource->remote_state_change &&
@@ -3349,11 +3353,23 @@ static bool primary_and_data_present(struct drbd_device *device)
 			continue;
 
 		if (connection->peer_role[NEW] == R_PRIMARY)
-			primary = true;
+			primary = remote_primary = true;
 
-		if (peer_device->disk_state[NEW] == D_UP_TO_DATE)
-			up_to_date_data = true;
+		if (peer_device->disk_state[NEW] != D_UP_TO_DATE)
+			continue;
+
+		peer_data = true;
+		nc = rcu_dereference(connection->transport.net_conf);
+		if (!nc || nc->allow_remote_read)
+			readable_peer_data = true;
 	}
+	rcu_read_unlock();
+
+	/*
+	 * A remote primary writes on data it can reach itself. If this node is
+	 * the only primary, only peer data it may read keeps the cluster going.
+	 */
+	up_to_date_data |= remote_primary ? peer_data : readable_peer_data;
 
 	return primary && up_to_date_data;
 }
