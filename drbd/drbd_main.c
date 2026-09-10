@@ -4646,6 +4646,7 @@ void drbd_md_encode_9(struct drbd_device *device, struct meta_data_on_disk_9 *bu
 	buffer->effective_size = cpu_to_be64(device->ldev->md.effective_size);
 	buffer->current_uuid = cpu_to_be64(device->ldev->md.current_uuid);
 	buffer->members = cpu_to_be64(device->ldev->md.members);
+	buffer->features = cpu_to_be64(DRBD_MD_FEATURES);
 	buffer->flags = cpu_to_be32(device->ldev->md.flags);
 	buffer->magic = cpu_to_be32(DRBD_MD_MAGIC_09);
 
@@ -4692,16 +4693,25 @@ int drbd_md_write(struct drbd_device *device, struct meta_data_on_disk_9 *buffer
 	sector_t sector;
 	int err;
 
-	if (drbd_md_dax_active(device->ldev)) {
-		drbd_md_encode(device, drbd_dax_md_addr(device->ldev));
-		arch_wb_cache_pmem(drbd_dax_md_addr(device->ldev),
-				   sizeof(struct meta_data_on_disk_9));
-		return 0;
-	}
-
 	memset(buffer, 0, sizeof(*buffer));
 
 	drbd_md_encode(device, buffer);
+
+	if (drbd_md_dax_active(device->ldev)) {
+		struct meta_data_on_disk_9 *md_on_pmem = drbd_dax_md_addr(device->ldev);
+
+		/* Copy the encoded super block, rather than encoding into
+		 * persistent memory directly. That way the reserved fields are
+		 * zeroed here as well, so that a field which a later version
+		 * places there is cleared by this version. Copying also leaves
+		 * every byte at either its old or its new value, whereas
+		 * zeroing in place would make the meta data unreadable should a
+		 * crash hit that window.
+		 */
+		memcpy(md_on_pmem, buffer, sizeof(*buffer));
+		arch_wb_cache_pmem(md_on_pmem, sizeof(*buffer));
+		return 0;
+	}
 
 	D_ASSERT(device, drbd_md_ss(device->ldev) == device->ldev->md.md_offset);
 	sector = device->ldev->md.md_offset;

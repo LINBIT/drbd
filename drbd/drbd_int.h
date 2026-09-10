@@ -920,6 +920,7 @@ struct drbd_md {
 	u64 effective_size;	/* last agreed size (sectors) */
 	u64 prev_members;	/* read from the meta-data */
 	u64 members;		/* current member mask for writing meta-data */
+	u64 prev_features;	/* read from the meta-data; DRBD_MD_FEATURES is written */
 	spinlock_t uuid_lock;
 	u64 current_uuid;
 	u64 device_uuid;

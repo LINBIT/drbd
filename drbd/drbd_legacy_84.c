@@ -102,6 +102,7 @@ void drbd_md_decode_84(struct meta_data_on_disk_84 *on_disk, struct drbd_md *md)
 	md->effective_size = be64_to_cpu(on_disk->la_size_sect);
 	md->current_uuid = be64_to_cpu(on_disk->uuid[UI_CURRENT]);
 	md->prev_members = 0;
+	md->prev_features = 0; /* no features field in the drbd-8.4 meta-data */
 	md->device_uuid = be64_to_cpu(on_disk->device_uuid);
 	md->md_size_sect = be32_to_cpu(on_disk->md_size_sect);
 	md->al_offset = be32_to_cpu(on_disk->al_offset);
