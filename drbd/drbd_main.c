@@ -4743,6 +4743,17 @@ static int __drbd_md_sync(struct drbd_device *device, bool maybe)
 	if (!get_ldev_if_state(device, D_DETACHING))
 		return -EIO;
 
+	/*
+	 * A disk that failed may take this write or not, by chance. Keep the
+	 * last superblock it did take rather than let that chance decide.
+	 */
+	if (device->disk_state[NOW] == D_FAILED ||
+	    (device->disk_state[NOW] == D_DETACHING &&
+	     test_bit(FORCE_DETACH, &device->flags))) {
+		timer_delete(&device->md_sync_timer);
+		goto out;
+	}
+
 	buffer = drbd_md_get_buffer(device, __func__);
 	if (!buffer)
 		goto out;
