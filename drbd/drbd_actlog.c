@@ -744,6 +744,28 @@ static int update_sync_bits(struct drbd_peer_device *peer_device,
 	return count;
 }
 
+/* Record that the bits toward this slot were set for blocks the peer lacks.
+ * drbd_md_slot_emptied() clears this once the slot holds no bits.
+ */
+static void bitmap_slot_authoritative(struct drbd_device *device, int node_id)
+{
+	struct drbd_peer_md *peer_md = &device->ldev->md.peers[node_id];
+
+	if (!test_and_set_bit(__MDF_PEER_BITMAP_AUTHORITATIVE, &peer_md->flags))
+		drbd_md_mark_dirty(device);
+}
+
+static int node_id_by_bitmap_index(struct drbd_device *device, int bitmap_index)
+{
+	struct drbd_peer_md *peer_md = device->ldev->md.peers;
+	int node_id;
+
+	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++)
+		if (peer_md[node_id].bitmap_index == bitmap_index)
+			return node_id;
+	return -1;
+}
+
 /* clear the bit corresponding to the piece of storage in question:
  * size byte of data starting from sector.  Only clear a bits of the affected
  * one or more _aligned_ BM_BLOCK_SIZE blocks.
@@ -798,28 +820,27 @@ int __drbd_change_sync(struct drbd_peer_device *peer_device, sector_t sector, in
 	}
 
 	count = update_sync_bits(peer_device, sbnr, ebnr, mode);
+	if (count && mode == SET_OUT_OF_SYNC)
+		bitmap_slot_authoritative(device, peer_device->node_id);
 out:
 	put_ldev(device);
 	return count;
 }
 
-int drbd_set_all_out_of_sync(struct drbd_device *device, sector_t sector, int size)
-{
-	return drbd_set_sync(device, sector, size, -1, -1);
-}
 
 /**
- * drbd_set_sync  -  Set a disk range in or out of sync
+ * __drbd_set_sync  -  Set a disk range in or out of sync
  * @device:	DRBD device
  * @sector:	start sector of disk range
  * @size:	size of disk range in bytes
  * @bits:	bit values to use by bitmap index
  * @mask:	bitmap indexes to modify (mask set)
  *
- * Returns the number of bits modified.
+ * The caller knows the peers it sets out of sync lack the blocks; the bits
+ * are recorded as authoritative.  Returns the number of bits modified.
  */
-int drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
-		   unsigned long bits, unsigned long mask)
+static int __drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
+			   unsigned long bits, unsigned long mask, bool authoritative)
 {
 	long set_start, set_end, clear_start, clear_end;
 	struct drbd_peer_device *peer_device;
@@ -871,21 +892,31 @@ int drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
 		if (!test_and_clear_bit(bitmap_index, &mask))
 			continue;
 
-		if (test_bit(bitmap_index, &bits))
-			count += update_sync_bits(peer_device, set_start, set_end, SET_OUT_OF_SYNC);
+		if (test_bit(bitmap_index, &bits)) {
+			int set = update_sync_bits(peer_device, set_start, set_end,
+						   SET_OUT_OF_SYNC);
 
-		else if (clear_start <= clear_end)
+			if (set && authoritative)
+				bitmap_slot_authoritative(device, peer_device->node_id);
+			count += set;
+		} else if (clear_start <= clear_end) {
 			count += update_sync_bits(peer_device, clear_start, clear_end, SET_IN_SYNC);
+		}
 	}
 	rcu_read_unlock();
 	if (mask) {
 		int bitmap_index;
 
 		for_each_set_bit(bitmap_index, &mask, BITS_PER_LONG) {
-			if (test_bit(bitmap_index, &bits))
-				count += drbd_bm_set_bits(device, bitmap_index,
-						 set_start, set_end);
-			else if (clear_start <= clear_end)
+			if (test_bit(bitmap_index, &bits)) {
+				int set = drbd_bm_set_bits(device, bitmap_index,
+							   set_start, set_end);
+				int node_id = node_id_by_bitmap_index(device, bitmap_index);
+
+				if (set && authoritative && node_id != -1)
+					bitmap_slot_authoritative(device, node_id);
+				count += set;
+			} else if (clear_start <= clear_end)
 				count += drbd_bm_clear_bits(device, bitmap_index,
 						   clear_start, clear_end);
 		}
@@ -895,4 +926,18 @@ out:
 	put_ldev(device);
 
 	return count;
+}
+
+int drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
+		  unsigned long bits, unsigned long mask)
+{
+	return __drbd_set_sync(device, sector, size, bits, mask, true);
+}
+
+/* A sync target sets every other peer out of sync for each block it receives,
+ * without knowing which of them lack it: these bits are not authoritative.
+ */
+int drbd_set_all_out_of_sync(struct drbd_device *device, sector_t sector, int size)
+{
+	return __drbd_set_sync(device, sector, size, -1, -1, false);
 }

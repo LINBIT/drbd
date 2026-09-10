@@ -742,8 +742,11 @@ ____bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long s
 	}
 	switch (op) {
 	case BM_OP_CLEAR:
-		if (total)
+		if (total) {
 			bitmap->bm_set[bitmap_index] -= total;
+			if (bitmap->bm_set[bitmap_index] == 0)
+				drbd_md_slot_emptied(device, bitmap_index);
+		}
 		break;
 	case BM_OP_SET:
 	case BM_OP_MERGE:
@@ -862,6 +865,8 @@ static void bm_count_bits(struct drbd_device *device)
 			cond_resched();
 		}
 		bitmap->bm_set[bitmap_index] = bits_set;
+		if (bits_set == 0)
+			drbd_md_slot_emptied(device, bitmap_index);
 	}
 }
 
@@ -1825,6 +1830,8 @@ void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_index, unsi
 		bitmap->bm_set[to_index] += hweight32(data_word);
 	}
 	bm_unmap(bitmap, addr);
+	if (bitmap->bm_set[to_index] == 0)
+		drbd_md_slot_emptied(device, to_index);
 
 	spin_unlock(&bitmap->bm_lock);
 	spin_unlock_irq(&bitmap->bm_all_slots_lock);

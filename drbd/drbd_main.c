@@ -1445,6 +1445,10 @@ u64 drbd_collect_local_uuid_flags(struct drbd_peer_device *peer_device, u64 *aut
 		uuid_flags |= UUID_FLAG_PRIMARY_LOST_QUORUM;
 	if (drbd_device_stable(device, authoritative_mask))
 		uuid_flags |= UUID_FLAG_STABLE;
+	if (peer_device->connection->agreed_pro_version >= 125 &&
+	    test_bit(__MDF_PEER_BITMAP_AUTHORITATIVE,
+		     &device->ldev->md.peers[peer_device->node_id].flags))
+		uuid_flags |= UUID_FLAG_BITMAP_AUTHORITATIVE;
 
 	return uuid_flags;
 }
@@ -5919,6 +5923,12 @@ static void copy_bitmap(struct drbd_device *device, int from_id, int to_id)
 	drbd_suspend_io(device, WRITE_ONLY);
 	drbd_bm_lock(device, "copy_bitmap()", BM_LOCK_ALL);
 	drbd_bm_copy_slot(device, from_index, to_index);
+	/* the copy carries the reason the bits were set for */
+	if (test_bit(__MDF_PEER_BITMAP_AUTHORITATIVE, &peer_md[from_id].flags) &&
+	    _drbd_bm_total_weight(device, to_index) != 0)
+		set_bit(__MDF_PEER_BITMAP_AUTHORITATIVE, &peer_md[to_id].flags);
+	else
+		clear_bit(__MDF_PEER_BITMAP_AUTHORITATIVE, &peer_md[to_id].flags);
 	drbd_bm_unlock(device);
 	drbd_resume_io(device);
 	drbd_md_mark_dirty(device);
@@ -6430,6 +6440,40 @@ void drbd_md_clear_peer_flag(struct drbd_peer_device *peer_device,
 int drbd_md_test_flag(struct drbd_backing_dev *bdev, enum mdf_flag flag)
 {
 	return (bdev->md.flags & flag) != 0;
+}
+
+/* The last out-of-sync bit toward this slot is gone, and with it the reason
+ * the bits were set for.  Called under the bitmap lock, with the disk attached.
+ */
+void drbd_md_slot_emptied(struct drbd_device *device, int bitmap_index)
+{
+	struct drbd_peer_md *peer_md = device->ldev->md.peers;
+	int node_id;
+
+	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+		if (peer_md[node_id].bitmap_index != bitmap_index)
+			continue;
+		if (test_and_clear_bit(__MDF_PEER_BITMAP_AUTHORITATIVE, &peer_md[node_id].flags))
+			drbd_md_mark_dirty(device);
+	}
+}
+
+/* Every bit standing toward a peer may be one that peer lacks: a crashed
+ * Primary's activity log replay marks the crash window toward all of them.
+ */
+void drbd_md_set_bitmaps_authoritative(struct drbd_device *device)
+{
+	struct drbd_peer_md *peer_md = device->ldev->md.peers;
+	int node_id;
+
+	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+		if (!test_bit(__MDF_HAVE_BITMAP, &peer_md[node_id].flags))
+			continue;
+		if (_drbd_bm_total_weight(device, peer_md[node_id].bitmap_index) == 0)
+			continue;
+		if (!test_and_set_bit(__MDF_PEER_BITMAP_AUTHORITATIVE, &peer_md[node_id].flags))
+			drbd_md_mark_dirty(device);
+	}
 }
 
 bool drbd_md_test_peer_flag(struct drbd_peer_device *peer_device, enum mdf_peer_flag_bit flag_bit)

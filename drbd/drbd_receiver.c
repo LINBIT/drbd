@@ -5665,8 +5665,12 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 
 	uuid_matches = resolved_uuid == (peer_device->comm_current_uuid & ~UUID_PRIMARY);
 	bitmap_matches = bitmap_uuid == peer_device->comm_bitmap_uuid;
-	/* UUID_FLAG_INCONSISTENT is not relevant for the handshake, allow it to change */
-	flags_matches = !((local_uuid_flags ^ peer_device->comm_uuid_flags) & ~UUID_FLAG_INCONSISTENT);
+	/* UUID_FLAG_INCONSISTENT is not relevant for the handshake, allow it to change.
+	 * UUID_FLAG_BITMAP_AUTHORITATIVE moves with the first bit set or last bit
+	 * cleared toward the peer; the handshake reads the value that was sent.
+	 */
+	flags_matches = !((local_uuid_flags ^ peer_device->comm_uuid_flags) &
+			  ~(UUID_FLAG_INCONSISTENT | UUID_FLAG_BITMAP_AUTHORITATIVE));
 	if (!test_bit(INITIAL_STATE_SENT, &peer_device->flags)) {
 		drbd_warn(peer_device, "Initial UUIDs and state not sent yet. Not verifying\n");
 	} else if (!uuid_matches || !flags_matches || !bitmap_matches) {

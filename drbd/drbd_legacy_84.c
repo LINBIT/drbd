@@ -10,7 +10,8 @@
  * MDF_FULL_SYNC       1 << 3                                    MDF_PEER_FULL_SYNC =    1 << 3,
  * MDF_WAS_UP_TO_DATE  1 << 4  MDF_WAS_UP_TO_DATE =    1 << 4,   MDF_PEER_DEVICE_SEEN =  1 << 4,
  * MDF_PEER_OUT_DATED  1 << 5                                    MDF_PEER_DIVERGENCE_BITMAP = 1 << 5
- * MDF_CRASHED_PRIMARY 1 << 6  MDF_CRASHED_PRIMARY =   1 << 6,
+ * MDF_CRASHED_PRIMARY 1 << 6  MDF_CRASHED_PRIMARY =   1 << 6,   MDF_PEER_BITMAP_AUTHORITATIVE
+ *                                                                                       = 1 << 6
  * MDF_AL_CLEAN        1 << 7  MDF_AL_CLEAN =          1 << 7,
  * MDF_AL_DISABLED     1 << 8  MDF_AL_DISABLED =       1 << 8,
  *                             MDF_PRIMARY_LOST_QUORUM = 1 << 9,

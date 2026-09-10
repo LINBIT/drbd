@@ -3144,11 +3144,31 @@ static void decode_md_9(struct meta_data_on_disk_9 *on_disk, struct drbd_md *md)
  * understand. Such a DRBD preserves a flag without updating its value, so the
  * value we read is not necessarily current. This protects against downgrade -
  * upgrade sequences.
+ *
+ * MDF_PEER_BITMAP_AUTHORITATIVE goes the other way: a writer that did not
+ * maintain it may have set bits for blocks the peer lacks without recording
+ * that, so every standing bit counts as such.
  */
 static void distrust_unsupported_peer_flags(struct drbd_device *device, struct drbd_md *md)
 {
 	u64 nodes = 0;
 	int i;
+
+	if (!(md->prev_features & DRBD_MDFF_BITMAP_AUTHORITATIVE)) {
+		for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
+			struct drbd_peer_md *peer_md = &md->peers[i];
+
+			if (!test_bit(__MDF_HAVE_BITMAP, &peer_md->flags))
+				continue;
+			if (!test_and_set_bit(__MDF_PEER_BITMAP_AUTHORITATIVE, &peer_md->flags))
+				nodes |= NODE_MASK(i);
+		}
+		if (nodes)
+			drbd_info(device, "Meta data written without the bitmap provenance feature; "
+				  "all out-of-sync bits toward node(s) 0x%llX count as set with reason\n",
+				  nodes);
+		nodes = 0;
+	}
 
 	if (md->prev_features & DRBD_MDFF_DIVERGENCE_BITMAP)
 		return;
@@ -3890,6 +3910,13 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 			}
 		}
 	}
+
+	/* The activity log replay (drbdmeta apply-al) marked the crash window
+	 * out of sync toward every peer; any of them may lack any of it.
+	 */
+	if (test_bit(CRASHED_PRIMARY, &device->flags) &&
+	    drbd_md_test_flag(device->ldev, MDF_PRIMARY_IND))
+		drbd_md_set_bitmaps_authoritative(device);
 
 	drbd_try_suspend_al(device); /* IO is still suspended here... */
 
