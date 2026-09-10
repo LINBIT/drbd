@@ -34,28 +34,19 @@ struct compat84_req {
 	struct drbd_genlmsghdr *reply_dh;
 
 	/*
-	 * Some v1 attributes arrive nested under a DRBD_NLA_* container
-	 * whose overlay() call hands out a "dst" of a different type than
-	 * the DRBD 9 struct that attribute's value actually belongs to
-	 * (DRBD 9 split or relocated these options into structs of their
-	 * own). compat84_overlay() stashes them here while parsing the
-	 * container that actually carries them on the wire; the handler that
-	 * implements the command owning their real struct applies them
-	 * from here. Every stashed field carries its own "has_*" flag, set
-	 * only when that specific field's own attribute was present in the
-	 * request, not merely the enclosing container: each of these
-	 * fields is independently optional on the wire (a disk-options or
-	 * net-options call can legitimately touch just one sibling and
-	 * leave the rest unsent), so a single container-level flag would
-	 * misreport the unsent siblings as "sent as zero". A handler must
-	 * check a field's own flag before applying it, exactly as
-	 * overlay() itself only ever changes the attributes a request
-	 * actually sent.
+	 * Attributes that arrive inside one v1 container but belong to a
+	 * different DRBD 9 struct than that container's overlay() dst.
+	 * compat84_overlay() stashes them here; the handler that owns the
+	 * real struct applies them. Each field carries its own "has_*"
+	 * flag, set only when that attribute itself was present: the
+	 * fields are independently optional on the wire, so a
+	 * container-level flag would misreport unsent siblings as zero.
 	 */
 
-	/* the v1 disk_conf's six resync-tuning fields -> struct drbd_peer_device_conf
-	 * (an exact six-for-six match by field name); parsed while
-	 * overlaying DRBD_NL_SET_DISK_CONF. Applied later in this series.
+	/* the v1 disk_conf's resync-tuning fields -> struct drbd_peer_device_conf.
+	 * Applied by compat84_apply_disk_conf_stash() if a peer device
+	 * exists, else deferred to device->pending_peer_device_conf_84
+	 * for the connect handler.
 	 */
 	struct {
 		bool has_resync_rate;
@@ -73,7 +64,11 @@ struct compat84_req {
 	} peer_device_conf_84;
 
 	/* v1 disk_conf.fencing -> drbd_net_conf.fencing_policy; parsed while
-	 * overlaying DRBD_NL_SET_DISK_CONF. Applied later in this series.
+	 * overlaying DRBD_NL_SET_DISK_CONF. Applied by the attach/
+	 * disk-options handlers (compat84_apply_disk_conf_stash()) if a
+	 * connection already exists, otherwise deferred onto
+	 * struct drbd_resource.pending_fencing_policy_84* for the v1
+	 * connect handler to pick up.
 	 */
 	bool has_fencing_policy_84;
 	u32 fencing_policy_84;
@@ -192,18 +187,21 @@ static const unsigned int drbd_genl_cmd_flags_84[] = {
 	[DRBD_ADM_RESOURCE_OPTS]   = DRBD_ADM_NEED_RESOURCE,
 	/*
 	 * The command that creates a connection cannot require one to
-	 * already exist. v1's connect wire carries a resource name
-	 * (CTX_RESOURCE_AND_CONNECTION in drbdsetup(8.4)'s command table),
-	 * which is enough: drbd_nl_connect_doit() derives the peer node
-	 * id itself, from the address pair, and sequences new-peer/
-	 * new-path/connect.
+	 * exist; the connect handler derives the peer node id from the
+	 * address pair itself.
 	 */
 	[DRBD_ADM_CONNECT]         = DRBD_ADM_NEED_RESOURCE,
 	[DRBD_ADM_DISCONNECT]      = DRBD_ADM_NEED_CONNECTION,
 	[DRBD_ADM_ATTACH]          = DRBD_ADM_NEED_MINOR,
 	[DRBD_ADM_RESIZE]          = DRBD_ADM_NEED_MINOR,
-	[DRBD_ADM_PRIMARY]         = DRBD_ADM_NEED_RESOURCE,
-	[DRBD_ADM_SECONDARY]       = DRBD_ADM_NEED_RESOURCE,
+	/*
+	 * v1 addresses primary/secondary by minor only (CTX_MINOR), unlike
+	 * v2, which sends a resource name. drbd_adm_ctx_resolve() derives
+	 * the resource from the device, which is all drbd_adm_set_role()
+	 * needs.
+	 */
+	[DRBD_ADM_PRIMARY]         = DRBD_ADM_NEED_MINOR,
+	[DRBD_ADM_SECONDARY]       = DRBD_ADM_NEED_MINOR,
 	[DRBD_ADM_NEW_C_UUID]      = DRBD_ADM_NEED_MINOR,
 	[DRBD_ADM_START_OV]        = DRBD_ADM_NEED_PEER_DEVICE,
 	[DRBD_ADM_DETACH]          = DRBD_ADM_NEED_MINOR,
@@ -647,6 +645,21 @@ static int compat84_overlay(struct drbd_adm_ctx *ctx, enum drbd_nl_attr_set set,
 		d->sock_check_timeo = c.sock_check_timeo;
 
 		/*
+		 * fencing is a disk option in 8.4, so "net-options
+		 * --set-defaults" must not reset it: keep the live value.
+		 * drbd_adm_net_opts() holds conf_update.
+		 */
+		if (ctx->set_defaults && ctx->connection) {
+			struct drbd_net_conf *old;
+
+			rcu_read_lock();
+			old = rcu_dereference(ctx->connection->transport.net_conf);
+			if (old)
+				d->fencing_policy = old->fencing_policy;
+			rcu_read_unlock();
+		}
+
+		/*
 		 * unplug_watermark is dropped: no DRBD 9 code reads it, and
 		 * net_conf is connection-scoped while disk_conf, its DRBD 9
 		 * home, is per device. discard_my_data/tentative belong to
@@ -662,6 +675,20 @@ static int compat84_overlay(struct drbd_adm_ctx *ctx, enum drbd_nl_attr_set set,
 				ntb[DRBD_A_NET_CONF_TENTATIVE] != NULL;
 		}
 		kfree(ntb);
+
+		/*
+		 * fencing is the v1 disk_conf's field on the wire, but its DRBD 9
+		 * home is net_conf.fencing_policy: unreachable from the
+		 * DISK_CONF overlay above. The attach/disk-options handler
+		 * stashed it there while parsing disk_conf, then re-enters
+		 * this same overlay() entry point for NET_CONF once it has
+		 * resolved the resource's single connection, so merge it in
+		 * here too. A real NET_CONF request (connect, net-options)
+		 * never sets this flag: it carries no disk_conf, so
+		 * DISK_CONF's overlay case above never ran for it.
+		 */
+		if (req->has_fencing_policy_84)
+			d->fencing_policy = req->fencing_policy_84;
 
 		return err;
 	}
@@ -773,7 +800,30 @@ static int compat84_overlay(struct drbd_adm_ctx *ctx, enum drbd_nl_attr_set set,
 		/* intentional_diskless_detach: DRBD 9 only; leave untouched. */
 		return 0;
 	}
-	case DRBD_NL_SET_PEER_DEVICE_CONF:
+	case DRBD_NL_SET_PEER_DEVICE_CONF: {
+		struct drbd_peer_device_conf *d = dst;
+
+		/*
+		 * Not parsed from the wire: the DISK_CONF case stashed these
+		 * while parsing the disk_conf that carried them. The
+		 * attach/disk-options handler re-enters overlay() for
+		 * PEER_DEVICE_CONF once it has the peer device.
+		 */
+		if (req->peer_device_conf_84.has_resync_rate)
+			d->resync_rate = req->peer_device_conf_84.resync_rate;
+		if (req->peer_device_conf_84.has_c_plan_ahead)
+			d->c_plan_ahead = req->peer_device_conf_84.c_plan_ahead;
+		if (req->peer_device_conf_84.has_c_delay_target)
+			d->c_delay_target = req->peer_device_conf_84.c_delay_target;
+		if (req->peer_device_conf_84.has_c_fill_target)
+			d->c_fill_target = req->peer_device_conf_84.c_fill_target;
+		if (req->peer_device_conf_84.has_c_max_rate)
+			d->c_max_rate = req->peer_device_conf_84.c_max_rate;
+		if (req->peer_device_conf_84.has_c_min_rate)
+			d->c_min_rate = req->peer_device_conf_84.c_min_rate;
+
+		return 0;
+	}
 	case DRBD_NL_SET_DEVICE_CONF:
 	case DRBD_NL_SET_INVALIDATE_PARMS:
 	case DRBD_NL_SET_INVALIDATE_PEER_PARMS:
@@ -1019,29 +1069,189 @@ int drbd_nl_get_status_dumpit(struct sk_buff *skb, struct netlink_callback *cb)
 	return -EOPNOTSUPP;
 }
 
+/*
+ * Apply the resync-tuning and fencing values compat84_overlay() stashed
+ * out of disk_conf, after drbd_adm_attach() or drbd_adm_disk_opts()
+ * succeeded. 8.4's normal order is attach, then connect, so the peer
+ * device (for struct drbd_peer_device_conf) and the connection (for
+ * net_conf.fencing_policy) usually do not exist yet; then the values are
+ * deferred onto the device and the resource for the connect handler.
+ */
+/*
+ * In 8.4, the resync tuning fields and fencing are disk options, so
+ * "disk-options --set-defaults" resets the ones it does not send. They are
+ * applied only as sent fields here, so turn the unsent ones into sent
+ * defaults.
+ */
+static void compat84_disk_conf_stash_defaults(struct compat84_req *req)
+{
+	typeof(req->peer_device_conf_84) *pdc = &req->peer_device_conf_84;
+
+#define STASH_DEFAULT(field, def)		\
+	do {					\
+		if (!pdc->has_##field) {	\
+			pdc->field = def;	\
+			pdc->has_##field = true; \
+		}				\
+	} while (0)
+	STASH_DEFAULT(resync_rate, DRBD_RESYNC_RATE_DEF);
+	STASH_DEFAULT(c_plan_ahead, DRBD_C_PLAN_AHEAD_DEF);
+	STASH_DEFAULT(c_delay_target, DRBD_C_DELAY_TARGET_DEF);
+	STASH_DEFAULT(c_fill_target, DRBD_C_FILL_TARGET_DEF);
+	STASH_DEFAULT(c_max_rate, DRBD_C_MAX_RATE_DEF);
+	STASH_DEFAULT(c_min_rate, DRBD_C_MIN_RATE_DEF);
+#undef STASH_DEFAULT
+
+	if (!req->has_fencing_policy_84) {
+		req->fencing_policy_84 = DRBD_FENCING_DEF;
+		req->has_fencing_policy_84 = true;
+	}
+}
+
+static void compat84_apply_disk_conf_stash(struct drbd_adm_ctx *ctx)
+{
+	struct compat84_req *req = compat84_req(ctx);
+	struct drbd_device *device = ctx->device;
+	struct drbd_resource *resource = device->resource;
+	struct drbd_peer_device *peer_device;
+	bool have_resync;
+
+	if (ctx->set_defaults)
+		compat84_disk_conf_stash_defaults(req);
+
+	have_resync = req->peer_device_conf_84.has_resync_rate ||
+		      req->peer_device_conf_84.has_c_plan_ahead ||
+		      req->peer_device_conf_84.has_c_delay_target ||
+		      req->peer_device_conf_84.has_c_fill_target ||
+		      req->peer_device_conf_84.has_c_max_rate ||
+		      req->peer_device_conf_84.has_c_min_rate;
+
+	if (!have_resync && !req->has_fencing_policy_84)
+		return;
+
+	/*
+	 * A connection creates a peer device for every existing device, so
+	 * a peer device exists if and only if a connection does.
+	 */
+retry:
+	rcu_read_lock();
+	peer_device = list_first_or_null_rcu(&device->peer_devices,
+					      struct drbd_peer_device,
+					      peer_devices);
+	if (peer_device)
+		kref_get(&peer_device->connection->kref);
+	rcu_read_unlock();
+
+	if (!peer_device) {
+		mutex_lock(&resource->adm_mutex);
+		/*
+		 * A connect may have created the peer device meanwhile; it
+		 * consumes the stash only afterwards, so stash only while
+		 * there still is none, under adm_mutex.
+		 */
+		if (!list_empty(&device->peer_devices)) {
+			mutex_unlock(&resource->adm_mutex);
+			goto retry;
+		}
+		if (have_resync) {
+			typeof(req->peer_device_conf_84) *from = &req->peer_device_conf_84;
+			typeof(device->pending_peer_device_conf_84) *to =
+				&device->pending_peer_device_conf_84;
+
+			if (from->has_resync_rate) {
+				to->resync_rate = from->resync_rate;
+				to->has_resync_rate = true;
+			}
+			if (from->has_c_plan_ahead) {
+				to->c_plan_ahead = from->c_plan_ahead;
+				to->has_c_plan_ahead = true;
+			}
+			if (from->has_c_delay_target) {
+				to->c_delay_target = from->c_delay_target;
+				to->has_c_delay_target = true;
+			}
+			if (from->has_c_fill_target) {
+				to->c_fill_target = from->c_fill_target;
+				to->has_c_fill_target = true;
+			}
+			if (from->has_c_max_rate) {
+				to->c_max_rate = from->c_max_rate;
+				to->has_c_max_rate = true;
+			}
+			if (from->has_c_min_rate) {
+				to->c_min_rate = from->c_min_rate;
+				to->has_c_min_rate = true;
+			}
+		}
+		if (req->has_fencing_policy_84) {
+			resource->pending_fencing_policy_84 =
+				(enum drbd_fencing_policy)req->fencing_policy_84;
+			resource->pending_fencing_policy_84_set = true;
+		}
+		mutex_unlock(&resource->adm_mutex);
+		return;
+	}
+
+	ctx->connection = peer_device->connection;
+
+	if (have_resync) {
+		ctx->peer_device = peer_device;
+		drbd_adm_peer_device_opts(ctx);
+	}
+
+	if (req->has_fencing_policy_84 && (!have_resync || ctx->result == NO_ERROR))
+		drbd_adm_net_opts(ctx);
+}
+
 int drbd_nl_new_minor_doit(struct sk_buff *skb, struct genl_info *info)
 {
-	return -EOPNOTSUPP;
+	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+
+	if (!compat84_req(ctx)->reply_skb)
+		return 0;
+	return drbd_adm_new_minor(ctx);
 }
 
 int drbd_nl_del_minor_doit(struct sk_buff *skb, struct genl_info *info)
 {
-	return -EOPNOTSUPP;
+	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+
+	if (!compat84_req(ctx)->reply_skb)
+		return 0;
+	return drbd_adm_del_minor(ctx);
 }
 
 int drbd_nl_new_resource_doit(struct sk_buff *skb, struct genl_info *info)
 {
-	return -EOPNOTSUPP;
+	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+
+	if (!compat84_req(ctx)->reply_skb)
+		return 0;
+	/*
+	 * Every resource created through the version 1 dialect is a DRBD 8.4
+	 * resource: single peer, node ids derived from the peer's. The core
+	 * enforces that from res_opts.drbd8_compat_mode.
+	 */
+	ctx->force_drbd8_compat = true;
+	return drbd_adm_new_resource(ctx);
 }
 
 int drbd_nl_del_resource_doit(struct sk_buff *skb, struct genl_info *info)
 {
-	return -EOPNOTSUPP;
+	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+
+	if (!compat84_req(ctx)->reply_skb)
+		return 0;
+	return drbd_adm_del_resource(ctx);
 }
 
 int drbd_nl_resource_opts_doit(struct sk_buff *skb, struct genl_info *info)
 {
-	return -EOPNOTSUPP;
+	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+
+	if (!compat84_req(ctx)->reply_skb)
+		return 0;
+	return drbd_adm_resource_opts(ctx);
 }
 
 int drbd_nl_connect_doit(struct sk_buff *skb, struct genl_info *info)
@@ -1056,72 +1266,131 @@ int drbd_nl_disconnect_doit(struct sk_buff *skb, struct genl_info *info)
 
 int drbd_nl_attach_doit(struct sk_buff *skb, struct genl_info *info)
 {
-	return -EOPNOTSUPP;
+	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+
+	if (!compat84_req(ctx)->reply_skb)
+		return 0;
+	drbd_adm_attach(ctx);
+	if (ctx->result == NO_ERROR)
+		compat84_apply_disk_conf_stash(ctx);
+	return 0;
 }
 
 int drbd_nl_resize_doit(struct sk_buff *skb, struct genl_info *info)
 {
-	return -EOPNOTSUPP;
+	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+
+	if (!compat84_req(ctx)->reply_skb)
+		return 0;
+	return drbd_adm_resize(ctx);
 }
 
 int drbd_nl_primary_doit(struct sk_buff *skb, struct genl_info *info)
 {
-	return -EOPNOTSUPP;
+	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+
+	if (!compat84_req(ctx)->reply_skb)
+		return 0;
+	return drbd_adm_primary(ctx);
 }
 
 int drbd_nl_secondary_doit(struct sk_buff *skb, struct genl_info *info)
 {
-	return -EOPNOTSUPP;
+	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+
+	if (!compat84_req(ctx)->reply_skb)
+		return 0;
+	return drbd_adm_secondary(ctx);
 }
 
 int drbd_nl_new_c_uuid_doit(struct sk_buff *skb, struct genl_info *info)
 {
-	return -EOPNOTSUPP;
+	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+
+	if (!compat84_req(ctx)->reply_skb)
+		return 0;
+	return drbd_adm_new_c_uuid(ctx);
 }
 
 int drbd_nl_start_ov_doit(struct sk_buff *skb, struct genl_info *info)
 {
-	return -EOPNOTSUPP;
+	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+
+	if (!compat84_req(ctx)->reply_skb)
+		return 0;
+	return drbd_adm_start_ov(ctx);
 }
 
 int drbd_nl_detach_doit(struct sk_buff *skb, struct genl_info *info)
 {
-	return -EOPNOTSUPP;
+	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+
+	if (!compat84_req(ctx)->reply_skb)
+		return 0;
+	return drbd_adm_detach(ctx);
 }
 
 int drbd_nl_invalidate_doit(struct sk_buff *skb, struct genl_info *info)
 {
-	return -EOPNOTSUPP;
+	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+
+	if (!compat84_req(ctx)->reply_skb)
+		return 0;
+	return drbd_adm_invalidate(ctx);
 }
 
 int drbd_nl_inval_peer_doit(struct sk_buff *skb, struct genl_info *info)
 {
-	return -EOPNOTSUPP;
+	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+
+	if (!compat84_req(ctx)->reply_skb)
+		return 0;
+	return drbd_adm_invalidate_peer(ctx);
 }
 
 int drbd_nl_pause_sync_doit(struct sk_buff *skb, struct genl_info *info)
 {
-	return -EOPNOTSUPP;
+	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+
+	if (!compat84_req(ctx)->reply_skb)
+		return 0;
+	return drbd_adm_pause_sync(ctx);
 }
 
 int drbd_nl_resume_sync_doit(struct sk_buff *skb, struct genl_info *info)
 {
-	return -EOPNOTSUPP;
+	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+
+	if (!compat84_req(ctx)->reply_skb)
+		return 0;
+	return drbd_adm_resume_sync(ctx);
 }
 
 int drbd_nl_suspend_io_doit(struct sk_buff *skb, struct genl_info *info)
 {
-	return -EOPNOTSUPP;
+	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+
+	if (!compat84_req(ctx)->reply_skb)
+		return 0;
+	return drbd_adm_suspend_io(ctx);
 }
 
 int drbd_nl_resume_io_doit(struct sk_buff *skb, struct genl_info *info)
 {
-	return -EOPNOTSUPP;
+	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+
+	if (!compat84_req(ctx)->reply_skb)
+		return 0;
+	return drbd_adm_resume_io(ctx);
 }
 
 int drbd_nl_outdate_doit(struct sk_buff *skb, struct genl_info *info)
 {
-	return -EOPNOTSUPP;
+	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+
+	if (!compat84_req(ctx)->reply_skb)
+		return 0;
+	return drbd_adm_outdate(ctx);
 }
 
 int drbd_nl_get_timeout_type_doit(struct sk_buff *skb, struct genl_info *info)
@@ -1135,12 +1404,23 @@ int drbd_nl_get_timeout_type_doit(struct sk_buff *skb, struct genl_info *info)
 
 int drbd_nl_down_doit(struct sk_buff *skb, struct genl_info *info)
 {
-	return -EOPNOTSUPP;
+	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+
+	if (!compat84_req(ctx)->reply_skb)
+		return 0;
+	return drbd_adm_down(ctx);
 }
 
 int drbd_nl_chg_disk_opts_doit(struct sk_buff *skb, struct genl_info *info)
 {
-	return -EOPNOTSUPP;
+	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+
+	if (!compat84_req(ctx)->reply_skb)
+		return 0;
+	drbd_adm_disk_opts(ctx);
+	if (ctx->result == NO_ERROR)
+		compat84_apply_disk_conf_stash(ctx);
+	return 0;
 }
 
 int drbd_nl_chg_net_opts_doit(struct sk_buff *skb, struct genl_info *info)

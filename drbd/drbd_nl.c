@@ -7224,7 +7224,23 @@ int drbd_adm_new_resource(struct drbd_adm_ctx *adm_ctx)
 	drbd_set_res_opts_defaults(&res_opts);
 	res_opts.node_id = -1;
 	err = drbd_adm_overlay_res_opts(adm_ctx, &res_opts);
-	if (err) {
+	/*
+	 * -ENOMSG here means the whole RESOURCE_OPTS container was absent
+	 * from the request. Only the v1 (8.4) dialect's plain "new-resource"
+	 * legitimately does that: an 8.4 resource has no node id to send, so
+	 * force_drbd8_compat (set only by the v1 adapter) is the signal that
+	 * this is such a request. Legacy and drbd2 both require RESOURCE_OPTS
+	 * with a node id and must keep rejecting its absence exactly as
+	 * before, so the tolerance is conditional on force_drbd8_compat
+	 * rather than blanket: res_opts.node_id is seeded to the sentinel -1
+	 * just above, which happens to wrap to UINT_MAX (node_id is __u32)
+	 * and so still trips the node_id >= DRBD_NODE_ID_MAX check below for
+	 * legacy/drbd2 even without this guard -- but that is an incidental
+	 * property of the field's type, not a designed guarantee, and must
+	 * not be the only thing standing between an unset node id and a
+	 * created resource.
+	 */
+	if (err && !(err == -ENOMSG && adm_ctx->force_drbd8_compat)) {
 		retcode = ERR_MANDATORY_TAG;
 		drbd_adm_msg_overlay_error(adm_ctx, err);
 		goto out;
@@ -7238,6 +7254,12 @@ int drbd_adm_new_resource(struct drbd_adm_ctx *adm_ctx)
 	if (retcode != NO_ERROR)
 		goto out;
 
+	/*
+	 * Record it as explicit, too: drbd_adm_resource_opts() re-derives
+	 * drbd8_compat_mode from explicit_drbd8_compat once node_id is set.
+	 */
+	if (adm_ctx->force_drbd8_compat)
+		res_opts.explicit_drbd8_compat = true;
 	if (res_opts.explicit_drbd8_compat)
 		res_opts.drbd8_compat_mode = true;
 

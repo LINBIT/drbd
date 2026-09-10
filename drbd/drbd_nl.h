@@ -48,6 +48,13 @@ struct drbd_adm_ctx {
 	const char *resource_name;	/* points into the request; limited lifetime */
 	struct net *net;
 	bool set_defaults;
+	/*
+	 * Set by a dialect that has no attribute to request DRBD 8.4
+	 * compatibility mode explicitly (the version 1 dialect: every
+	 * resource it creates is a DRBD 8.4 resource). Honoured by
+	 * drbd_adm_new_resource() the same way as res_opts.explicit_drbd8_compat.
+	 */
+	bool force_drbd8_compat;
 
 	/* resolved by drbd_adm_ctx_resolve() */
 	struct drbd_device *device;

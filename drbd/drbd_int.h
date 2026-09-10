@@ -1167,6 +1167,19 @@ struct drbd_resource {
 	struct list_head resources;     /* list entry in global resources list */
 	struct drbd_res_opts res_opts;
 	int max_node_id;
+#ifdef CONFIG_DRBD_COMPAT_84
+	/*
+	 * The version 1 dialect's disk_conf carries "fencing", whose DRBD 9
+	 * home is net_conf.fencing_policy: a connection-scoped setting. 8.4's
+	 * normal order is attach, then connect, so a v1 attach or
+	 * disk-options call can send this before any connection exists to
+	 * apply it to. Stashed here in that case, protected by adm_mutex;
+	 * the v1 connect handler applies it once the connection is created
+	 * and clears the flag.
+	 */
+	bool pending_fencing_policy_84_set;
+	enum drbd_fencing_policy pending_fencing_policy_84;
+#endif
 	/*
 	 * For read-copy-update of net_conf and disk_conf and devices,
 	 * connection, peer_devices and paths lists.
@@ -1801,6 +1814,35 @@ struct drbd_device {
 
 	/* things that are stored as / read from meta data on disk */
 	unsigned long flags;
+
+#ifdef CONFIG_DRBD_COMPAT_84
+	/*
+	 * The version 1 dialect's disk_conf carries six resync-tuning
+	 * fields whose DRBD 9 home is this device's single peer device's
+	 * struct drbd_peer_device_conf. 8.4's normal order is attach, then
+	 * connect, so a v1 attach or disk-options call can send these
+	 * before any peer device exists to apply them to. Stashed here in
+	 * that case, protected by resource->adm_mutex, one "was sent" flag
+	 * per field so an unsent field does not overwrite live
+	 * configuration with a stale or zero stash value; the v1 connect
+	 * handler applies them once the peer device is created and clears
+	 * the flags.
+	 */
+	struct {
+		bool has_resync_rate;
+		u32 resync_rate;
+		bool has_c_plan_ahead;
+		u32 c_plan_ahead;
+		bool has_c_delay_target;
+		u32 c_delay_target;
+		bool has_c_fill_target;
+		u32 c_fill_target;
+		bool has_c_max_rate;
+		u32 c_max_rate;
+		bool has_c_min_rate;
+		u32 c_min_rate;
+	} pending_peer_device_conf_84;
+#endif
 
 	/* configured by drbdsetup */
 	struct drbd_backing_dev *ldev; /* enclose accessing code in get_ldev() / put_ldev() */
