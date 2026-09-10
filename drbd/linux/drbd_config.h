@@ -13,7 +13,7 @@ const char *drbd_buildtag(void);
 
 #define REL_VERSION "9.2.20-rc.1"
 #define PRO_VERSION_MIN 118 /* 9.0.26 */
-#define PRO_VERSION_MAX 124
+#define PRO_VERSION_MAX 125
 
 #define PRO_FEATURES (DRBD_FF_TRIM | DRBD_FF_THIN_RESYNC | DRBD_FF_WSAME | DRBD_FF_WZEROES | \
 		      DRBD_FF_RESYNC_DAGTAG | \
@@ -31,6 +31,8 @@ const char *drbd_buildtag(void);
  *	"Rolling" upgrade path for those versions:
  *	first upgrade to 9.0.latest, then connect to 9.1/9.2 or later.
  * 118-PRO_VERSION_MAX: accepted DRBD 9 protocol versions.
+ *   125: P_UUIDS110 carries UUID_FLAG_BITMAP_AUTHORITATIVE, and standing
+ *	out-of-sync bits at equal current UUIDs are reconciled by it.
  *
  * Note that we also reject connections with protocol version 121 and feature
  * DRBD_FF_RESYNC_DAGTAG.
