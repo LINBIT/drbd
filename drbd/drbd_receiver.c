@@ -6151,6 +6151,12 @@ static enum sync_strategy drbd_disk_states_target_strategy(
  *         were set for blocks the other lacks (MDF_PEER_BITMAP_AUTHORITATIVE,
  *         exchanged as UUID_FLAG_BITMAP_AUTHORITATIVE); bits a sync target set
  *         toward an absent peer, or an invalidate left behind, do not count
+ *       and two of the preconditions widen:
+ *         the after-unstable re-handshake on an established connection
+ *         qualifies as well (drbd_resync()), and
+ *         with one side authoritative only that side must be D_UP_TO_DATE;
+ *         the other may be D_OUTDATED or D_CONSISTENT (it lacks the blocks,
+ *         and lifting its mark on NO_SYNC is what would lose the record)
  *     below protocol version 125:
  *         a common lost primary is named (see below)
  *         no stronger signal owns it     (crashed primary / lost quorum)
@@ -6174,18 +6180,17 @@ static void maybe_reconcile_equal_uuid_bitmap(struct drbd_peer_device *peer_devi
 	struct drbd_device *device = peer_device->device;
 	const int node_id = device->resource->res_opts.node_id;
 	bool by_provenance = connection->agreed_pro_version >= 125;
+	bool connecting = connection->cstate[NOW] == C_CONNECTING;
 	bool we_hold, peer_holds;
 	u64 local_uuid_flags;
 
 	if (*strategy != NO_SYNC)
 		return;
-	if (disk_state != D_UP_TO_DATE || peer_disk_state != D_UP_TO_DATE)
-		return;
 	if (!(peer_device->comm_bm_set || peer_device->dirty_bits))
 		return;
 	if (!(connection->agreed_features & DRBD_FF_RECONCILE_RECONNECT))
 		return;
-	if (connection->cstate[NOW] != C_CONNECTING)
+	if (!connecting && !(by_provenance && peer_device->repl_state[NOW] == L_ESTABLISHED))
 		return;
 
 	if (by_provenance) {
@@ -6203,8 +6208,21 @@ static void maybe_reconcile_equal_uuid_bitmap(struct drbd_peer_device *peer_devi
 			(peer_device->uuid_flags & UUID_FLAG_BITMAP_AUTHORITATIVE);
 		if (!we_hold && !peer_holds)
 			return;
+
+		if (we_hold != peer_holds) {
+			enum drbd_disk_state holder = we_hold ? disk_state : peer_disk_state;
+			enum drbd_disk_state other = we_hold ? peer_disk_state : disk_state;
+
+			if (holder != D_UP_TO_DATE || other < D_OUTDATED)
+				return;
+		} else if (disk_state != D_UP_TO_DATE || peer_disk_state != D_UP_TO_DATE) {
+			return;
+		}
 	} else {
 		bool one_sided = !peer_device->comm_bm_set != !peer_device->dirty_bits;
+
+		if (disk_state != D_UP_TO_DATE || peer_disk_state != D_UP_TO_DATE)
+			return;
 
 		/*
 		 * Without the provenance record, equal current UUIDs with
@@ -6269,14 +6287,16 @@ static void maybe_reconcile_equal_uuid_bitmap(struct drbd_peer_device *peer_devi
 		 * The dagtag arm needs the naming in both directions: each node only
 		 * holds the position the peer sent it. A node that named without
 		 * hearing a name, or the reverse, would order by dagtag while its
-		 * peer tie-breaks, and the two could pick the same role.
+		 * peer tie-breaks, and the two could pick the same role. The naming
+		 * belongs to the connect handshake; on an established connection it
+		 * is stale, so only the tie-break is used there.
 		 */
 		int lost_id = connection->reconcile_handshake.lost_node_id;
 		struct drbd_connection *lost = NULL;
 		s64 offset = 0;
 
 		rcu_read_lock();
-		if (connection->reconcile_handshake.sent_lost_node)
+		if (connecting && connection->reconcile_handshake.sent_lost_node)
 			lost = drbd_connection_by_node_id(device->resource, lost_id);
 		if (lost)
 			offset = atomic64_read(&lost->last_dagtag_sector) -
@@ -7559,6 +7579,9 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 	if (reason == DISKLESS_PRIMARY)
 		disk_states_to_strategy(peer_device, peer_disk_state, &strategy,
 					&rule, &peer_node_id);
+	else
+		maybe_reconcile_equal_uuid_bitmap(peer_device, peer_device->comm_state.disk,
+						  peer_disk_state, &strategy, &rule);
 
 	new_repl_state = strategy_to_repl_state(peer_device, peer_role, strategy);
 	if (new_repl_state != L_ESTABLISHED) {
