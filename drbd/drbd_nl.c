@@ -1853,7 +1853,7 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 		 */
 		size = peer_current_size;
 	} else {
-		size = drbd_new_dev_size(device, peer_current_size, u_size, flags);
+		size = drbd_new_dev_size(device, 0, u_size, flags);
 	}
 
 	if (size < prev.effective_size) {
@@ -2025,6 +2025,19 @@ static bool get_max_agreeable_size(struct drbd_device *device, uint64_t *max,
 		if (twopc_reachable_nodes & NODE_MASK(node_id)) {
 			uint64_t size = device->resource->twopc_reply.max_possible_size;
 
+			/* That is the minimum over all of them.  Prefer the
+			 * answer this peer gave us itself, where TWOPC_YES says
+			 * it belongs to this transaction; a relay answers with
+			 * the minimum over the nodes behind it, so neither is
+			 * above what the peer can do.  A cache pinned below a
+			 * peer's own maximum keeps the cluster from growing
+			 * into it: P_SIZES advertises the minimum over these.
+			 */
+			if (peer_device &&
+			    test_bit(TWOPC_YES, &peer_device->connection->flags) &&
+			    peer_device->max_size > size)
+				size = peer_device->max_size;
+
 			dynamic_drbd_dbg(device, "node_id: %u, twopc YES for max_size: %llu\n",
 					node_id, (unsigned long long)size);
 
@@ -2092,7 +2105,7 @@ static bool get_max_agreeable_size(struct drbd_device *device, uint64_t *max,
 /* MUST hold a reference on ldev. */
 sector_t
 drbd_new_dev_size(struct drbd_device *device,
-		sector_t current_size, /* need at least this much */
+		sector_t agreed_max_size, /* with DDSF_2PC: what the reachable nodes agreed to */
 		sector_t user_capped_size, /* want (at most) this much */
 		enum dds_flags flags)
 {
@@ -2111,6 +2124,13 @@ drbd_new_dev_size(struct drbd_device *device,
 
 	all_known_connected = get_max_agreeable_size(device, &p_size,
 		flags & DDSF_2PC ? resource->twopc_reply.reachable_nodes : 0);
+	/* A node the transaction reached through a relay may have no peer
+	 * device here, or a diskless one, so its answer can be missing from
+	 * every cache above.  Take the aggregate as a term of its own, or the
+	 * result could exceed what that node can do.
+	 */
+	if (flags & DDSF_2PC)
+		p_size = min_not_zero(p_size, (uint64_t)agreed_max_size);
 	m_size = drbd_partition_data_capacity(device);
 
 	if (all_known_connected) {
