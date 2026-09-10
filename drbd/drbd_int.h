@@ -621,6 +621,7 @@ enum device_flag {
 	GO_DISKLESS,            /* tell worker to schedule cleanup before detach */
 	MD_SYNC,		/* tell worker to call drbd_md_sync() */
 	MAKE_NEW_CUR_UUID,	/* tell worker to ping peers and eventually write new current uuid */
+	AUTO_GROW,		/* tell worker to ask the cluster to grow into a bigger backend */
 
 	STABLE_RESYNC,		/* One peer_device finished the resync stable! */
 	READ_BALANCE_RR,
@@ -1077,6 +1078,10 @@ struct twopc_reply {
 		struct { /* type == TWOPC_RESIZE */
 			u64 diskful_primary_nodes;
 			u64 max_possible_size;
+			/* reachable_nodes is the union over what the
+			 * participants report, this the intersection.
+			 */
+			u64 common_reachable_nodes;
 		};
 	};
 	unsigned int is_disconnect:1;
@@ -2806,6 +2811,7 @@ int notify_path(struct drbd_connection *connection, struct drbd_path *path,
 void drbd_broadcast_peer_device_state(struct drbd_peer_device *peer_device);
 
 sector_t drbd_local_max_size(struct drbd_device *device);
+void drbd_auto_grow(struct drbd_device *device);
 int drbd_open_ro_count(struct drbd_resource *resource);
 
 void device_to_info(struct device_info *info, struct drbd_device *device);

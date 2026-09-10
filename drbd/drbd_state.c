@@ -4871,6 +4871,15 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 					BM_LOCK_CLEAR | BM_LOCK_BULK,
 					peer_device);
 
+			/* A backing device that grew under DRBD reaches the
+			 * cluster only through a size transaction; see
+			 * drbd_auto_grow().  Ask on the edges that allow one:
+			 * a connection that has settled, and the end of a
+			 * resync, which a transaction has to wait for anyway.
+			 */
+			if (repl_state[OLD] != L_ESTABLISHED && repl_state[NEW] == L_ESTABLISHED)
+				drbd_device_post_work(device, AUTO_GROW);
+
 			/* Disks got bigger while they were detached */
 			if (disk_state[NEW] > D_NEGOTIATING && peer_disk_state[NEW] > D_NEGOTIATING &&
 			    test_and_clear_bit(RESYNC_AFTER_NEG, peer_device->flags)) {
@@ -6157,6 +6166,7 @@ change_cluster_wide_device_size(struct drbd_device *device,
 				sector_t local_max_size,
 				uint64_t new_user_size,
 				enum dds_flags dds_flags,
+				bool require_common_view,
 				struct resize_parms *rs)
 {
 	struct drbd_resource *resource = device->resource;
@@ -6209,6 +6219,7 @@ retry:
 	reply->max_possible_size = local_max_size;
 	reply->reachable_nodes = reach_immediately | NODE_MASK(resource->res_opts.node_id);
 	reply->target_reachable_nodes = reply->reachable_nodes;
+	reply->common_reachable_nodes = reply->reachable_nodes;
 	if (resource->role[NOW] == R_PRIMARY)
 		reply->diskful_primary_nodes = NODE_MASK(resource->res_opts.node_id);
 	rcu_read_unlock();
@@ -6264,6 +6275,21 @@ retry:
 				 (unsigned long long)new_size);
 			commit_it = false;
 			implicit_shrink = true;
+		}
+
+		if (commit_it && require_common_view) {
+			u64 need = reply->reachable_nodes;
+
+			/* A node that can not see the whole cluster derives
+			 * the size again on apply, and one from before that
+			 * took DDSF_2PC there keeps the size it had.
+			 */
+			if ((reply->common_reachable_nodes & need) != need) {
+				drbd_info(device, "Not growing: of 0x%llx only 0x%llx are seen by every node\n",
+					  (unsigned long long)need,
+					  (unsigned long long)reply->common_reachable_nodes);
+				commit_it = false;
+			}
 		}
 
 		if (commit_it) {

@@ -5828,6 +5828,98 @@ sector_t drbd_local_max_size(struct drbd_device *device)
 	return s;
 }
 
+/* Only from a cluster whose diskful members are all connected and quiet, and
+ * only on the lowest node id among them.
+ *
+ * Connected, because with dds_flags = 0 the transaction holds the size at the
+ * last agreed one while a diskful peer is absent anyway.  A peer configured
+ * with "bitmap no" is a client by intent: it agrees to no size and applies
+ * whatever is agreed, so it is not waited for.  A client the grow would leave
+ * without an UpToDate peer still stops it: it answers the prepare through the
+ * one node it is connected to, and the view it reports is short.  Quiet,
+ * because growing rewrites the bitmap a running resync reads, which is why
+ * drbd_adm_resize() refuses as well; that also keeps two grows from
+ * overlapping.  Growing needs no hurry: the next connection, or the end of the
+ * resync, arms this again.
+ *
+ * Lowest node id, so exactly one node starts the transaction: every node that
+ * noticed arms itself, and the others would find the size unchanged and abort.
+ */
+static bool may_start_auto_grow(struct drbd_device *device)
+{
+	struct drbd_resource *resource = device->resource;
+	struct drbd_peer_device *peer_device;
+	bool may = true;
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		/* a client by intent, see above */
+		if (!want_bitmap(peer_device))
+			continue;
+
+		if (peer_device->connection->cstate[NOW] != C_CONNECTED ||
+		    peer_device->repl_state[NOW] != L_ESTABLISHED ||
+		    peer_device->node_id < resource->res_opts.node_id) {
+			may = false;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return may;
+}
+
+/* What a node advertises in P_SIZES is the minimum over the sizes it has
+ * cached for its peers, and what it receives feeds that minimum again, so the
+ * exchange can only ratchet down.  With three or more nodes the peers that
+ * stayed connected keep each other at the size the cluster last agreed on, and
+ * a backing device that grew under DRBD never reaches the cluster.  A size
+ * transaction is immune to it: every participant answers the prepare with its
+ * own drbd_local_max_size(), so no cache takes part in the decision.
+ *
+ * Runs in the worker, armed from after_state_change();
+ * change_cluster_wide_device_size() sleeps.
+ */
+void drbd_auto_grow(struct drbd_device *device)
+{
+	sector_t local_max_size, u_size;
+	enum determine_dev_size dd;
+
+	if (!get_ldev(device))
+		return;
+
+	if (!may_start_auto_grow(device))
+		goto out;
+
+	rcu_read_lock();
+	u_size = rcu_dereference(device->ldev->disk_conf)->disk_size;
+	rcu_read_unlock();
+
+	local_max_size = drbd_local_max_size(device);
+	if (u_size)
+		local_max_size = min(local_max_size, u_size);
+	if (local_max_size <= get_capacity(device->vdisk))
+		goto out;
+
+	drbd_info(device, "Growing to at most %llu KB: the backing device allows more than the device exposes\n",
+		  (unsigned long long)local_max_size >> 1);
+
+	/* dds_flags = 0: a peer this node can not see keeps whatever it
+	 * allowed when the cluster last agreed on a size, so this can never
+	 * settle above what an administrative resize would.  Growing past an
+	 * absent peer stays the explicit --assume-peer-has-space promise,
+	 * which comes with the duty to grow that peer's backend.
+	 *
+	 * require_common_view: commit only what every participant applies.
+	 */
+	dd = change_cluster_wide_device_size(device, local_max_size, u_size, 0, true, NULL);
+	if (dd == DS_2PC_NOT_SUPPORTED)
+		drbd_info(device, "Not growing: a peer is too old for cluster-wide size changes\n");
+	drbd_md_sync_if_dirty(device);
+out:
+	put_ldev(device);
+}
+
 int drbd_nl_resize_doit(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context *adm_ctx = info->user_ptr[0];
@@ -5981,7 +6073,7 @@ int drbd_nl_resize_doit(struct sk_buff *skb, struct genl_info *info)
 		| (rs.no_resync ? DDSF_NO_RESYNC : 0);
 
 	dd = change_cluster_wide_device_size(device, local_max_size, rs.resize_size, ddsf,
-					     change_al_layout ? &rs : NULL);
+					     false, change_al_layout ? &rs : NULL);
 	if (dd == DS_2PC_NOT_SUPPORTED) {
 		traditional_resize = true;
 		dd = drbd_determine_dev_size(device, 0, ddsf, change_al_layout ? &rs : NULL);

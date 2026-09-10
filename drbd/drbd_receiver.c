@@ -12432,6 +12432,8 @@ static int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 				break;
 			case TWOPC_RESIZE:
 				resource->twopc_reply.reachable_nodes |= reachable_nodes;
+				resource->twopc_reply.common_reachable_nodes &=
+					reachable_nodes;
 				resource->twopc_reply.diskful_primary_nodes |=
 					be64_to_cpu(p->diskful_primary_nodes);
 				max_size = be64_to_cpu(p->max_possible_size);

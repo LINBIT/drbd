@@ -3483,6 +3483,8 @@ static void do_device_work(struct drbd_device *device, const unsigned long todo)
 		go_diskless(device);
 	if (test_bit(MAKE_NEW_CUR_UUID, &todo))
 		drbd_gen_obligation_mint_run(device);
+	if (test_bit(AUTO_GROW, &todo))
+		drbd_auto_grow(device);
 }
 
 static void do_peer_device_work(struct drbd_peer_device *peer_device, const unsigned long todo)
@@ -3504,6 +3506,7 @@ static void do_peer_device_work(struct drbd_peer_device *peer_device, const unsi
 	((1UL << GO_DISKLESS)	\
 	|(1UL << MD_SYNC)	\
 	|(1UL << MAKE_NEW_CUR_UUID)\
+	|(1UL << AUTO_GROW)	\
 	)
 
 #define DRBD_PEER_DEVICE_WORK_MASK	\
