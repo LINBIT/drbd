@@ -34,6 +34,7 @@ drbd-headers/uapi/linux/drbd.h
 drbd-headers/linux/drbd_genl_ynl.yaml
 drbd-headers/linux/drbd_nl_gen.c
 drbd-headers/linux/drbd_nl_gen.h
+drbd-headers/linux/drbd_nl_defaults.c
 drbd-headers/linux/drbd_nl_types.h
 drbd-headers/linux/drbd2.yaml
 drbd-headers/linux/drbd2_nl_gen.c
@@ -82,6 +83,7 @@ drbd_kref_debug.h
 drbd_main.c
 drbd_nl.c
 drbd_nl_legacy.c
+drbd_nl_84.c
 drbd_nl_drbd2.c
 drbd_nl.h
 drbd_polymorph_printk.h

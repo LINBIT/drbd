@@ -1595,7 +1595,9 @@ void drbd_nl_legacy_exit(void)
  * The drbd2 family is only built where the kernel has the split generic
  * netlink ops, the big-endian policy types and the formatted extack
  * messages the generated code and the adapter need (see Kbuild.drbd);
- * elsewhere the module serves this family alone.
+ * elsewhere the module serves this family alone. The version 1 dialect
+ * needs a newer kernel than drbd2 does, so this file is always the one
+ * built there.
  */
 int drbd_nl_drbd2_init(void)
 {

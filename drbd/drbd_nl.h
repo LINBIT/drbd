@@ -186,8 +186,18 @@ struct drbd_nl_dialect {
 /* Dialects that receive notifications; registered at module init. */
 int drbd_nl_register_dialect(const struct drbd_nl_dialect *dialect);
 
+/*
+ * The "drbd" family, at version 1 for DRBD 8.4 userland (drbd_nl_84.c),
+ * exists only with CONFIG_DRBD_COMPAT_84. The out-of-tree module can serve
+ * version 2 of it instead (DRBD_NL_FAMILY_V2, see DRBD_PROC_VERSION).
+ */
+#if defined(CONFIG_DRBD_COMPAT_84) || defined(DRBD_NL_FAMILY_V2)
 int drbd_nl_legacy_init(void);
 void drbd_nl_legacy_exit(void);
+#else
+static inline int drbd_nl_legacy_init(void) { return 0; }
+static inline void drbd_nl_legacy_exit(void) { }
+#endif
 
 int drbd_nl_drbd2_init(void);
 void drbd_nl_drbd2_exit(void);

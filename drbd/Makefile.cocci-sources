@@ -40,6 +40,7 @@ sources += drbd_kref_debug.c
 sources += drbd_main.c
 sources += drbd_nl.c
 sources += drbd_nl_legacy.c
+sources += drbd_nl_84.c
 sources += drbd_nl_drbd2.c
 sources += drbd_proc.c
 sources += drbd_receiver.c
@@ -68,6 +69,7 @@ sources += drbd-headers/uapi/linux/drbd_genl.h
 sources += drbd-headers/uapi/linux/drbd_limits.h
 sources += drbd-headers/linux/drbd_nl_gen.c
 sources-ignored += drbd-headers/linux/drbd_nl_gen.h
+sources += drbd-headers/linux/drbd_nl_defaults.c
 sources-ignored += drbd-headers/linux/drbd_nl_types.h
 # only compiled where no compat rule applies; see CONFIG_DRBD_NL_DRBD2
 sources-ignored += drbd-headers/linux/drbd2_nl_gen.c

@@ -32,8 +32,20 @@ BuildRequires: %kernel_module_package_buildreqs
 # rpmbuild --with dkms to build drbd-dkms package
 %bcond_with dkms
 
-# rpmbuild --with compat_84 to include in-kernel compat code for drbd 8.4
+# rpmbuild --with compat_84 for DRBD 8.4 on-disk metadata and the 8.4
+# /proc/drbd rendering. No kernel floor. Does not by itself change which
+# generic netlink family serves drbdsetup; see nl_drbd1 below for that.
 %bcond_with compat_84
+
+# rpmbuild --with nl_drbd1 to additionally serve genuine DRBD 8.4
+# userland (drbdsetup-84/drbdadm-84) over the version 1 "drbd" netlink
+# dialect instead of DRBD 9's own version 2 dialect. Implies compat_84
+# (the dialect is meaningless without 8.4 metadata/proc support) and
+# needs a kernel v6.13 or later. Not for production builds: this must
+# stay an explicit opt-in even on new kernels, or a package silently
+# built with it would stop speaking the v2 dialect that LINSTOR,
+# drbdmon and every modern tool expect.
+%bcond_with nl_drbd1
 
 # rpmbuild --define "ofed_kernel_dir /usr/src/ofa_kernel/x86_64/4.18.0-147.5.1..."
 # to build against an some mlnx-ofa_kernel-devel
@@ -150,7 +162,8 @@ for flavor in %flavors_to_build; do
 	%{?ofed_kernel_dir:OFED_KERNEL_DIR=%{ofed_kernel_dir}} \
 	%{?_ofed_version:OFED_VERSION=%{_ofed_version}} \
 	%{?with_gcov:GCOV_PROFILE=y} \
-	%{?with_compat_84:CONFIG_DRBD_COMPAT_84=y}
+	%{?with_compat_84:CONFIG_DRBD_COMPAT_84=y} \
+	%{?with_nl_drbd1:CONFIG_DRBD_NL_DRBD1=y}
 done
 
 %install
@@ -177,6 +190,7 @@ for flavor in %flavors_to_build ; do
 	%{?_ofed_version:OFED_VERSION=%{_ofed_version}} \
 	%{?with_gcov:GCOV_PROFILE=y} \
 	%{?with_compat_84:CONFIG_DRBD_COMPAT_84=y} \
+	%{?with_nl_drbd1:CONFIG_DRBD_NL_DRBD1=y} \
 	cmd_depmod=:
     kernelrelease=$(cat %{kernel_source $flavor}/include/config/kernel.release || make -s -C %{kernel_source $flavor} kernelrelease)
     mv drbd/build-current/.kernel.config.gz drbd/k-config-$kernelrelease.gz

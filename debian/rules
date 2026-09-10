@@ -51,8 +51,23 @@ ifneq (,$(filter gcov,$(DEB_BUILD_OPTIONS)))
 extra_make_flags = GCOV_PROFILE=y
 endif
 
+# DEB_BUILD_OPTIONS=compat_84 for DRBD 8.4 on-disk metadata and the 8.4
+# /proc/drbd rendering. No kernel floor. Does not by itself change which
+# generic netlink family serves drbdsetup; see nl_drbd1 below for that.
 ifneq (,$(filter compat_84,$(DEB_BUILD_OPTIONS)))
 extra_make_flags += CONFIG_DRBD_COMPAT_84=y
+endif
+
+# DEB_BUILD_OPTIONS=nl_drbd1 to additionally serve genuine DRBD 8.4
+# userland (drbdsetup-84/drbdadm-84) over the version 1 "drbd" netlink
+# dialect instead of DRBD 9's own version 2 dialect. Implies compat_84
+# (the dialect is meaningless without 8.4 metadata/proc support) and
+# needs a kernel v6.13 or later. Not for production builds: this must
+# stay an explicit opt-in even on new kernels, or a package silently
+# built with it would stop speaking the v2 dialect that LINSTOR,
+# drbdmon and every modern tool expect.
+ifneq (,$(filter nl_drbd1,$(DEB_BUILD_OPTIONS)))
+extra_make_flags += CONFIG_DRBD_NL_DRBD1=y
 endif
 
 deb_build_parallel := $(patsubst parallel=%,%,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
