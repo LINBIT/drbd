@@ -6167,7 +6167,7 @@ change_cluster_wide_device_size(struct drbd_device *device,
 	enum drbd_state_rv rv;
 	enum determine_dev_size dd;
 	u64 reach_immediately;
-	bool have_peers, commit_it;
+	bool have_peers, commit_it, implicit_shrink = false;
 	sector_t new_size = 0;
 	int retries = 1;
 
@@ -6251,6 +6251,21 @@ retry:
 						new_user_size, dds_flags | DDSF_2PC);
 		commit_it = new_size != get_capacity(device->vdisk);
 
+		if (commit_it && new_size < get_capacity(device->vdisk) &&
+		    new_size != new_user_size) {
+			/* Nobody asked for a volume this small: some participant
+			 * has less space than the cluster agreed on, and taking
+			 * that as the new size would truncate a volume that may
+			 * be in use.  drbd_new_dev_size() returns a requested
+			 * size when it fits, so this also covers a --size the
+			 * cluster can not serve.  Shrinking stays an explicit --size.
+			 */
+			drbd_err(device, "Not shrinking to %llu sectors: a participant lost space and no --size asked for that\n",
+				 (unsigned long long)new_size);
+			commit_it = false;
+			implicit_shrink = true;
+		}
+
 		if (commit_it) {
 			resource->twopc.resize.new_size = new_size;
 			resource->twopc.resize.diskful_primary_nodes = reply->diskful_primary_nodes;
@@ -6286,6 +6301,8 @@ retry:
 	} else {
 		if (rv == SS_CW_FAILED_BY_PEER)
 			dd = DS_2PC_NOT_SUPPORTED;
+		else if (implicit_shrink)
+			dd = DS_ERROR_SHRINK;
 		else if (rv >= SS_SUCCESS)
 			dd = DS_UNCHANGED;
 		else
