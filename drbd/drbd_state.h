@@ -214,7 +214,7 @@ change_cluster_wide_device_size(struct drbd_device *device,
 				sector_t local_max_size,
 				uint64_t new_user_size,
 				enum dds_flags dds_flags,
-				bool require_common_view,
+				bool automatic,
 				struct resize_parms *rs);
 
 bool drbd_data_accessible(struct drbd_device *device, enum which_state which);
