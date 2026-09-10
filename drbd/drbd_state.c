@@ -6188,6 +6188,7 @@ retry:
 		reply->tid = get_random_u32();
 	while (!reply->tid);
 
+	clear_bit(TWOPC_RECV_SIZES_ERR, &resource->flags);
 	request.tid = reply->tid;
 	request.initiator_node_id = resource->res_opts.node_id;
 	request.target_node_id = -1;
