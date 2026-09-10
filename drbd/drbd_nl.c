@@ -2089,8 +2089,11 @@ static bool get_max_agreeable_size(struct drbd_device *device, uint64_t *max,
 		 * not possible to attach (backend device gone for some
 		 * reason).  But we remember in our meta data if we have ever
 		 * seen a peer disk for this peer.  If we did not ever see a
-		 * peer disk, assume that's intentional. */
-		if (!test_bit(__MDF_PEER_DEVICE_SEEN, &peer_md->flags))
+		 * peer disk, and it is not configured with a bitmap either,
+		 * assume that's intentional.
+		 */
+		if (!test_bit(__MDF_PEER_DEVICE_SEEN, &peer_md->flags) &&
+		    !(peer_device && want_bitmap(peer_device)))
 			continue;
 
 		all_known = false;
