@@ -755,6 +755,19 @@ static void bitmap_slot_authoritative(struct drbd_device *device, int node_id)
 		drbd_md_mark_dirty(device);
 }
 
+/* Record which node's resync set placeholder bits in this slot. They are
+ * retired by that node's P_PEERS_IN_SYNC; while it is reachable, the slot does
+ * not decide a reconcile.
+ */
+static void bitmap_slot_placeholder(struct drbd_device *device, int node_id, int src_node_id)
+{
+	struct drbd_peer_md *peer_md = &device->ldev->md.peers[node_id];
+
+	if (src_node_id < 0 || src_node_id == node_id)
+		return;
+	peer_md->placeholder_src |= NODE_MASK(src_node_id);
+}
+
 static int node_id_by_bitmap_index(struct drbd_device *device, int bitmap_index)
 {
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
@@ -840,7 +853,8 @@ out:
  * are recorded as authoritative.  Returns the number of bits modified.
  */
 static int __drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
-			   unsigned long bits, unsigned long mask, bool authoritative)
+			   unsigned long bits, unsigned long mask, bool authoritative,
+			   int src_node_id)
 {
 	long set_start, set_end, clear_start, clear_end;
 	struct drbd_peer_device *peer_device;
@@ -898,6 +912,8 @@ static int __drbd_set_sync(struct drbd_device *device, sector_t sector, int size
 
 			if (set && authoritative)
 				bitmap_slot_authoritative(device, peer_device->node_id);
+			else if (set)
+				bitmap_slot_placeholder(device, peer_device->node_id, src_node_id);
 			count += set;
 		} else if (clear_start <= clear_end) {
 			count += update_sync_bits(peer_device, clear_start, clear_end, SET_IN_SYNC);
@@ -915,6 +931,8 @@ static int __drbd_set_sync(struct drbd_device *device, sector_t sector, int size
 
 				if (set && authoritative && node_id != -1)
 					bitmap_slot_authoritative(device, node_id);
+				else if (set && node_id != -1)
+					bitmap_slot_placeholder(device, node_id, src_node_id);
 				count += set;
 			} else if (clear_start <= clear_end)
 				count += drbd_bm_clear_bits(device, bitmap_index,
@@ -931,13 +949,66 @@ out:
 int drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
 		  unsigned long bits, unsigned long mask)
 {
-	return __drbd_set_sync(device, sector, size, bits, mask, true);
+	return __drbd_set_sync(device, sector, size, bits, mask, true, -1);
 }
 
 /* A sync target sets every other peer out of sync for each block it receives,
  * without knowing which of them lack it: these bits are not authoritative.
+ * src_node_id names the node whose resync data this is, so the slots know who
+ * can retire the placeholders; -1 where no node can (a local read error).
  */
-int drbd_set_all_out_of_sync(struct drbd_device *device, sector_t sector, int size)
+int drbd_set_all_out_of_sync(struct drbd_device *device, int src_node_id,
+			     sector_t sector, int size)
 {
-	return __drbd_set_sync(device, sector, size, -1, -1, false);
+	return __drbd_set_sync(device, sector, size, -1, -1, false, src_node_id);
+}
+
+/* Do the bits standing toward this peer decide a reconcile at equal current
+ * UUIDs? They do when the setter had a reason to believe the peer lacks the
+ * blocks, and they do when they are placeholders that nothing can retire any
+ * more: their retirement is a P_PEERS_IN_SYNC from the node whose resync set
+ * them, and that node is unreachable.
+ *
+ * The source set is not in the meta data, so after a restart the slot asks the
+ * weaker question -- is there any other peer left that could still sort this
+ * out -- rather than dropping the record, which is the direction that costs
+ * the data.
+ */
+bool drbd_bitmap_slot_decides(struct drbd_peer_device *peer_device)
+{
+	struct drbd_device *device = peer_device->device;
+	struct drbd_peer_device *peer_device_i;
+	struct drbd_peer_md *peer_md;
+	bool retirable = false;
+	u64 may_retire;
+
+	if (!get_ldev(device))
+		return false;
+
+	peer_md = &device->ldev->md.peers[peer_device->node_id];
+	if (test_bit(__MDF_PEER_BITMAP_AUTHORITATIVE, &peer_md->flags)) {
+		put_ldev(device);
+		return true;
+	}
+
+	if (!drbd_bm_total_weight(peer_device)) {
+		put_ldev(device);
+		return false;
+	}
+
+	may_retire = peer_md->placeholder_src;
+	put_ldev(device);
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device_i, device) {
+		if (peer_device_i == peer_device)
+			continue;
+		if (may_retire && !(may_retire & NODE_MASK(peer_device_i->node_id)))
+			continue;
+		if (peer_device_i->connection->cstate[NOW] == C_CONNECTED)
+			retirable = true;
+	}
+	rcu_read_unlock();
+
+	return !retirable;
 }

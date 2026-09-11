@@ -1169,7 +1169,7 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		break;
 
 	case READ_COMPLETED_WITH_ERROR:
-		drbd_set_all_out_of_sync(device, req->i.sector, req->i.size);
+		drbd_set_all_out_of_sync(device, -1, req->i.sector, req->i.size);
 		drbd_report_io_error(device, req);
 		fallthrough;
 	case READ_AHEAD_COMPLETED_WITH_ERROR:

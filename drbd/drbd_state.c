@@ -4522,9 +4522,8 @@ static void drbd_run_resync(struct drbd_peer_device *peer_device, enum drbd_repl
 static void no_resync_connect_bm(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
-	struct drbd_peer_md *peer_md = &device->ldev->md.peers[peer_device->node_id];
 	unsigned long set = drbd_bm_total_weight(peer_device);
-	bool keep = set && test_bit(__MDF_PEER_BITMAP_AUTHORITATIVE, &peer_md->flags);
+	bool keep = set && drbd_bitmap_slot_decides(peer_device);
 
 	/* equal currents are no generation boundary; a bitmap UUID claiming one
 	 * reads as a split brain
