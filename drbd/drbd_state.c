@@ -2691,7 +2691,6 @@ static void sanitize_state(struct drbd_resource *resource)
 			enum drbd_repl_state *repl_state = peer_device->repl_state;
 			enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
 			struct drbd_connection *connection = peer_device->connection;
-			enum drbd_conn_state *cstate = connection->cstate;
 			enum drbd_disk_state min_disk_state, max_disk_state;
 			enum drbd_disk_state min_peer_disk_state, max_peer_disk_state;
 			enum drbd_role *peer_role = connection->peer_role;
@@ -2882,6 +2881,12 @@ static void sanitize_state(struct drbd_resource *resource)
 				*/
 				peer_disk_state[NEW] = D_CONSISTENT;
 			}
+		} /* Finish the state clamping before considering consequences. */
+
+		for_each_peer_device_rcu(peer_device, device) {
+			enum drbd_repl_state *repl_state = peer_device->repl_state;
+			enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
+			enum drbd_conn_state *cstate = peer_device->connection->cstate;
 
 			/*
 			 * Determine whether peer will disable replication due to this transition.
