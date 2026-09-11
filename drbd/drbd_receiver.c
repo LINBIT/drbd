@@ -9763,6 +9763,21 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 			propagate_exposed_uuid(device);
 		}
 	}
+
+	/*
+	 * A peer that finished a resync sends its UUIDs ahead of its state, so
+	 * receive_uuids() saw them while the peer was still Inconsistent and
+	 * did not follow it. Follow it now that it is UpToDate. A peer that
+	 * attaches with UpToDate data of another generation is not followed.
+	 */
+	if (test_bit(UUIDS_RECEIVED, &peer_device->flags) &&
+	    peer_device->repl_state[NOW] >= L_ESTABLISHED &&
+	    device->disk_state[NOW] == D_DISKLESS &&
+	    resource->role[NOW] == R_SECONDARY &&
+	    peer_device->disk_state[NOW] == D_INCONSISTENT &&
+	    peer_state.disk == D_UP_TO_DATE)
+		drbd_uuid_set_exposed(device, peer_device->current_uuid, true);
+
 	if (peer_device->repl_state[NOW] == L_OFF && peer_state.disk == D_DISKLESS && get_ldev(device)) {
 		u64 uuid_flags = 0;
 

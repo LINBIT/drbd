@@ -4265,6 +4265,22 @@ static void send_new_state_to_all_peer_devices(struct drbd_state_change *state_c
 	}
 }
 
+/* Skip peers that did not finish the initial handshake yet. */
+static void send_uuids_to_all_peer_devices(struct drbd_state_change *state_change, int n_device)
+{
+	int n_connection;
+
+	for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
+		struct drbd_peer_device_state_change *peer_device_state_change =
+			&state_change->peer_devices[
+				n_device * state_change->n_connections + n_connection];
+
+		if (peer_device_state_change->disk_state[NEW] != D_UNKNOWN &&
+		    peer_device_state_change->repl_state[NEW] > L_OFF)
+			drbd_send_uuids(peer_device_state_change->peer_device, 0, 0);
+	}
+}
+
 /* This function is supposed to have the same semantics as drbd_device_stable() in drbd_main.c
    A primary is stable since it is authoritative.
    Unstable are neighbors of a primary and resync target nodes.
@@ -4606,16 +4622,33 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			effective_disk_size_determined = true;
 
 		for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
+			enum drbd_repl_state *repl_state = state_change->peer_devices[
+				n_device * state_change->n_connections + n_connection].repl_state;
+
+			if ((repl_state[OLD] == L_SYNC_TARGET ||
+			     repl_state[OLD] == L_PAUSED_SYNC_T) &&
+			    repl_state[NEW] == L_ESTABLISHED)
+				resync_finished = true;
+		}
+
+		/*
+		 * In case we finished a resync as resync-target update all neighbors
+		 * about having a bitmap_uuid of 0 towards the previous sync-source.
+		 * That needs to go out before sending the new disk state
+		 * to avoid a race where the other node might downgrade our disk
+		 * state due to old UUID values. The loop below sends that state to
+		 * all peers as soon as it reaches the former sync source.
+		 */
+		if (resync_finished)
+			send_uuids_to_all_peer_devices(state_change, n_device);
+
+		for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
 			struct drbd_peer_device_state_change *peer_device_state_change =
 				&state_change->peer_devices[
 					n_device * state_change->n_connections + n_connection];
 			struct drbd_peer_device *peer_device = peer_device_state_change->peer_device;
 			enum drbd_disk_state *peer_disk_state = peer_device_state_change->disk_state;
 			enum drbd_repl_state *repl_state = peer_device_state_change->repl_state;
-
-			if ((repl_state[OLD] == L_SYNC_TARGET || repl_state[OLD] == L_PAUSED_SYNC_T) &&
-			    repl_state[NEW] == L_ESTABLISHED)
-				resync_finished = true;
 
 			/* Writes withheld from acknowledgment waited for this
 			 * resync; no answer settles them once it is gone.
@@ -4670,20 +4703,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				peer_device_state_change->resync_susp_max_parallel;
 			union drbd_state new_state =
 				state_change_word(state_change, n_device, n_connection, NEW);
-			bool send_uuids, send_state = false;
-
-			/* In case we finished a resync as resync-target update all neighbors
-			 * about having a bitmap_uuid of 0 towards the previous sync-source.
-			 * That needs to go out before sending the new disk state
-			 * to avoid a race where the other node might downgrade our disk
-			 * state due to old UUID values.
-			 *
-			 * Also check the replication state to ensure that we
-			 * do not send these extra UUIDs before the initial
-			 * handshake. */
-			send_uuids = resync_finished &&
-				peer_disk_state[NEW] != D_UNKNOWN &&
-				repl_state[NEW] > L_OFF;
+			bool send_uuids = false, send_state = false;
 
 			/* Send UUIDs again if they changed while establishing the connection */
 			if (repl_state[OLD] == L_OFF && repl_state[NEW] > L_OFF &&
