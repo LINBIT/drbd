@@ -3093,7 +3093,7 @@ void drbd_check_all_resync_done(struct drbd_resource *resource)
 static void drbd_determine_flush_pending(struct drbd_resource *resource)
 {
 	struct drbd_device *device;
-	struct drbd_connection *primary_connection;
+	struct drbd_connection *flush_connection;
 	struct drbd_connection *up_to_date_connection;
 	int vnr;
 	bool any_flush_bits_cleared = false;
@@ -3101,14 +3101,14 @@ static void drbd_determine_flush_pending(struct drbd_resource *resource)
 
 	/* Clear any bits if we no longer expect or require a flush ack */
 	spin_lock(&resource->initiator_flush_lock);
-	for_each_connection(primary_connection, resource) {
-		u64 *pending_flush_mask = &primary_connection->pending_flush_mask;
+	for_each_connection(flush_connection, resource) {
+		u64 *pending_flush_mask = &flush_connection->pending_flush_mask;
 
 		/*
 		 * Clear bits if we no longer expect or require a flush ack due
-		 * to loss of connection to the Primary peer.
+		 * to loss of connection to the flushed peer.
 		 */
-		if (primary_connection->cstate[NEW] != C_CONNECTED) {
+		if (flush_connection->cstate[NEW] != C_CONNECTED) {
 			if (*pending_flush_mask) {
 				any_flush_bits_cleared = true;
 				*pending_flush_mask = 0;
@@ -3124,7 +3124,8 @@ static void drbd_determine_flush_pending(struct drbd_resource *resource)
 		for_each_connection(up_to_date_connection, resource) {
 			u64 up_to_date_mask = NODE_MASK(up_to_date_connection->peer_node_id);
 
-			if (drbd_any_peer_device_up_to_date(up_to_date_connection))
+			if (up_to_date_connection == flush_connection ||
+			    drbd_any_peer_device_up_to_date(up_to_date_connection))
 				continue;
 
 			if (*pending_flush_mask & up_to_date_mask) {
@@ -3157,14 +3158,27 @@ static void drbd_determine_flush_pending(struct drbd_resource *resource)
 	spin_lock(&resource->initiator_flush_lock);
 	resource->current_flush_sequence++;
 
-	for_each_connection(primary_connection, resource) {
-		primary_connection->pending_flush_mask = 0;
+	for_each_connection(flush_connection, resource) {
+		flush_connection->pending_flush_mask = 0;
 
-		if (primary_connection->peer_role[NEW] != R_PRIMARY)
+		if (flush_connection->cstate[NEW] != C_CONNECTED)
 			continue;
 
-		if (primary_connection->agreed_pro_version < 123)
+		if (flush_connection->agreed_pro_version < 123)
 			continue;
+
+		/*
+		 * A Secondary owes only its own answer. It shows that the
+		 * peer processed what we sent it ahead of the flush on the
+		 * same stream, so it knows we are a sync target and a later
+		 * promotion replicates to us. Its other peers may not be
+		 * connected to it, so their answers may never come.
+		 */
+		if (flush_connection->peer_role[NEW] != R_PRIMARY) {
+			flush_connection->pending_flush_mask =
+				NODE_MASK(flush_connection->peer_node_id);
+			continue;
+		}
 
 		for_each_connection(up_to_date_connection, resource) {
 			u64 up_to_date_mask = NODE_MASK(up_to_date_connection->peer_node_id);
@@ -3175,7 +3189,7 @@ static void drbd_determine_flush_pending(struct drbd_resource *resource)
 			if (up_to_date_connection->agreed_pro_version < 123)
 				continue;
 
-			primary_connection->pending_flush_mask |= up_to_date_mask;
+			flush_connection->pending_flush_mask |= up_to_date_mask;
 		}
 	}
 	spin_unlock(&resource->initiator_flush_lock);
@@ -5137,7 +5151,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		bool *susp_fen = connection_state_change->susp_fen;
 		enum drbd_fencing_policy fencing_policy;
 
-		if (connection_state_change->peer_role[NEW] == R_PRIMARY && send_flush_requests &&
+		if (cstate[NEW] == C_CONNECTED && send_flush_requests &&
 				connection->agreed_pro_version >= 123) {
 			u64 current_flush_sequence;
 
