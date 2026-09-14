@@ -4654,6 +4654,38 @@ static void drbd_run_resync(struct drbd_peer_device *peer_device, enum drbd_repl
 }
 
 
+/* A resync-free connect concluded data identity from equal current UUIDs; bits
+ * set for blocks the peer lacks contradict that, so keep them for the next
+ * connect to repair (maybe_reconcile_equal_uuid_bitmap()).
+ */
+static void no_resync_connect_bm(struct drbd_peer_device *peer_device)
+{
+	struct drbd_device *device = peer_device->device;
+	struct drbd_peer_md *peer_md = &device->ldev->md.peers[peer_device->node_id];
+	unsigned long set = drbd_bm_total_weight(peer_device);
+	bool keep = set && test_bit(__MDF_PEER_BITMAP_AUTHORITATIVE, &peer_md->flags);
+
+	/* equal currents are no generation boundary; a bitmap UUID claiming one
+	 * reads as a split brain
+	 */
+	down_write(&device->uuid_sem);
+	drbd_uuid_set_bitmap(peer_device, 0);
+	up_write(&device->uuid_sem);
+
+	if (keep) {
+		drbd_warn(peer_device,
+			  "resync-free connect at equal current UUIDs, %lu bits stay out of sync\n",
+			  set);
+		drbd_print_uuids(peer_device, "cleared bm UUID, kept bitmap");
+		return;
+	}
+
+	drbd_print_uuids(peer_device, "cleared bm UUID and bitmap");
+	drbd_bitmap_io_from_worker(device, &drbd_bmio_clear_one_peer,
+				   "clearing bm one peer", BM_LOCK_CLEAR | BM_LOCK_BULK,
+				   peer_device);
+}
+
 /*
  * Perform after state change actions that may sleep.
  */
@@ -4758,13 +4790,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				u64 my_current_uuid = drbd_current_uuid(device) & ~UUID_PRIMARY;
 
 				if (peer_current_uuid == my_current_uuid && get_ldev(device)) {
-					down_write(&device->uuid_sem);
-					drbd_uuid_set_bitmap(peer_device, 0);
-					up_write(&device->uuid_sem);
-					drbd_print_uuids(peer_device, "cleared bm UUID and bitmap");
-					drbd_bitmap_io_from_worker(device, &drbd_bmio_clear_one_peer,
-								   "clearing bm one peer", BM_LOCK_CLEAR | BM_LOCK_BULK,
-								   peer_device);
+					no_resync_connect_bm(peer_device);
 					put_ldev(device);
 				}
 			}
