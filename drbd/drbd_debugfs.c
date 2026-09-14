@@ -1284,10 +1284,12 @@ static int device_data_gen_id_show(struct seq_file *m, void *ignored)
 		 * copy; without the flag it is a convergence bitmap being cleared
 		 * by a resync.
 		 */
-		seq_printf(m, "%s[%d]0x%016llX%s", i++ ? " " : "", node_id,
+		seq_printf(m, "%s[%d]0x%016llX%s%s", i++ ? " " : "", node_id,
 			   peer_md->bitmap_uuid,
 			   test_bit(__MDF_PEER_DIVERGENCE_BITMAP, &peer_md->flags) ?
-				   "(DIVERGENCE_BITMAP)" : "");
+				   "(DIVERGENCE_BITMAP)" : "",
+			   test_bit(__MDF_PEER_BITMAP_AUTHORITATIVE, &peer_md->flags) ?
+				   "(BITMAP_AUTHORITATIVE)" : "");
 	}
 	seq_putc(m, '\n');
 

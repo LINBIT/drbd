@@ -531,7 +531,7 @@ static inline unsigned long find_next_zero_bit_le32(const __le32 *addr)
 
 
 static __always_inline unsigned long
-____bm_op(struct drbd_bitmap *bitmap, unsigned int bitmap_index,
+____bm_op(struct drbd_device *device, struct drbd_bitmap *bitmap, unsigned int bitmap_index,
 	  unsigned long start, unsigned long end,
 	  enum bitmap_operations op, __le32 *buffer)
 {
@@ -746,8 +746,11 @@ ____bm_op(struct drbd_bitmap *bitmap, unsigned int bitmap_index,
 	}
 	switch (op) {
 	case BM_OP_CLEAR:
-		if (total)
+		if (total) {
 			bitmap->bm_set[bitmap_index] -= total;
+			if (bitmap->bm_set[bitmap_index] == 0)
+				drbd_md_slot_emptied(device, bitmap_index);
+		}
 		break;
 	case BM_OP_SET:
 	case BM_OP_MERGE:
@@ -799,7 +802,7 @@ __bm_op(struct drbd_device *device, struct drbd_bitmap *bitmap, unsigned int bit
 			break;
 		}
 	}
-	return ____bm_op(bitmap, bitmap_index, start, end, op, buffer);
+	return ____bm_op(device, bitmap, bitmap_index, start, end, op, buffer);
 }
 
 static __always_inline unsigned long
@@ -835,16 +838,16 @@ bm_op(struct drbd_device *device, struct drbd_bitmap *bitmap, unsigned int bitma
 #endif
 
 #ifdef BITMAP_DEBUG
-#define ___bm_op(bitmap, bitmap_index, start, end, op, buffer) \
+#define ___bm_op(device, bitmap, bitmap_index, start, end, op, buffer) \
 	({ unsigned long ret; \
 	   pr_info("%s: ___bm_op(..., %u, %lu, %lu, %u, %p)\n", \
 		     __func__, bitmap_index, start, end, op, buffer); \
-	   ret = ____bm_op(bitmap, bitmap_index, start, end, op, buffer); \
+	   ret = ____bm_op(device, bitmap, bitmap_index, start, end, op, buffer); \
 	   pr_info("= %lu\n", ret); \
 	   ret; })
 #else
-#define ___bm_op(bitmap, bitmap_index, start, end, op, buffer) \
-	____bm_op(bitmap, bitmap_index, start, end, op, buffer)
+#define ___bm_op(device, bitmap, bitmap_index, start, end, op, buffer) \
+	____bm_op(device, bitmap, bitmap_index, start, end, op, buffer)
 #endif
 
 /* you better not modify the bitmap while this is running,
@@ -859,12 +862,14 @@ static void bm_count_bits(struct drbd_device *device, struct drbd_bitmap *bitmap
 		while (bit < bitmap->bm_bits) {
 			unsigned long last_bit = last_bit_on_page(bitmap, bitmap_index, bit);
 
-			bits_set += ___bm_op(bitmap, bitmap_index, bit, last_bit,
+			bits_set += ___bm_op(device, bitmap, bitmap_index, bit, last_bit,
 					     BM_OP_COUNT, NULL);
 			bit = last_bit + 1;
 			cond_resched();
 		}
 		bitmap->bm_set[bitmap_index] = bits_set;
+		if (bits_set == 0)
+			drbd_md_slot_emptied(device, bitmap_index);
 	}
 }
 
@@ -1705,15 +1710,15 @@ unsigned long drbd_bm_find_next(struct drbd_peer_device *peer_device, unsigned l
 unsigned long _drbd_bm_find_next(struct drbd_peer_device *peer_device, unsigned long start)
 {
 	/* WARN_ON(!(device->b->bm_flags & BM_LOCK_SET)); */
-	return ____bm_op(peer_device->device->bitmap, peer_device->bitmap_index, start, -1UL,
-		    BM_OP_FIND_BIT, NULL);
+	return ____bm_op(peer_device->device, peer_device->device->bitmap,
+		    peer_device->bitmap_index, start, -1UL, BM_OP_FIND_BIT, NULL);
 }
 
 unsigned long _drbd_bm_find_next_zero(struct drbd_peer_device *peer_device, unsigned long start)
 {
 	/* WARN_ON(!(device->b->bm_flags & BM_LOCK_SET)); */
-	return ____bm_op(peer_device->device->bitmap, peer_device->bitmap_index, start, -1UL,
-		    BM_OP_FIND_ZERO_BIT, NULL);
+	return ____bm_op(peer_device->device, peer_device->device->bitmap,
+		    peer_device->bitmap_index, start, -1UL, BM_OP_FIND_ZERO_BIT, NULL);
 }
 
 unsigned int drbd_bm_set_bits(struct drbd_device *device, unsigned int bitmap_index,
@@ -1826,6 +1831,8 @@ void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_index, unsi
 		bitmap->bm_set[to_index] += hweight32(data_word);
 	}
 	bm_unmap(bitmap, addr);
+	if (bitmap->bm_set[to_index] == 0)
+		drbd_md_slot_emptied(device, to_index);
 
 	spin_unlock(&bitmap->bm_lock);
 	spin_unlock_irq(&bitmap->bm_all_slots_lock);

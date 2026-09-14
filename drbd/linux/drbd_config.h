@@ -41,6 +41,6 @@ const char *drbd_buildtag(void);
  */
 
 /* Features supported in meta data format. */
-#define DRBD_MD_FEATURES (DRBD_MDFF_DIVERGENCE_BITMAP)
+#define DRBD_MD_FEATURES (DRBD_MDFF_DIVERGENCE_BITMAP | DRBD_MDFF_BITMAP_AUTHORITATIVE)
 
 #endif

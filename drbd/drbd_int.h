@@ -2142,6 +2142,8 @@ void drbd_md_clear_peer_flag(struct drbd_peer_device *peer_device,
 			     enum mdf_peer_flag_bit flag_bit);
 bool drbd_md_test_peer_flag(struct drbd_peer_device *peer_device,
 			    enum mdf_peer_flag_bit flag_bit);
+void drbd_md_slot_emptied(struct drbd_device *device, int bitmap_index);
+void drbd_md_set_bitmaps_authoritative(struct drbd_device *device);
 void drbd_md_mark_dirty(struct drbd_device *device);
 void drbd_queue_bitmap_io(struct drbd_device *device,
 			  int (*io_fn)(struct drbd_device *device,
