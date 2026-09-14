@@ -1510,9 +1510,15 @@ static int dtl_prepare_connect(struct drbd_transport *transport)
 
 	dtl_transport->connected_paths = 0;
 	dtl_transport->err = 0;
-	flush_signals(current);
 	timer_delete_sync(&dtl_transport->control_timer);
-	dtl_transport->err = dtl_set_active(transport, true);
+
+	/* Drops a leftover signal but honours a stop request: with the peer
+	 * gone that is the only exit from dtl_connect()'s wait.
+	 */
+	if (drbd_should_abort_listening(transport))
+		dtl_transport->err = -ERESTARTSYS;
+	else
+		dtl_transport->err = dtl_set_active(transport, true);
 
 	return dtl_transport->err;
 }
