@@ -156,6 +156,13 @@ void drbd_gen_obligation_str(u32 obligation, char *buf, size_t size)
  * whose mint failed keeps it.  Unlike a reason bit it is decisive -- it makes
  * the mint mandatory -- so it must never be inherited by the next obligation.
  *
+ * It is also the one @aux bit that applies without the state moving, and only
+ * out of MINTING: a completion decision taken while the mint executor runs is
+ * a fact about that obligation, and the executor's own exit is what reads the
+ * attribute.  Moving the state there instead would release the obligation
+ * under a running executor, whose exit then no longer matches -- which is why
+ * MINTING is not in GEN_OBL_MATERIALIZE_FROM.
+ *
  * Data generations start rarely, so log every change at info level.
  */
 bool drbd_gen_obligation_transition(struct drbd_device *device, unsigned int from_states,
@@ -181,6 +188,8 @@ bool drbd_gen_obligation_transition(struct drbd_device *device, unsigned int fro
 	if (!moved && (from_states & GEN_OBL_IN(GEN_OBL_NONE)) &&
 	    (state == GEN_OBL_MINTING || state == GEN_OBL_UNCONFIRMED))
 		new |= GEN_OBL_REARM_PENDING;
+	if ((aux & GEN_OBL_MATERIALIZED) && state == GEN_OBL_MINTING)
+		new |= GEN_OBL_MATERIALIZED;
 	if (moved && to == GEN_OBL_DISCHARGED && (new & GEN_OBL_REARM_PENDING)) {
 		new &= ~(GEN_OBL_REARM_PENDING | GEN_OBL_MATERIALIZED);
 		to = GEN_OBL_ARMED;
@@ -256,8 +265,9 @@ static void gen_obligation_unpark(struct drbd_device *device)
  * from that decision on: the obligation is not voidable any more, its mint is
  * mandatory, and no io-error policy on future writes drops it.  A parked
  * obligation materializes as well and leaves the park: the policy governs the
- * writes to come, not the ones that already completed.  Returns whether an
- * obligation took the attribute.
+ * writes to come, not the ones that already completed.  One whose mint is
+ * running takes the attribute where it stands, see
+ * drbd_gen_obligation_transition().  Returns whether the state moved.
  */
 bool drbd_gen_obligation_materialize(struct drbd_device *device)
 {
