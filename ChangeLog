@@ -3,6 +3,17 @@ Latest:
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
 
+9.2.20-rc.3 (api:genl2/proto:86-101,118-125/transport:21)
+--------
+ * Fix two nodes ending UpToDate with different data after a reconnect
+   with equal current UUIDs and out-of-sync bits standing: such bits now
+   survive a resync-free connect and drive a reconciliation resync
+ * Fix divergence around the end of a resync
+ * Fix a node losing its obligation to start a new data generation and
+   ending in a split brain
+ * Fix a number of aspects of online resize
+ * Fix resync throttled to c-min-rate
+
 9.2.20-rc.1 (api:genl2/proto:86-101,118-124/transport:21)
 --------
  * Fix a sync target overwriting acknowledged writes with older resync
