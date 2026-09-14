@@ -2924,6 +2924,12 @@ allocate_bitmap_index(struct drbd_peer_device *peer_device,
 	peer_md->bitmap_index = bitmap_index;
 	peer_device->bitmap_index = bitmap_index;
 	set_bit(__MDF_HAVE_BITMAP, &peer_md->flags);
+	/* The slot comes with the day-0 tracking bits of an unallocated slot,
+	 * or with whatever is on disk; neither says who set them. A record
+	 * this node id kept from an earlier peer does not describe them.
+	 */
+	peer_md->placeholder_src = 0;
+	peer_md->placeholder_src_complete = false;
 
 	return 0;
 }
@@ -3347,6 +3353,12 @@ static void decode_md_9(struct meta_data_on_disk_9 *on_disk, struct drbd_md *md)
 		peer_md->bitmap_dagtag = be64_to_cpu(on_disk->peers[i].bitmap_dagtag);
 		peer_md->flags = flags;
 		peer_md->bitmap_index = bitmap_index;
+		/* The origin of the bits on disk is not on disk. Reading the
+		 * bitmap calls drbd_md_slot_emptied() for every empty slot,
+		 * which is where this becomes true again.
+		 */
+		peer_md->placeholder_src = 0;
+		peer_md->placeholder_src_complete = false;
 	}
 	for (i = 0; i < ARRAY_SIZE(on_disk->history_uuids); i++)
 		md->history_uuids[i] = be64_to_cpu(on_disk->history_uuids[i]);
