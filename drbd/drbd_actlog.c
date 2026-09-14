@@ -969,7 +969,17 @@ int drbd_set_all_out_of_sync(struct drbd_device *device, int src_node_id,
  * more: their retirement is a P_PEERS_IN_SYNC from the node whose resync set
  * them, and that node is unreachable.
  *
- * The source set is not in the meta data, so after a restart the slot asks the
+ * Bits that are neither decide nothing.  A sync target marks its *other*
+ * peers, so a slot toward the only peer that has one never holds placeholders
+ * at all -- unless the record names a peer that was forgotten since, which is
+ * the source gone for good that this is about.  Beyond that, while this node
+ * runs it knows which bits are which:
+ * drbd_md_slot_emptied() drops the record with the last bit, so a slot that
+ * filled up since then is described by its source set alone, and an empty one
+ * says an invalidate or a full sync set these bits.
+ *
+ * That record is not in the meta data, and a newly allocated slot inherits
+ * the day-0 tracking bits without one, so for those bits the slot asks the
  * weaker question -- is there any other peer left that could still sort this
  * out -- rather than dropping the record, which is the direction that costs
  * the data.
@@ -979,7 +989,8 @@ bool drbd_bitmap_slot_decides(struct drbd_peer_device *peer_device)
 	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_device *peer_device_i;
 	struct drbd_peer_md *peer_md;
-	bool retirable = false;
+	bool complete, retirable = false;
+	int node_id, other_slots = 0;
 	u64 may_retire;
 
 	if (!get_ldev(device))
@@ -997,7 +1008,22 @@ bool drbd_bitmap_slot_decides(struct drbd_peer_device *peer_device)
 	}
 
 	may_retire = peer_md->placeholder_src;
+	complete = peer_md->placeholder_src_complete;
+	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+		if (node_id == peer_device->node_id)
+			continue;
+		if (test_bit(__MDF_HAVE_BITMAP, &device->ldev->md.peers[node_id].flags))
+			other_slots++;
+	}
 	put_ldev(device);
+
+	if (!other_slots && !may_retire)
+		return false;
+	if (complete && !may_retire)
+		return false;
+	/* bits of unrecorded origin: any peer may be the one to retire them */
+	if (!complete)
+		may_retire = 0;
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device_i, device) {

@@ -5929,6 +5929,7 @@ static void copy_bitmap(struct drbd_device *device, int from_id, int to_id)
 	else
 		clear_bit(__MDF_PEER_BITMAP_AUTHORITATIVE, &peer_md[to_id].flags);
 	peer_md[to_id].placeholder_src = peer_md[from_id].placeholder_src;
+	peer_md[to_id].placeholder_src_complete = peer_md[from_id].placeholder_src_complete;
 	drbd_bm_unlock(device);
 	drbd_resume_io(device);
 	drbd_md_mark_dirty(device);
@@ -6454,6 +6455,7 @@ void drbd_md_slot_emptied(struct drbd_device *device, int bitmap_index)
 		if (peer_md[node_id].bitmap_index != bitmap_index)
 			continue;
 		peer_md[node_id].placeholder_src = 0;
+		peer_md[node_id].placeholder_src_complete = true;
 		if (test_and_clear_bit(__MDF_PEER_BITMAP_AUTHORITATIVE, &peer_md[node_id].flags))
 			drbd_md_mark_dirty(device);
 	}

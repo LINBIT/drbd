@@ -901,6 +901,12 @@ struct drbd_peer_md {
 	 * is connected, see drbd_bitmap_slot_decides().
 	 */
 	u64 placeholder_src;
+	/* Whether placeholder_src names every bit standing in this slot. False
+	 * for bits that were already in the meta data when the disk was
+	 * attached, or that a slot inherited when it was allocated; their
+	 * origin is not recorded there.
+	 */
+	bool placeholder_src_complete;
 };
 
 struct drbd_md {
