@@ -1453,8 +1453,7 @@ u64 drbd_collect_local_uuid_flags(struct drbd_peer_device *peer_device, u64 *aut
 	if (drbd_device_stable(device, authoritative_mask))
 		uuid_flags |= UUID_FLAG_STABLE;
 	if (peer_device->connection->agreed_pro_version >= 125 &&
-	    test_bit(__MDF_PEER_BITMAP_AUTHORITATIVE,
-		     &device->ldev->md.peers[peer_device->node_id].flags))
+	    drbd_bitmap_slot_decides(peer_device))
 		uuid_flags |= UUID_FLAG_BITMAP_AUTHORITATIVE;
 
 	return uuid_flags;
@@ -5949,6 +5948,7 @@ static void copy_bitmap(struct drbd_device *device, int from_id, int to_id)
 		set_bit(__MDF_PEER_BITMAP_AUTHORITATIVE, &peer_md[to_id].flags);
 	else
 		clear_bit(__MDF_PEER_BITMAP_AUTHORITATIVE, &peer_md[to_id].flags);
+	peer_md[to_id].placeholder_src = peer_md[from_id].placeholder_src;
 	drbd_bm_unlock(device);
 	drbd_resume_io(device);
 	drbd_md_mark_dirty(device);
@@ -6476,6 +6476,7 @@ void drbd_md_slot_emptied(struct drbd_device *device, int bitmap_index)
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
 		if (peer_md[node_id].bitmap_index != bitmap_index)
 			continue;
+		peer_md[node_id].placeholder_src = 0;
 		if (test_and_clear_bit(__MDF_PEER_BITMAP_AUTHORITATIVE, &peer_md[node_id].flags))
 			drbd_md_mark_dirty(device);
 	}

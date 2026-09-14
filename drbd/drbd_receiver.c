@@ -2942,7 +2942,7 @@ static int recv_resync_read(struct drbd_peer_device *peer_device,
 	 * set in sync when the write completes. The sync source will soon
 	 * set other peers in sync with a P_PEERS_IN_SYNC packet.
 	 */
-	drbd_set_all_out_of_sync(device, sector, size);
+	drbd_set_all_out_of_sync(device, peer_device->node_id, sector, size);
 
 	atomic_inc(&connection->backing_ee_cnt);
 	drbd_conflict_submit_resync_request(peer_req);
@@ -10984,7 +10984,7 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 	 * set in sync when the discard completes. The sync source will soon
 	 * set other peers in sync with a P_PEERS_IN_SYNC packet.
 	 */
-	drbd_set_all_out_of_sync(device, sector, size);
+	drbd_set_all_out_of_sync(device, peer_device->node_id, sector, size);
 	drbd_process_rs_discards(peer_device, false);
 	rs_sectors_came_in(peer_device, size);
 

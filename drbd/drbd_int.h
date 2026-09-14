@@ -913,6 +913,12 @@ struct drbd_peer_md {
 	u64 bitmap_dagtag;
 	unsigned long flags; /* enum mdf_peer_flag_bit, atomic bit operations */
 	s32 bitmap_index;
+	/* Nodes whose resync set placeholder bits in this slot; those bits are
+	 * retired by a P_PEERS_IN_SYNC from one of them. Not in the meta data:
+	 * after a restart the slot falls back to asking whether any other peer
+	 * is connected, see drbd_bitmap_slot_decides().
+	 */
+	u64 placeholder_src;
 };
 
 struct drbd_md {
@@ -2772,8 +2778,9 @@ bool drbd_al_complete_io(struct drbd_device *device, struct drbd_interval *i);
 void drbd_advance_rs_marks(struct drbd_peer_device *peer_device,
 			   unsigned long still_to_go);
 bool drbd_lazy_bitmap_update_due(struct drbd_peer_device *peer_device);
-unsigned long drbd_set_all_out_of_sync(struct drbd_device *device, sector_t sector,
-			     int size);
+bool drbd_bitmap_slot_decides(struct drbd_peer_device *peer_device);
+unsigned long drbd_set_all_out_of_sync(struct drbd_device *device, int src_node_id,
+			     sector_t sector, int size);
 unsigned long drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
 		  unsigned long bits, unsigned long mask);
 enum update_sync_bits_mode { RECORD_RS_FAILED, SET_OUT_OF_SYNC, SET_IN_SYNC };
