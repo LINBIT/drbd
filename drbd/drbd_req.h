@@ -255,6 +255,11 @@ enum drbd_req_state_bits {
 	 * barrier ack proves the generation durable.
 	 */
 	__RQ_UNCONF_GEN,
+
+	/* Completed to the application with success.  Read at a connection
+	 * loss, to tell an acknowledged write from one that failed.
+	 */
+	__RQ_COMPLETED_OK,
 };
 #define RQ_NET_PENDING     (1UL << __RQ_NET_PENDING)
 #define RQ_NET_PENDING_OOS (1UL << __RQ_NET_PENDING_OOS)
@@ -290,6 +295,7 @@ enum drbd_req_state_bits {
 #define RQ_POSTPONED	   (1UL << __RQ_POSTPONED)
 #define RQ_COMPLETION_SUSP (1UL << __RQ_COMPLETION_SUSP)
 #define RQ_UNCONF_GEN      (1UL << __RQ_UNCONF_GEN)
+#define RQ_COMPLETED_OK    (1UL << __RQ_COMPLETED_OK)
 
 
 /* these flags go into local_rq_state,
@@ -306,7 +312,8 @@ enum drbd_req_state_bits {
 	 RQ_UNPLUG      |\
 	 RQ_POSTPONED   |\
 	 RQ_COMPLETION_SUSP |\
-	 RQ_UNCONF_GEN)
+	 RQ_UNCONF_GEN  |\
+	 RQ_COMPLETED_OK)
 
 static inline bool drbd_req_is_write(struct drbd_request *req)
 {

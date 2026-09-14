@@ -11423,17 +11423,31 @@ static void drain_resync_activity(struct drbd_connection *connection)
 	rcu_read_unlock();
 }
 
-/* True if the transfer log holds a write that was completed to the application
- * without the lost peer having seen it: a protocol A write (this peer expects
- * neither a receive ack nor a write ack for it) that counts as successful
- * towards it because it was handed to the network.
+/* True if the transfer log holds a write that completed to the application
+ * with success, or is about to, and that the lost peer may lack.
  *
- * Under protocol B and C, RQ_NET_OK means the peer acknowledged the write, so
- * it has the data and nothing diverges towards it.  RQ_NET_DONE alongside it
- * says the same under protocol A: a barrier ack retired the request, or it
- * never carried data at all (an empty flush).
+ * The loss gives up every request of this peer that is not RQ_NET_DONE, and
+ * drbd_req_destroy() then marks the block out of sync towards it.  Whether
+ * that records a divergence worth a generation depends on the completion:
+ *
+ * Completed with success.  Under protocol C, RQ_NET_OK is the peer's write
+ * ack, so the peer holds the data; without it the peer refused the write
+ * (P_NEG_ACK) and lacks it.  Under protocol A and B the ack preceded the
+ * peer's write, so the peer may lack it either way.
+ *
+ * Not completed yet.  Under protocol A the write counts as successful
+ * towards the peer since it was handed to the network, so it completes with
+ * success once the local write ends -- unless the io-error policy is in
+ * effect, which errors every completion.  Under protocol B and C the request
+ * still waits for the peer, and the loss itself decides its completion; that
+ * decision is the settle-round mint of peer_device_disconnected().
+ *
+ * Completed with an error.  Nothing is owed, whatever the local disk holds:
+ * the application was told the write failed, so either resync direction is a
+ * correct recovery, and a generation here would turn a takeover by the peers
+ * into a split brain.
  */
-static bool peer_device_has_acked_unreplicated_write(struct drbd_peer_device *peer_device)
+static bool peer_may_lack_completed_write(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_request *req;
@@ -11442,15 +11456,25 @@ static bool peer_device_has_acked_unreplicated_write(struct drbd_peer_device *pe
 	rcu_read_lock();
 	list_for_each_entry_rcu(req, &device->resource->transfer_log, tl_requests) {
 		unsigned long s = req->net_rq_state[peer_device->node_id];
+		unsigned long l = req->local_rq_state;
 
 		if (req->device != device)
 			continue;
-		if (!(req->local_rq_state & RQ_WRITE))
+		if (!(l & RQ_WRITE))
 			continue;
-		if ((s & (RQ_NET_OK | RQ_NET_DONE)) != RQ_NET_OK)
+		if (!(s & RQ_NET_MASK) || s & RQ_NET_DONE)
 			continue;
-		if (s & (RQ_EXP_RECEIVE_ACK | RQ_EXP_WRITE_ACK))
-			continue;
+		if (req->master_bio) {
+			if (s & (RQ_EXP_RECEIVE_ACK | RQ_EXP_WRITE_ACK))
+				continue;
+			if (!(s & RQ_NET_OK) || device->cached_err_io)
+				continue;
+		} else {
+			if (!(l & RQ_COMPLETED_OK))
+				continue;
+			if ((s & (RQ_EXP_WRITE_ACK | RQ_NET_OK)) == (RQ_EXP_WRITE_ACK | RQ_NET_OK))
+				continue;
+		}
 		found = true;
 		break;
 	}
@@ -11502,21 +11526,25 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 		}
 	}
 
-	/* An acknowledged write cannot be un-acknowledged, and one this peer
-	 * never saw is not resent to it, so the divergence is a fact as soon as
-	 * the loss is noticed.  The obligation materializes and its mint runs
+	/* A successful completion cannot be taken back, and a write this peer
+	 * never wrote is not resent to it, so the divergence is a fact as soon
+	 * as the loss is noticed.  The obligation materializes and its mint runs
 	 * here, with no quorum, data or suspension gate and no settle round:
 	 * the completion decision was taken by the protocol, at ack time.
-	 * Refused, a mint of an earlier obligation is already running and makes
-	 * a generation of its own.  Test the state before walking the transfer
-	 * log: without an obligation to materialize there is nothing to find.
+	 * While a mint of an earlier obligation runs, it only takes the
+	 * attribute; that executor's exit then keeps it armed and mandatory.
+	 * Test the state before walking the transfer log: without an obligation
+	 * to materialize there is nothing to find.
 	 */
-	if ((GEN_OBL_IN(drbd_gen_obligation_state(device)) & GEN_OBL_MATERIALIZE_FROM) &&
-	    peer_device_has_acked_unreplicated_write(peer_device) &&
-	    drbd_gen_obligation_materialize(device) &&
-	    drbd_gen_obligation_mint_start(device)) {
-		drbd_gen_obligation_mint_done(device, drbd_uuid_new_current(device, false));
-		wake_up(&device->misc_wait);
+	if ((GEN_OBL_IN(drbd_gen_obligation_state(device)) &
+	     (GEN_OBL_MATERIALIZE_FROM | GEN_OBL_IN(GEN_OBL_MINTING))) &&
+	    peer_may_lack_completed_write(peer_device)) {
+		drbd_gen_obligation_materialize(device);
+		if (drbd_gen_obligation_mint_start(device)) {
+			drbd_gen_obligation_mint_done(device,
+						      drbd_uuid_new_current(device, false));
+			wake_up(&device->misc_wait);
+		}
 	}
 
 	drbd_md_sync(device);
