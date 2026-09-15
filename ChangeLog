@@ -2,23 +2,11 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.3.4-rc.3 (api:genl2/proto:86-101,118-125/transport:22)
+9.3.4 (api:genl2/proto:86-101,118-125/transport:22)
 --------
  * Fix drbdsetup failing with "Operation not supported" on every command
    that names a peer; a regression of the YNL-generated netlink code in
    9.3.4-rc.1
- * All fixes from 9.2.20-rc.3
-  - Fix two nodes ending UpToDate with different data after a reconnect
-    with equal current UUIDs and out-of-sync bits standing: such bits now
-    survive a resync-free connect and drive a reconciliation resync
-  - Fix divergence around the end of a resync
-  - Fix a node losing its obligation to start a new data generation and
-    ending in a split brain
-  - Fix a number of aspects of online resize
-  - Fix resync throttled to c-min-rate
-
-9.3.4-rc.1 (api:genl2/proto:86-101,118-124/transport:22)
---------
  * Generate the netlink interface code with the upstream YNL generator
    instead of the genl_magic macro system
  * Fix a ProtocolError disconnect loop ("BAD! BarrierAck received with
@@ -35,6 +23,16 @@ Latest:
    peer request's bio allocation fails under memory pressure
  * Hold state_rwlock while walking the transfer log from debugfs
  * All fixes from 9.2.20
+  - Fix a secondary that stayed with the primary ending up Outdated for
+    good after an isolated peer returns: an equal-UUID reconcile is now
+    sourced from the node that has a primary neighbour
+  - Fix two nodes ending UpToDate with different data after a reconnect
+    with equal current UUIDs and out-of-sync bits standing: such bits now
+    survive a resync-free connect and drive a reconciliation resync
+  - Fix divergence around the end of a resync
+  - Fix a node losing its obligation to start a new data generation and
+    ending in a split brain
+  - Fix a number of aspects of online resize
   - Fix a sync target overwriting acknowledged writes with older resync
     data when the sync source lost the diskless primary; such writes are
     now held back or postponed (new feature flag WRITE_POSTPONE) instead
