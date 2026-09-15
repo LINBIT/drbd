@@ -6129,6 +6129,35 @@ static enum sync_strategy drbd_disk_states_target_strategy(
 }
 
 /*
+ * A node that has a primary at its side does not take an equal-UUID reconcile:
+ * the primary keeps its copy current and holds the record of what it is
+ * missing, while the node without one is about to outdate itself at the commit
+ * of this very connect (do_change_cstate(), PH_COMMIT). A resync in that
+ * direction hands that fencing verdict to a node it is not about, because
+ * drbd_resync_finished() gives the target the source's disk state.
+ *
+ * UUID_FLAG_STABLE is "no primary neighbor", and both sides read the same two
+ * values: the flag each of them sent with its UUIDs. At connect the connection
+ * being handshaked is not yet L_ESTABLISHED, so neither side counts the other
+ * as its neighbor -- which is why this is limited to the connect handshake.
+ *
+ * Returns false where both sides are placed alike, leaving the direction to the
+ * caller.
+ */
+static bool primary_neighbor_decides(struct drbd_peer_device *peer_device,
+				     bool connecting, enum sync_strategy *strategy)
+{
+	bool we_stable = peer_device->comm_uuid_flags & UUID_FLAG_STABLE;
+	bool peer_stable = peer_device->uuid_flags & UUID_FLAG_STABLE;
+
+	if (!connecting || we_stable == peer_stable)
+		return false;
+
+	*strategy = we_stable ? SYNC_TARGET_USE_BITMAP : SYNC_SOURCE_USE_BITMAP;
+	return true;
+}
+
+/*
  * Two equal-current-UUID peers can still hold out-of-sync bits toward each
  * other: a write reached one of them and never the other, and no data
  * generation recorded that -- the writer could not mint (a diskless Primary,
@@ -6162,10 +6191,14 @@ static enum sync_strategy drbd_disk_states_target_strategy(
  *         no stronger signal owns it     (crashed primary / lost quorum)
  *
  *     direction:
+ *         one of the two has a primary neighbor -> it is the source
+ *                                   (primary_neighbor_decides(), connect only,
+ *                                   both sides D_UP_TO_DATE)
  *         one side authoritative -> it holds what the other lacks -> it is the
  *                                   source (below 125: the side holding bits)
  *         both sides             -> dagtag toward the common lost primary,
- *                                   else a deterministic node-id tie-break
+ *                                   else the primary neighbor, else a
+ *                                   deterministic node-id tie-break
  *
  * Placed here, after the disk-state resolution, so it never preempts a real
  * resync direction; it only rescues the would-be NO_SYNC-drops-bits case.
@@ -6272,10 +6305,21 @@ static void maybe_reconcile_equal_uuid_bitmap(struct drbd_peer_device *peer_devi
 	set_bit(RECONCILIATION_RESYNC, &peer_device->flags);
 
 	*rule = RULE_RECONCILE_BITMAP;
-	if (we_hold && !peer_holds) {
-		*strategy = SYNC_SOURCE_USE_BITMAP;
-	} else if (peer_holds && !we_hold) {
-		*strategy = SYNC_TARGET_USE_BITMAP;
+	if (we_hold != peer_holds) {
+		/*
+		 * The primary neighbor overrides the holder only between two
+		 * UpToDate copies. From protocol 125 on, the non-holder may be
+		 * Outdated or Consistent here: it lacks the blocks the bits are
+		 * about, and a primary neighbor that could not keep it current
+		 * is no reason to make it the source.
+		 */
+		bool both_up_to_date = disk_state == D_UP_TO_DATE &&
+				       peer_disk_state == D_UP_TO_DATE;
+
+		if (!both_up_to_date ||
+		    !primary_neighbor_decides(peer_device, connecting, strategy))
+			*strategy = we_hold ?
+				SYNC_SOURCE_USE_BITMAP : SYNC_TARGET_USE_BITMAP;
 	} else {
 		/*
 		 * Both sides hold bits. Either direction restores identity, but the
@@ -6306,7 +6350,7 @@ static void maybe_reconcile_equal_uuid_bitmap(struct drbd_peer_device *peer_devi
 		if (offset) {
 			*rule = RULE_RECONCILE_DAGTAG;
 			*strategy = offset > 0 ? SYNC_SOURCE_USE_BITMAP : SYNC_TARGET_USE_BITMAP;
-		} else {
+		} else if (!primary_neighbor_decides(peer_device, connecting, strategy)) {
 			*strategy = node_id < peer_device->node_id ?
 				SYNC_SOURCE_USE_BITMAP : SYNC_TARGET_USE_BITMAP;
 		}
