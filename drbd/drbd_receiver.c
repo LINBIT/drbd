@@ -6259,6 +6259,12 @@ static bool primary_neighbor_decides(struct drbd_peer_device *peer_device,
 	bool we_stable = peer_device->comm_uuid_flags & UUID_FLAG_STABLE;
 	bool peer_stable = peer_device->uuid_flags & UUID_FLAG_STABLE;
 
+	/*
+	 * Both sides must apply the same rule: a peer that does not know it
+	 * orders by bit count, so fall back to that ordering toward it.
+	 */
+	if (peer_device->connection->agreed_pro_version < 125)
+		return false;
 	if (!connecting || we_stable == peer_stable)
 		return false;
 
