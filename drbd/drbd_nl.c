@@ -8469,7 +8469,7 @@ static int drbd_adm_rename_resource(struct sk_buff *skb, struct genl_info *info)
 
 	validate_err = validate_new_resource_name(resource, parms.new_resource_name);
 	if (validate_err != NO_ERROR) {
-		if (ERR_ALREADY_EXISTS) {
+		if (validate_err == ERR_ALREADY_EXISTS) {
 			drbd_msg_sprintf_info(adm_ctx.reply_skb,
 				"Cannot rename to %s: a resource with that name already exists\n",
 				 parms.new_resource_name);
