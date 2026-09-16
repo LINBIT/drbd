@@ -2920,6 +2920,25 @@ int conn_send_twopc_request(struct drbd_connection *connection,
 int drbd_send_peer_ack(struct drbd_connection *connection, u64 mask,
 		       u64 dagtag_sector);
 
+/* DRBD 9 inserted D_DETACHING into enum drbd_disk_state; every state from
+ * D_FAILED up is one higher than in DRBD 8.4, which used D_FAILED for both.
+ */
+static inline void drbd_disk_states_to_84(union drbd_state *s)
+{
+	if (s->disk > D_DETACHING)
+		s->disk--;
+	if (s->pdsk > D_DETACHING)
+		s->pdsk--;
+}
+
+static inline void drbd_disk_states_from_84(union drbd_state *s)
+{
+	if (s->disk >= D_DETACHING)
+		s->disk++;
+	if (s->pdsk >= D_DETACHING)
+		s->pdsk++;
+}
+
 static inline void drbd_thread_stop(struct drbd_thread *thi)
 {
 	_drbd_thread_stop(thi, false, true);
