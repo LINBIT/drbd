@@ -1408,15 +1408,19 @@ static void dtl_connect_work_fn(struct work_struct *work)
 
 			tmp_flow.sock = s;
 			err = dtl_send_first_packet(dtl_transport, &tmp_flow, P_INITIAL_DATA);
-			dtl_setup_socket(dtl_transport, s, &path->flow[DATA_STREAM]);
-
 		} else {
 			struct dtl_flow tmp_flow = path->flow[CONTROL_STREAM];
 
 			tmp_flow.sock = s;
 			err = dtl_send_first_packet(dtl_transport, &tmp_flow, P_INITIAL_META);
-			dtl_setup_socket(dtl_transport, s, &path->flow[CONTROL_STREAM]);
 		}
+		if (err < 0) {
+			tr_warn(transport, "Error sending initial packet: %d\n", err);
+			dtl_socket_free(transport, &s);
+			continue;
+		}
+		dtl_setup_socket(dtl_transport, s,
+				 &path->flow[use_for_data ? DATA_STREAM : CONTROL_STREAM]);
 
 		if (dtl_path_established(transport, path)) {
 			if (dtl_transport->connected_paths == 1 && !use_for_data)
