@@ -4272,7 +4272,8 @@ out_del_list:
 	list_del(&peer_req->recv_order);
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
-	atomic_dec(&connection->active_ee_cnt);
+	if (atomic_dec_and_test(&connection->active_ee_cnt))
+		wake_up(&connection->ee_wait);
 	atomic_sub(interval_to_al_extents(&peer_req->i), &device->wait_for_actlog_ecnt);
 
 out:
