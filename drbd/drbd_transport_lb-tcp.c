@@ -255,8 +255,6 @@ static int _dtl_send(struct dtl_transport *dtl_transport, struct dtl_flow *flow,
 	struct msghdr msg;
 	int rv, sent = 0;
 
-	/* THINK  if (signal_pending) return ... ? */
-
 	iov.iov_base = buf;
 	iov.iov_len  = size;
 
@@ -274,10 +272,6 @@ static int _dtl_send(struct dtl_transport *dtl_transport, struct dtl_flow *flow,
 			if (drbd_stream_send_timed_out(transport, flow->stream_nr))
 				break;
 			continue;
-		}
-		if (rv == -EINTR) {
-			flush_signals(current);
-			rv = 0;
 		}
 		if (rv < 0)
 			break;

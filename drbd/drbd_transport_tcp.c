@@ -243,8 +243,6 @@ static int _dtt_send(struct drbd_tcp_transport *tcp_transport, struct socket *so
 	struct msghdr msg;
 	int rv, sent = 0;
 
-	/* THINK  if (signal_pending) return ... ? */
-
 	iov.iov_base = buf;
 	iov.iov_len  = size;
 
@@ -266,10 +264,6 @@ static int _dtt_send(struct drbd_tcp_transport *tcp_transport, struct socket *so
 				break;
 			else
 				continue;
-		}
-		if (rv == -EINTR) {
-			flush_signals(current);
-			rv = 0;
 		}
 		if (rv < 0)
 			break;
