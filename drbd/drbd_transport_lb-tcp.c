@@ -82,6 +82,11 @@ struct dtl_transport {
 	struct delayed_work connect_work;
 	wait_queue_head_t data_ready;
 	wait_queue_head_t write_space;
+	wait_queue_head_t flow_users_gone;
+	/* Guards which socket each flow publishes, so that dtl_socket_free()'s
+	 * drain cannot meet a socket somebody else published.
+	 */
+	struct mutex sockets_mutex;
 	struct dtl_stream streams[2];
 	struct buffer rbuf;
 	int connected_paths;
@@ -104,6 +109,11 @@ struct dtl_listener {
 
 struct dtl_flow {
 	struct socket *sock;
+	/* One reference while ->sock is published, plus one per thread inside
+	 * an operation on it.  dtl_socket_free() drops the publisher's one and
+	 * waits for the rest before it releases the socket.
+	 */
+	atomic_t users;
 	unsigned int recv_sequence;
 	int recv_bytes; /* The number of bytes to receive before the next dtl_header */
 	struct {
@@ -129,7 +139,7 @@ struct dtl_path {
 
 static int dtl_init(struct drbd_transport *transport);
 static void dtl_free(struct drbd_transport *transport, enum drbd_tr_free_op free_op);
-static void dtl_socket_free(struct drbd_transport *transport, struct socket **sock);
+static void dtl_socket_free(struct drbd_transport *transport, struct dtl_flow *flow);
 static int dtl_prepare_connect(struct drbd_transport *transport);
 static int dtl_connect(struct drbd_transport *transport);
 static void dtl_finish_connect(struct drbd_transport *transport);
@@ -202,12 +212,14 @@ static int dtl_init(struct drbd_transport *transport)
 		container_of(transport, struct dtl_transport, transport);
 
 	spin_lock_init(&dtl_transport->control_recv_lock);
+	mutex_init(&dtl_transport->sockets_mutex);
 
 	dtl_transport->transport.class = &dtl_transport_class;
 	timer_setup(&dtl_transport->control_timer, dtl_control_timer_fn, 0);
 
 	init_waitqueue_head(&dtl_transport->data_ready);
 	init_waitqueue_head(&dtl_transport->write_space);
+	init_waitqueue_head(&dtl_transport->flow_users_gone);
 	INIT_DELAYED_WORK(&dtl_transport->connect_work, dtl_connect_work_fn);
 	dtl_transport->connected_paths = 0;
 	dtl_transport->flags = 0;
@@ -247,10 +259,47 @@ static void dtl_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 	}
 }
 
-static int _dtl_send(struct dtl_transport *dtl_transport, struct dtl_flow *flow,
-		      void *buf, size_t size, unsigned int msg_flags)
+static void dtl_flow_put_sock(struct dtl_transport *dtl_transport, struct dtl_flow *flow)
 {
-	struct socket *sock = flow->sock;
+	if (atomic_dec_and_test(&flow->users))
+		wake_up(&dtl_transport->flow_users_gone);
+}
+
+/**
+ * dtl_flow_get_sock() - Take a reference on the socket a flow publishes
+ * @dtl_transport:	DRBD lb-tcp transport.
+ * @flow:		the flow.
+ *
+ * Returns the socket, or NULL once dtl_socket_free() has unpublished it.  The
+ * socket stays allocated until the caller calls dtl_flow_put_sock().
+ */
+static struct socket *dtl_flow_get_sock(struct dtl_transport *dtl_transport,
+					struct dtl_flow *flow)
+{
+	struct socket *sock;
+
+	if (!atomic_inc_not_zero(&flow->users))
+		return NULL;
+
+	/* dtl_socket_free() clears ->sock before it drops the publisher's
+	 * reference, so a NULL here means the drain has begun.  The acquire
+	 * pairs with the release in dtl_setup_socket().
+	 */
+	sock = smp_load_acquire(&flow->sock);
+	if (!sock) {
+		dtl_flow_put_sock(dtl_transport, flow);
+		return NULL;
+	}
+
+	return sock;
+}
+
+/* The caller holds @sock: either as a user of @flow, or because the socket is
+ * not published in a flow yet.
+ */
+static int _dtl_send(struct dtl_transport *dtl_transport, struct dtl_flow *flow,
+		      struct socket *sock, void *buf, size_t size, unsigned int msg_flags)
+{
 	struct kvec iov;
 	struct msghdr msg;
 	int rv, sent = 0;
@@ -299,6 +348,21 @@ static int dtl_recv_short(struct socket *sock, void *buf, size_t size, int flags
 	return kernel_recvmsg(sock, &msg, &iov, 1, size, msg.msg_flags);
 }
 
+static int dtl_flow_recv(struct dtl_transport *dtl_transport, struct dtl_flow *flow,
+			 void *buf, size_t size, int flags)
+{
+	struct socket *sock = dtl_flow_get_sock(dtl_transport, flow);
+	int err;
+
+	if (!sock)
+		return -ECONNRESET;
+
+	err = dtl_recv_short(sock, buf, size, flags);
+	dtl_flow_put_sock(dtl_transport, flow);
+
+	return err;
+}
+
 static void dtl_data_ready(struct sock *sk)
 {
 	struct dtl_flow *flow = sk->sk_user_data;
@@ -318,26 +382,35 @@ static int dtl_wait_data_cond(struct dtl_transport *dtl_transport,
 	struct dtl_stream *stream = &dtl_transport->streams[st];
 	struct drbd_path *drbd_path;
 	struct dtl_flow *flow;
-	struct tcp_sock *tp;
-	struct sock *sk;
 	int err = -ENOTCONN;
 
 	for_each_path_ref(drbd_path, transport) {
 		struct dtl_path *path = container_of(drbd_path, struct dtl_path, path);
+		bool established, have_header = false;
+		struct socket *sock;
 
 		if (!test_bit(TR_ESTABLISHED, &drbd_path->flags))
 			continue;
 		flow = &path->flow[st];
-		if (!flow->sock)
+
+		sock = dtl_flow_get_sock(dtl_transport, flow);
+		if (!sock)
 			continue;
-		sk = flow->sock->sk;
-		tp = tcp_sk(sk);
-		if (sk->sk_state != TCP_ESTABLISHED)
+		established = sock->sk->sk_state == TCP_ESTABLISHED;
+		if (established) {
+			struct tcp_sock *tp = tcp_sk(sock->sk);
+
+			have_header = READ_ONCE(tp->rcv_nxt) - READ_ONCE(tp->copied_seq) >=
+				sizeof(struct dtl_header);
+		}
+		dtl_flow_put_sock(dtl_transport, flow);
+
+		if (!established)
 			continue;
 		if (flow->recv_sequence == stream->recv_sequence + 1)
 			goto found;
 		err = -EAGAIN;
-		if (READ_ONCE(tp->rcv_nxt) - READ_ONCE(tp->copied_seq) < sizeof(struct dtl_header))
+		if (!have_header)
 			continue;
 		if (flow->recv_bytes)
 			continue;
@@ -369,7 +442,7 @@ static int dtl_select_recv_flow(struct dtl_transport *dtl_transport, enum drbd_s
 	int err;
 
 	if (stream->recv_flow) {
-		if (!stream->recv_flow->sock)
+		if (!READ_ONCE(stream->recv_flow->sock))
 			return -ENOTCONN;
 
 		*flow = stream->recv_flow;
@@ -390,7 +463,7 @@ static int dtl_select_recv_flow(struct dtl_transport *dtl_transport, enum drbd_s
 		if (err != -EBFONT)
 			return err;
 
-		err = dtl_recv_short(rh_fl->sock, &header, sizeof(header), 0);
+		err = dtl_flow_recv(dtl_transport, rh_fl, &header, sizeof(header), 0);
 		if (err < 0)
 			return err;
 		if (err < sizeof(header)) {
@@ -434,17 +507,17 @@ dtl_recv(struct drbd_transport *transport, enum drbd_stream st, void **buf, size
 
 	if (flags & CALLER_BUFFER) {
 		buffer = *buf;
-		err = dtl_recv_short(flow->sock, buffer, size, flags & ~CALLER_BUFFER);
+		err = dtl_flow_recv(dtl_transport, flow, buffer, size, flags & ~CALLER_BUFFER);
 	} else if (flags & GROW_BUFFER) {
 		TR_ASSERT(transport, *buf == dtl_transport->rbuf.base);
 		buffer = dtl_transport->rbuf.pos;
 		TR_ASSERT(transport, (buffer - *buf) + size <= PAGE_SIZE);
 
-		err = dtl_recv_short(flow->sock, buffer, size, flags & ~GROW_BUFFER);
+		err = dtl_flow_recv(dtl_transport, flow, buffer, size, flags & ~GROW_BUFFER);
 	} else {
 		buffer = dtl_transport->rbuf.base;
 
-		err = dtl_recv_short(flow->sock, buffer, size, flags);
+		err = dtl_flow_recv(dtl_transport, flow, buffer, size, flags);
 		if (err > 0)
 			*buf = buffer;
 	}
@@ -470,7 +543,7 @@ _dtl_recv_page(struct dtl_transport *dtl_transport, struct page *page, int size)
 		if (err)
 			goto out;
 
-		err = dtl_recv_short(flow->sock, pos, min(size, flow->recv_bytes), 0);
+		err = dtl_flow_recv(dtl_transport, flow, pos, min(size, flow->recv_bytes), 0);
 		if (err <= 0)
 			goto out;
 		size -= err;
@@ -519,6 +592,8 @@ fail:
 
 static void dtl_stats(struct drbd_transport *transport, struct drbd_transport_stats *stats)
 {
+	struct dtl_transport *dtl_transport =
+		container_of(transport, struct dtl_transport, transport);
 	struct drbd_transport_stats s = {};
 	struct drbd_path *drbd_path;
 
@@ -526,15 +601,17 @@ static void dtl_stats(struct drbd_transport *transport, struct drbd_transport_st
 	list_for_each_entry_rcu(drbd_path, &transport->paths, list) {
 		struct dtl_path *path = container_of(drbd_path, struct dtl_path, path);
 		struct dtl_flow *flow = &path->flow[DATA_STREAM];
+		struct socket *sock = dtl_flow_get_sock(dtl_transport, flow);
 
-		if (flow->sock) {
-			struct sock *sk = flow->sock->sk;
+		if (sock) {
+			struct sock *sk = sock->sk;
 			struct tcp_sock *tp = tcp_sk(sk);
 
 			s.unread_received += tp->rcv_nxt - tp->copied_seq;
 			s.unacked_send += tp->write_seq - tp->snd_una;
 			s.send_buffer_size += sk->sk_sndbuf;
 			s.send_buffer_used += sk->sk_wmem_queued;
+			dtl_flow_put_sock(dtl_transport, flow);
 		}
 	}
 	rcu_read_unlock();
@@ -746,7 +823,8 @@ static int dtl_send_first_packet(struct dtl_transport *dtl_transport,
 	if (test_bit(DTL_LOAD_BALANCE, &dtl_transport->flags)) {
 		struct dtl_header hdr = { .sequence = 0, .bytes = cpu_to_be32(sizeof(h)) };
 
-		err = _dtl_send(dtl_transport, flow, &hdr, sizeof(hdr), msg_flags | MSG_MORE);
+		err = _dtl_send(dtl_transport, flow, flow->sock, &hdr, sizeof(hdr),
+				msg_flags | MSG_MORE);
 		if (err < 0)
 			return err;
 	}
@@ -755,53 +833,70 @@ static int dtl_send_first_packet(struct dtl_transport *dtl_transport,
 	h.command = cpu_to_be16(cmd);
 	h.length = 0;
 
-	err = _dtl_send(dtl_transport, flow, &h, sizeof(h), msg_flags);
+	err = _dtl_send(dtl_transport, flow, flow->sock, &h, sizeof(h), msg_flags);
 
 	return err;
 }
 
 /**
- * dtl_socket_free() - Free the socket
- * @transport:	DRBD transport.
- * @socket:	pointer to the pointer to the socket.
+ * dtl_socket_release() - Shut down and release a socket no flow published
+ * @sock:	the socket.
  */
-static void dtl_socket_free(struct drbd_transport *transport, struct socket **sock)
+static void dtl_socket_release(struct socket *sock)
 {
-	struct socket *s = xchg(sock, NULL);
+	kernel_sock_shutdown(sock, SHUT_RDWR);
+	sock_release(sock);
+}
 
+/**
+ * dtl_socket_free() - Unpublish the socket of a flow and release it
+ * @transport:	DRBD transport.
+ * @flow:	the flow the socket belongs to.
+ *
+ * The caller holds sockets_mutex, so the users this waits for are the users of
+ * the socket it just unpublished.
+ */
+static void dtl_socket_free(struct drbd_transport *transport, struct dtl_flow *flow)
+{
+	struct dtl_transport *dtl_transport =
+		container_of(transport, struct dtl_transport, transport);
+	struct socket *s;
+
+	lockdep_assert_held(&dtl_transport->sockets_mutex);
+	s = xchg(&flow->sock, NULL);
 	if (!s)
 		return;
 
-	synchronize_rcu();
+	/* Unpublish, then drop the reference the flow held.  dtl_flow_get_sock()
+	 * can no longer hand this socket out, so the remaining users are the
+	 * threads that are in one right now, and the shutdown gets them out.
+	 */
+	atomic_dec(&flow->users);
 	kernel_sock_shutdown(s, SHUT_RDWR);
+	wait_event(dtl_transport->flow_users_gone, !atomic_read(&flow->users));
 	sock_release(s);
 }
 
 /**
- * dtl_socket_ok_or_free() - Free the socket if its connection is not okay
+ * dtl_socket_ok_or_free() - Free the socket of a flow if its connection is not okay
  * @transport:	DRBD transport.
- * @socket:	pointer to the pointer to the socket.
+ * @flow:	the flow the socket belongs to.
  */
-static bool dtl_socket_ok_or_free(struct drbd_transport *transport, struct socket **sock)
+static bool dtl_socket_ok_or_free(struct drbd_transport *transport, struct dtl_flow *flow)
 {
-	struct socket *s;
-	bool rv;
+	struct socket *s = flow->sock;
+	bool rv = s && s->sk->sk_state == TCP_ESTABLISHED;
 
-	rcu_read_lock();
-	s = rcu_dereference(*sock);
-	rv = s && s->sk->sk_state == TCP_ESTABLISHED;
-	rcu_read_unlock();
-
-	if (s && !rv)
-		dtl_socket_free(transport, sock);
+	if (!rv)
+		dtl_socket_free(transport, flow);
 
 	return rv;
 }
 
 static bool _dtl_path_established(struct drbd_transport *transport, struct dtl_path *path)
 {
-	return	dtl_socket_ok_or_free(transport, &path->flow[DATA_STREAM].sock) &&
-		dtl_socket_ok_or_free(transport, &path->flow[CONTROL_STREAM].sock);
+	return	dtl_socket_ok_or_free(transport, &path->flow[DATA_STREAM]) &&
+		dtl_socket_ok_or_free(transport, &path->flow[CONTROL_STREAM]);
 }
 
 static bool dtl_deactivate_other_paths(struct dtl_path *path)
@@ -842,14 +937,15 @@ static bool dtl_path_established(struct drbd_transport *transport, struct dtl_pa
 	rcu_read_unlock();
 	schedule_timeout_interruptible(timeout);
 
+	mutex_lock(&dtl_transport->sockets_mutex);
 	established = _dtl_path_established(transport, path);
 
 	if (established && !lb) {
 		established = dtl_deactivate_other_paths(path);
 
 		if (!established) {
-			dtl_socket_free(transport, &path->flow[DATA_STREAM].sock);
-			dtl_socket_free(transport, &path->flow[CONTROL_STREAM].sock);
+			dtl_socket_free(transport, &path->flow[DATA_STREAM]);
+			dtl_socket_free(transport, &path->flow[CONTROL_STREAM]);
 		}
 	}
 
@@ -877,6 +973,7 @@ static bool dtl_path_established(struct drbd_transport *transport, struct dtl_pa
 		dtl_set_socket_callbacks(dtl_transport, &path->flow[CONTROL_STREAM]);
 		drbd_path_event(transport, drbd_path);
 	}
+	mutex_unlock(&dtl_transport->sockets_mutex);
 
 	return established;
 }
@@ -931,30 +1028,37 @@ static int dtl_receive_first_packet(struct dtl_transport *dtl_transport, struct 
 	return be16_to_cpu(header.command);
 }
 
-static struct dtl_flow *dtl_control_next_flow_in_seq(struct dtl_transport *dtl_transport)
+/* On success the caller owns a reference on the returned flow's socket. */
+static struct dtl_flow *dtl_control_next_flow_in_seq(struct dtl_transport *dtl_transport,
+						     struct socket **sockp)
 {
 	struct dtl_stream *stream = &dtl_transport->streams[CONTROL_STREAM];
 	struct drbd_transport *transport = &dtl_transport->transport;
 	struct drbd_path *drbd_path;
+	struct socket *sock = NULL;
 	struct dtl_flow *flow;
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(drbd_path, &transport->paths, list) {
 		struct dtl_path *path = container_of(drbd_path, struct dtl_path, path);
+		struct tcp_sock *tp;
 
 		flow = &path->flow[CONTROL_STREAM];
-		if (flow->sock &&
-		    flow->recv_sequence == stream->recv_sequence + 1 && flow->recv_bytes > 0) {
-			struct sock *sk = flow->sock->sk;
-			struct tcp_sock *tp = tcp_sk(sk);
-
-			if (READ_ONCE(tp->rcv_nxt) - READ_ONCE(tp->copied_seq))
-				goto found;
-		}
+		if (flow->recv_sequence != stream->recv_sequence + 1 || flow->recv_bytes <= 0)
+			continue;
+		sock = dtl_flow_get_sock(dtl_transport, flow);
+		if (!sock)
+			continue;
+		tp = tcp_sk(sock->sk);
+		if (READ_ONCE(tp->rcv_nxt) - READ_ONCE(tp->copied_seq))
+			goto found;
+		dtl_flow_put_sock(dtl_transport, flow);
+		sock = NULL;
 	}
 	flow = NULL;
 found:
 	rcu_read_unlock();
+	*sockp = sock;
 	return flow;
 }
 
@@ -1037,6 +1141,7 @@ static void dtl_control_data_ready(struct sock *sk)
 	struct dtl_path *path = container_of(flow, struct dtl_path, flow[flow->stream_nr]);
 	struct dtl_transport *dtl_transport =
 		container_of(path->path.transport, struct dtl_transport, transport);
+	struct socket *sock;
 
 	read_descriptor_t rd_desc = {
 		.count = 1,
@@ -1048,10 +1153,10 @@ static void dtl_control_data_ready(struct sock *sk)
 	tcp_read_sock(sk, &rd_desc, dtl_control_tcp_input);
 
 	/* in case another flow became the next in sequence */
-	while ((flow = dtl_control_next_flow_in_seq(dtl_transport))) {
-		sk = flow->sock->sk;
+	while ((flow = dtl_control_next_flow_in_seq(dtl_transport, &sock))) {
 		rd_desc.arg.data = flow;
-		tcp_read_sock(sk, &rd_desc, dtl_control_tcp_input);
+		tcp_read_sock(sock->sk, &rd_desc, dtl_control_tcp_input);
+		dtl_flow_put_sock(dtl_transport, flow);
 	}
 	spin_unlock_bh(&dtl_transport->control_recv_lock);
 }
@@ -1195,6 +1300,7 @@ static void dtl_setup_socket(struct dtl_transport *dtl_transport, struct socket 
 	struct net_conf *nc;
 	long timeout = HZ;
 
+	lockdep_assert_held(&dtl_transport->sockets_mutex);
 	sock->sk->sk_reuse = SK_CAN_REUSE; /* SO_REUSEADDR */
 	/* We are a block device, we are in the write-out path,
 	 * we may need memory to facilitate memory reclaim
@@ -1223,7 +1329,12 @@ static void dtl_setup_socket(struct dtl_transport *dtl_transport, struct socket 
 		if (drbd_keepintvl)
 			tcp_sock_set_keepintvl(sock->sk, drbd_keepintvl);
 	}
-	flow->sock = sock;
+	/* The reference the flow itself holds; dtl_socket_free() drops it. */
+	atomic_set(&flow->users, 1);
+	/* Pairs with the acquire in dtl_flow_get_sock(): a thread that gets
+	 * this socket sees the setup above.
+	 */
+	smp_store_release(&flow->sock, sock);
 }
 
 static void dtl_set_socket_callbacks(struct dtl_transport *dtl_transport, struct dtl_flow *flow)
@@ -1257,28 +1368,30 @@ static void dtl_do_first_packet(struct dtl_transport *dtl_transport, struct dtl_
 
 	fp = dtl_receive_first_packet(dtl_transport, path, s);
 
-	dtl_socket_ok_or_free(transport, &path->flow[DATA_STREAM].sock);
-	dtl_socket_ok_or_free(transport, &path->flow[CONTROL_STREAM].sock);
+	mutex_lock(&dtl_transport->sockets_mutex);
+	dtl_socket_ok_or_free(transport, &path->flow[DATA_STREAM]);
+	dtl_socket_ok_or_free(transport, &path->flow[CONTROL_STREAM]);
 
 	switch (fp) {
 	case P_INITIAL_DATA:
 		if (path->flow[DATA_STREAM].sock)
 			tr_warn(transport, "initial packet S crossed\n");
-		dtl_socket_free(transport, &path->flow[DATA_STREAM].sock);
+		dtl_socket_free(transport, &path->flow[DATA_STREAM]);
 		dtl_setup_socket(dtl_transport, s, &path->flow[DATA_STREAM]);
 		break;
 	case P_INITIAL_META:
 		if (path->flow[CONTROL_STREAM].sock)
 			tr_warn(transport, "initial packet M crossed\n");
-		dtl_socket_free(transport, &path->flow[CONTROL_STREAM].sock);
+		dtl_socket_free(transport, &path->flow[CONTROL_STREAM]);
 		dtl_setup_socket(dtl_transport, s, &path->flow[CONTROL_STREAM]);
 		break;
 	default:
+		mutex_unlock(&dtl_transport->sockets_mutex);
 		tr_warn(transport, "Error receiving initial packet. err = %d\n", fp);
-		kernel_sock_shutdown(s, SHUT_RDWR);
-		sock_release(s);
+		dtl_socket_release(s);
 		return;
 	}
+	mutex_unlock(&dtl_transport->sockets_mutex);
 
 	if (dtl_path_established(transport, path)) {
 		if (dtl_transport->connected_paths == 1 && fp == P_INITIAL_META)
@@ -1372,7 +1485,9 @@ static void dtl_connect_work_fn(struct work_struct *work)
 	for_each_path_ref(drbd_path, transport) {
 		struct dtl_path *path = container_of(drbd_path, struct dtl_path, path);
 		struct socket *s = NULL;
-		bool use_for_data;
+		bool use_for_data, established;
+		struct dtl_flow tmp_flow;
+		struct dtl_flow *flow;
 
 		nr_paths++;
 
@@ -1381,7 +1496,10 @@ static void dtl_connect_work_fn(struct work_struct *work)
 			break;
 		}
 
-		if (_dtl_path_established(transport, path))
+		mutex_lock(&dtl_transport->sockets_mutex);
+		established = _dtl_path_established(transport, path);
+		mutex_unlock(&dtl_transport->sockets_mutex);
+		if (established)
 			continue;
 
 		to_connect++;
@@ -1392,8 +1510,9 @@ static void dtl_connect_work_fn(struct work_struct *work)
 			continue;
 		}
 
-		dtl_socket_ok_or_free(transport, &path->flow[DATA_STREAM].sock);
-		dtl_socket_ok_or_free(transport, &path->flow[CONTROL_STREAM].sock);
+		mutex_lock(&dtl_transport->sockets_mutex);
+		dtl_socket_ok_or_free(transport, &path->flow[DATA_STREAM]);
+		dtl_socket_ok_or_free(transport, &path->flow[CONTROL_STREAM]);
 
 		if (!path->flow[DATA_STREAM].sock && !path->flow[CONTROL_STREAM].sock) {
 			use_for_data = dtl_path_cmp_addr(path);
@@ -1402,30 +1521,39 @@ static void dtl_connect_work_fn(struct work_struct *work)
 		} else {
 			if (path->flow[CONTROL_STREAM].sock) {
 				tr_err(transport, "Logic error in conn_connect()\n");
-				dtl_socket_free(transport, &s);
+				mutex_unlock(&dtl_transport->sockets_mutex);
+				dtl_socket_release(s);
 				continue;
 			}
 			use_for_data = false;
 		}
 
-		if (use_for_data) {
-			struct dtl_flow tmp_flow = path->flow[DATA_STREAM];
+		flow = &path->flow[use_for_data ? DATA_STREAM : CONTROL_STREAM];
+		tmp_flow = *flow;
+		tmp_flow.sock = s;
+		mutex_unlock(&dtl_transport->sockets_mutex);
 
-			tmp_flow.sock = s;
-			err = dtl_send_first_packet(dtl_transport, &tmp_flow, P_INITIAL_DATA);
-		} else {
-			struct dtl_flow tmp_flow = path->flow[CONTROL_STREAM];
-
-			tmp_flow.sock = s;
-			err = dtl_send_first_packet(dtl_transport, &tmp_flow, P_INITIAL_META);
-		}
+		err = dtl_send_first_packet(dtl_transport, &tmp_flow,
+					    use_for_data ? P_INITIAL_DATA : P_INITIAL_META);
 		if (err < 0) {
 			tr_warn(transport, "Error sending initial packet: %d\n", err);
-			dtl_socket_free(transport, &s);
+			dtl_socket_release(s);
 			continue;
 		}
-		dtl_setup_socket(dtl_transport, s,
-				 &path->flow[use_for_data ? DATA_STREAM : CONTROL_STREAM]);
+
+		/* The accept worker may have published into this flow meanwhile.
+		 * As on the accept side, the socket published later wins.
+		 */
+		mutex_lock(&dtl_transport->sockets_mutex);
+		if (flow->sock) {
+			tr_warn(transport, "initial packet %c crossed, dropping this socket\n",
+				use_for_data ? 'S' : 'M');
+			mutex_unlock(&dtl_transport->sockets_mutex);
+			dtl_socket_release(s);
+			continue;
+		}
+		dtl_setup_socket(dtl_transport, s, flow);
+		mutex_unlock(&dtl_transport->sockets_mutex);
 
 		if (dtl_path_established(transport, path)) {
 			if (dtl_transport->connected_paths == 1 && !use_for_data)
@@ -1485,16 +1613,20 @@ static int dtl_set_active(struct drbd_transport *transport, bool active)
 		enum drbd_stream i;
 		int err;
 
+		mutex_lock(&dtl_transport->sockets_mutex);
 		for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
-			if (path->flow[i].sock && path->flow[i].original_sk_state_change) {
-				write_lock_bh(&path->flow[i].sock->sk->sk_callback_lock);
-				path->flow[i].sock->sk->sk_state_change =
+			struct socket *sock = path->flow[i].sock;
+
+			if (sock && path->flow[i].original_sk_state_change) {
+				write_lock_bh(&sock->sk->sk_callback_lock);
+				sock->sk->sk_state_change =
 					path->flow[i].original_sk_state_change;
-				write_unlock_bh(&path->flow[i].sock->sk->sk_callback_lock);
+				write_unlock_bh(&sock->sk->sk_callback_lock);
 			}
 
-			dtl_socket_free(transport, &path->flow[i].sock);
+			dtl_socket_free(transport, &path->flow[i]);
 		}
+		mutex_unlock(&dtl_transport->sockets_mutex);
 
 		err = dtl_path_adjust_listener(path, active);
 
@@ -1573,16 +1705,18 @@ static int dtl_net_conf_change(struct drbd_transport *transport, struct net_conf
 
 	for_each_path_ref(drbd_path, transport) {
 		struct dtl_path *path = container_of(drbd_path, struct dtl_path, path);
-		struct socket *data_sock = path->flow[DATA_STREAM].sock;
-		struct socket *control_sock = path->flow[CONTROL_STREAM].sock;
+		enum drbd_stream i;
 
-		if (data_sock)
-			dtl_setbufsize(data_sock, new_net_conf->sndbuf_size,
-				       new_net_conf->rcvbuf_size);
+		for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
+			struct dtl_flow *flow = &path->flow[i];
+			struct socket *sock = dtl_flow_get_sock(dtl_transport, flow);
 
-		if (control_sock)
-			dtl_setbufsize(control_sock, new_net_conf->sndbuf_size,
+			if (!sock)
+				continue;
+			dtl_setbufsize(sock, new_net_conf->sndbuf_size,
 				       new_net_conf->rcvbuf_size);
+			dtl_flow_put_sock(dtl_transport, flow);
+		}
 	}
 
 	return 0;
@@ -1598,12 +1732,13 @@ static void dtl_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream 
 	stream->rcvtimeo = timeout;
 	for_each_path_ref(drbd_path, transport) {
 		struct dtl_path *path = container_of(drbd_path, struct dtl_path, path);
-		struct socket *sock = path->flow[st].sock;
+		struct dtl_flow *flow = &path->flow[st];
+		struct socket *sock = dtl_flow_get_sock(dtl_transport, flow);
 
 		if (!sock)
 			continue;
-
 		sock->sk->sk_rcvtimeo = timeout;
+		dtl_flow_put_sock(dtl_transport, flow);
 
 		if (st == CONTROL_STREAM)
 			mod_timer(&dtl_transport->control_timer, jiffies + timeout);
@@ -1621,15 +1756,21 @@ static long dtl_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream 
 
 static bool dtl_stream_ok(struct drbd_transport *transport, enum drbd_stream stream)
 {
+	struct dtl_transport *dtl_transport =
+		container_of(transport, struct dtl_transport, transport);
 	struct drbd_path *drbd_path;
 	bool established = false;
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(drbd_path, &transport->paths, list) {
 		struct dtl_path *path = container_of(drbd_path, struct dtl_path, path);
-		struct socket *sock = path->flow[stream].sock;
+		struct dtl_flow *flow = &path->flow[stream];
+		struct socket *sock = dtl_flow_get_sock(dtl_transport, flow);
 
-		established = sock && sock->sk && sock->sk->sk_state == TCP_ESTABLISHED;
+		if (!sock)
+			continue;
+		established = sock->sk && sock->sk->sk_state == TCP_ESTABLISHED;
+		dtl_flow_put_sock(dtl_transport, flow);
 		if (established)
 			break;
 	}
@@ -1662,27 +1803,33 @@ static int dtl_select_send_flow_cond(struct dtl_transport *dtl_transport,
 	list_for_each_entry_rcu(drbd_path, &transport->paths, list) {
 		struct dtl_path *path = container_of(drbd_path, struct dtl_path, path);
 		struct dtl_flow *flow = &path->flow[st];
+		struct socket *sock;
+		struct sock *sk;
+		int wmem;
 
 		if (!test_bit(TR_ESTABLISHED, &drbd_path->flags))
 			continue;
 
-		if (flow->sock) {
-			struct sock *sk = flow->sock->sk;
-			int wmem = sk_stream_min_wspace(sk);
-			/* int wmem_queued = READ_ONCE(sk->sk_wmem_queued); */
+		sock = dtl_flow_get_sock(dtl_transport, flow);
+		if (!sock)
+			continue;
+		sk = sock->sk;
+		wmem = sk_stream_min_wspace(sk);
+		/* int wmem_queued = READ_ONCE(sk->sk_wmem_queued); */
 
-			if (st == DATA_STREAM) {
-				if (wmem < best_wmem && wmem < sk->sk_sndbuf) {
-					best = flow;
-					best_wmem = wmem;
-				}
-			} else {
-				if (wmem < sk->sk_sndbuf)
-					best = flow;
-				/* Only use first established control flow. */
-				break;
+		if (st == DATA_STREAM) {
+			if (wmem < best_wmem && wmem < sk->sk_sndbuf) {
+				best = flow;
+				best_wmem = wmem;
 			}
+		} else if (wmem < sk->sk_sndbuf) {
+			best = flow;
 		}
+		dtl_flow_put_sock(dtl_transport, flow);
+
+		/* Only use first established control flow. */
+		if (st != DATA_STREAM)
+			break;
 	}
 	empty = list_empty(&transport->paths);
 	rcu_read_unlock();
@@ -1721,12 +1868,13 @@ static int dtl_select_send_flow(struct dtl_transport *dtl_transport,
 	return rem < 0 ? rem : err;
 }
 
+/* The caller holds @sock as a user of @flow. */
 static int _dtl_send_page(struct dtl_transport *dtl_transport, struct dtl_flow *flow,
-			  struct page *page, int offset, size_t size, unsigned int msg_flags)
+			  struct socket *sock, struct page *page, int offset, size_t size,
+			  unsigned int msg_flags)
 {
 	struct msghdr msg = { .msg_flags = msg_flags | MSG_NOSIGNAL | MSG_SPLICE_PAGES };
 	struct drbd_transport *transport = &dtl_transport->transport;
-	struct socket *sock = flow->sock;
 	struct bio_vec bvec;
 	int len = size;
 	int err = -EIO;
@@ -1773,23 +1921,30 @@ static int dtl_send_page(struct drbd_transport *transport, enum drbd_stream stre
 		container_of(transport, struct dtl_transport, transport);
 	struct dtl_header header;
 	struct dtl_flow *flow;
+	struct socket *sock;
 	int err;
 
 	err = dtl_select_send_flow(dtl_transport, stream, &flow);
 	if (err)
 		return err;
 
+	sock = dtl_flow_get_sock(dtl_transport, flow);
+	if (!sock)
+		return -ECONNRESET;
+
 	if (test_bit(DTL_LOAD_BALANCE, &dtl_transport->flags)) {
 		header.sequence = cpu_to_be32(dtl_transport->streams[stream].send_sequence++);
 		header.bytes = cpu_to_be32(size);
 
-		err = _dtl_send(dtl_transport, flow, &header, sizeof(header), msg_flags | MSG_MORE);
+		err = _dtl_send(dtl_transport, flow, sock, &header, sizeof(header),
+				msg_flags | MSG_MORE);
 		if (err < 0)
 			goto out;
 	}
-	err = _dtl_send_page(dtl_transport, flow, page, offset, size, msg_flags);
+	err = _dtl_send_page(dtl_transport, flow, sock, page, offset, size, msg_flags);
 
 out:
+	dtl_flow_put_sock(dtl_transport, flow);
 	return err;
 }
 
@@ -1818,8 +1973,9 @@ static int dtl_bio_chunk_size_available(struct bio *bio, int wmem_available,
 	return chunk;
 }
 
+/* The caller holds @sock as a user of @flow. */
 static int dtl_send_bio_pages(struct dtl_transport *dtl_transport, struct dtl_flow *flow,
-		struct bio *bio, struct bvec_iter *iter, int chunk)
+		struct socket *sock, struct bio *bio, struct bvec_iter *iter, int chunk)
 {
 	struct bio_vec bvec;
 
@@ -1827,7 +1983,7 @@ static int dtl_send_bio_pages(struct dtl_transport *dtl_transport, struct dtl_fl
 		int err;
 
 		bvec = bio_iter_iovec(bio, *iter);
-		err = _dtl_send_page(dtl_transport, flow, bvec.bv_page,
+		err = _dtl_send_page(dtl_transport, flow, sock, bvec.bv_page,
 				bvec.bv_offset, bvec.bv_len,
 				bio_iter_last(bvec, *iter) ? 0 : MSG_MORE);
 		if (err)
@@ -1854,6 +2010,7 @@ static int dtl_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 
 	do {
 		struct dtl_flow *flow;
+		struct socket *sock;
 		struct sock *sk;
 		int chunk, wmem_available;
 
@@ -1861,7 +2018,13 @@ static int dtl_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 		if (err)
 			goto out;
 
-		sk = flow->sock->sk;
+		sock = dtl_flow_get_sock(dtl_transport, flow);
+		if (!sock) {
+			err = -ECONNRESET;
+			goto out;
+		}
+
+		sk = sock->sk;
 		wmem_available = READ_ONCE(sk->sk_sndbuf) - READ_ONCE(sk->sk_wmem_queued);
 
 		if (lb && dtl_exceeds_wmem_available(iter.bi_size, wmem_available)) {
@@ -1870,18 +2033,22 @@ static int dtl_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 			chunk = iter.bi_size;
 		}
 
+		err = 0;
 		if (lb) {
 			struct dtl_header header;
 
 			header.sequence = cpu_to_be32(stream->send_sequence++);
 			header.bytes = cpu_to_be32(chunk);
-			err = _dtl_send(dtl_transport, flow, &header, sizeof(header), MSG_MORE);
-			if (err < 0)
-				goto out;
+			err = _dtl_send(dtl_transport, flow, sock, &header, sizeof(header),
+					MSG_MORE);
 		}
 
-		err = dtl_send_bio_pages(dtl_transport, flow, bio, &iter, chunk);
-		if (err)
+		if (err >= 0)
+			err = dtl_send_bio_pages(dtl_transport, flow, sock, bio, &iter, chunk);
+
+		dtl_flow_put_sock(dtl_transport, flow);
+
+		if (err < 0)
 			goto out;
 	} while (iter.bi_size);
 out:
@@ -1891,11 +2058,14 @@ out:
 static bool dtl_hint(struct drbd_transport *transport, enum drbd_stream stream,
 		enum drbd_tr_hints hint)
 {
+	struct dtl_transport *dtl_transport =
+		container_of(transport, struct dtl_transport, transport);
 	struct drbd_path *drbd_path;
 
 	for_each_path_ref(drbd_path, transport) {
 		struct dtl_path *path = container_of(drbd_path, struct dtl_path, path);
-		struct socket *sock = path->flow[stream].sock;
+		struct dtl_flow *flow = &path->flow[stream];
+		struct socket *sock = dtl_flow_get_sock(dtl_transport, flow);
 
 		if (!sock)
 			continue;
@@ -1918,6 +2088,8 @@ static bool dtl_hint(struct drbd_transport *transport, enum drbd_stream stream,
 			tcp_sock_set_quickack(sock->sk, 2);
 			break;
 		}
+
+		dtl_flow_put_sock(dtl_transport, flow);
 	}
 
 	return true;
@@ -1938,6 +2110,8 @@ static void dtl_debugfs_show_stream(struct seq_file *m, struct socket *sock)
 
 static void dtl_debugfs_show(struct drbd_transport *transport, struct seq_file *m)
 {
+	struct dtl_transport *dtl_transport =
+		container_of(transport, struct dtl_transport, transport);
 	struct drbd_path *drbd_path;
 
 	/* BUMP me if you change the file format/content/presentation */
@@ -1953,12 +2127,14 @@ static void dtl_debugfs_show(struct drbd_transport *transport, struct seq_file *
 
 		for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++) {
 			struct dtl_path *path = container_of(drbd_path, struct dtl_path, path);
-			struct socket *sock = path->flow[i].sock;
+			struct dtl_flow *flow = &path->flow[i];
+			struct socket *sock = dtl_flow_get_sock(dtl_transport, flow);
 
 			if (!sock)
 				continue;
 			seq_printf(m, "%s stream\n", i == DATA_STREAM ? "data" : "control");
 			dtl_debugfs_show_stream(m, sock);
+			dtl_flow_put_sock(dtl_transport, flow);
 		}
 		seq_puts(m, "\n");
 	}
