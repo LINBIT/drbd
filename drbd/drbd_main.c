@@ -667,6 +667,10 @@ int drbd_thread_start(struct drbd_thread *thi)
 			else
 				drbd_err(resource, "Couldn't start thread: %ld\n", PTR_ERR(nt));
 
+			spin_lock_irqsave(&thi->t_lock, flags);
+			thi->t_state = NONE;
+			spin_unlock_irqrestore(&thi->t_lock, flags);
+
 			return false;
 		}
 		spin_lock_irqsave(&thi->t_lock, flags);
