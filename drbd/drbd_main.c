@@ -974,6 +974,9 @@ void *__conn_prepare_command(struct drbd_connection *connection, int size,
 	if (connection->cstate[NOW] < C_CONNECTING)
 		return NULL;
 
+	if (connection->send_buffer[drbd_stream].dead)
+		return NULL;
+
 	if (!transport->class->ops.stream_ok(transport, drbd_stream))
 		return NULL;
 
@@ -1032,6 +1035,9 @@ static int flush_send_buffer(struct drbd_connection *connection, enum drbd_strea
 	unsigned int flags, offset, size;
 	int err;
 
+	if (sbuf->dead)
+		return -EIO;
+
 	size = sbuf->pos - sbuf->unsent + sbuf->allocated_size;
 	if (size == 0)
 		return 0;
@@ -1054,6 +1060,8 @@ static int flush_send_buffer(struct drbd_connection *connection, enum drbd_strea
 		(sbuf->additional_size ? MSG_MORE : 0);
 	offset = sbuf->unsent - (char *)page_address(sbuf->page);
 	err = tr_ops->send_page(transport, drbd_stream, sbuf->page, offset, size, flags);
+	if (err)
+		sbuf->dead = true;
 
 	/* Advance past this range even when the send failed. send_page() may
 	 * have put part of it on the wire, so it must not be sent a second
@@ -1160,6 +1168,10 @@ int drbd_uncork(struct drbd_connection *connection, enum drbd_stream stream)
 		tr_ops->hint(transport, stream, UNCORK);
 	}
 	mutex_unlock(&connection->mutex[stream]);
+
+	if (err)
+		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
+
 	return err;
 }
 
@@ -2312,7 +2324,9 @@ static int _drbd_send_page(struct drbd_peer_device *peer_device, struct page *pa
 	int err;
 
 	err = tr_ops->send_page(transport, DATA_STREAM, page, offset, size, msg_flags);
-	if (!err)
+	if (err)
+		connection->send_buffer[DATA_STREAM].dead = true;
+	else
 		peer_device->send_cnt += size >> 9;
 
 	return err;
@@ -2407,7 +2421,9 @@ static int _drbd_send_zc_bio(struct drbd_peer_device *peer_device, struct bio *b
 
 		if (!err) {
 			err = tr_ops->send_zc_bio(transport, bio);
-			if (!err)
+			if (err)
+				connection->send_buffer[DATA_STREAM].dead = true;
+			else
 				peer_device->send_cnt += bio->bi_iter.bi_size >> 9;
 		}
 

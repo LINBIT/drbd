@@ -645,6 +645,7 @@ static void initialize_send_buffer(struct drbd_connection *connection, enum drbd
 	sbuf->pos = page_address(sbuf->page);
 	sbuf->allocated_size = 0;
 	sbuf->additional_size = 0;
+	sbuf->dead = false;
 }
 
 /* Gets called if a connection is established, or if a new minor gets created
@@ -1100,6 +1101,14 @@ start:
 	have_mutex = false;
 	clear_bit(PING_PENDING, &connection->flags);
 	clear_bit(DISCONNECT_EXPECTED, &connection->flags);
+	/* A send that failed on the previous socket must not fail this attempt:
+	 * C_CONNECTING lets other threads flush before the transport is up.
+	 */
+	for (stream = DATA_STREAM; stream <= CONTROL_STREAM; stream++) {
+		mutex_lock(&connection->mutex[stream]);
+		initialize_send_buffer(connection, stream);
+		mutex_unlock(&connection->mutex[stream]);
+	}
 	if (change_cstate_tag(connection, C_CONNECTING, CS_VERBOSE, "connecting", NULL)
 			< SS_SUCCESS) {
 		/* We do not have a network config. */
