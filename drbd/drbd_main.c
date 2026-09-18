@@ -6253,11 +6253,8 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device)
 	if (write_bm || filled) {
 		u64 to_nodes = filled ? -1 : ~NODE_MASK(peer_device->node_id);
 		drbd_propagate_uuids(device, to_nodes);
-		drbd_suspend_io(device, WRITE_ONLY);
-		drbd_bm_lock(device, "detect_finished_resyncs()", BM_LOCK_BULK);
-		drbd_bm_write(device, NULL);
-		drbd_bm_unlock(device);
-		drbd_resume_io(device);
+		drbd_bitmap_io(device, &drbd_bm_write_copy_pages,
+			       "detect_finished_resyncs()", BM_LOCK_BULK, NULL);
 	}
 }
 
