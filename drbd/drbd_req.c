@@ -962,6 +962,14 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		advance_conn_req_next(connection, req);
 	}
 
+	/* ap_in_flight holds the payload of the requests on the wire towards
+	 * this peer, so a request that is taken off the wire for a resend has
+	 * to give its sectors back here.  The RQ_NET_SENT that follows the
+	 * resend adds them again.
+	 */
+	if ((old_net & RQ_NET_SENT) && (clear & RQ_NET_SENT) && !(old_net & RQ_NET_DONE))
+		atomic_sub(req_payload_sectors(req), &connection->ap_in_flight);
+
 	if (!(old_net & RQ_NET_DONE) && (set & RQ_NET_DONE)) {
 		atomic_t *ap_in_flight = &peer_device->connection->ap_in_flight;
 
