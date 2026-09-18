@@ -1987,10 +1987,8 @@ struct drbd_bm_aio_ctx {
 #define BM_AIO_WRITE_ALL_PAGES	4
 #define BM_AIO_READ	        8
 #define BM_AIO_WRITE_LAZY      16
-	/* only report stats for global read, write, write all */
-#define BM_AIO_NO_STATS (BM_AIO_COPY_PAGES\
-			|BM_AIO_WRITE_HINTED\
-			|BM_AIO_WRITE_LAZY)
+	/* suppress the "bitmap WRITE of N pages took M ms" summary */
+#define BM_AIO_NO_STATS	       32
 	int error;
 	struct kref kref;
 };

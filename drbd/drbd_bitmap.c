@@ -1610,7 +1610,8 @@ int drbd_bm_write_all(struct drbd_device *device,
  */
 int drbd_bm_write_lazy(struct drbd_device *device, unsigned int upper_idx)
 {
-	return bm_rw_range(device, 0, upper_idx - 1, BM_AIO_COPY_PAGES | BM_AIO_WRITE_LAZY);
+	return bm_rw_range(device, 0, upper_idx - 1,
+			   BM_AIO_COPY_PAGES | BM_AIO_WRITE_LAZY | BM_AIO_NO_STATS);
 }
 
 /**
@@ -1637,7 +1638,7 @@ int drbd_bm_write_copy_pages(struct drbd_device *device,
  */
 int drbd_bm_write_hinted(struct drbd_device *device)
 {
-	return bm_rw(device, BM_AIO_WRITE_HINTED | BM_AIO_COPY_PAGES);
+	return bm_rw(device, BM_AIO_WRITE_HINTED | BM_AIO_COPY_PAGES | BM_AIO_NO_STATS);
 }
 
 static __always_inline unsigned long
