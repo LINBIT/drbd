@@ -6,28 +6,9 @@
 #include "drbd_legacy_84.h"
 #include "drbd_meta_data.h"
 
-/*
- *   drbd-8.4                      drbd-9 md.flags                   drbd-9 peer-md.flags
- * MDF_CONSISTENT      1 << 0  MDF_CONSISTENT =        1 << 0,   MDF_PEER_CONNECTED =    1 << 0,
- * MDF_PRIMARY_IND     1 << 1  MDF_PRIMARY_IND =       1 << 1,   MDF_PEER_OUTDATED =     1 << 1,
- * MDF_CONNECTED_IND   1 << 2                                    MDF_PEER_FENCING =      1 << 2,
- * MDF_FULL_SYNC       1 << 3                                    MDF_PEER_FULL_SYNC =    1 << 3,
- * MDF_WAS_UP_TO_DATE  1 << 4  MDF_WAS_UP_TO_DATE =    1 << 4,   MDF_PEER_DEVICE_SEEN =  1 << 4,
- * MDF_PEER_OUT_DATED  1 << 5                                    MDF_PEER_DIVERGENCE_BITMAP = 1 << 5
- * MDF_CRASHED_PRIMARY 1 << 6  MDF_CRASHED_PRIMARY =   1 << 6,   MDF_PEER_BITMAP_AUTHORITATIVE
- *                                                                                       = 1 << 6
- * MDF_AL_CLEAN        1 << 7  MDF_AL_CLEAN =          1 << 7,
- * MDF_AL_DISABLED     1 << 8  MDF_AL_DISABLED =       1 << 8,
- *                             MDF_PRIMARY_LOST_QUORUM = 1 << 9,
- *                             MDF_HAVE_QUORUM =       1 << 10,
- *                                                                MDF_NODE_EXISTS =      1 << 16,
+/* MDF_84_* masks and the flags table they encode are declared in
+ * drbd_legacy_84.h, shared with drbd_nl_84.c.
  */
-
-#define MDF_84_MASK (MDF_CONSISTENT | MDF_PRIMARY_IND | MDF_WAS_UP_TO_DATE | \
-		     MDF_CRASHED_PRIMARY | MDF_AL_CLEAN | MDF_AL_DISABLED)
-#define MDF_84_PEER_MASK (MDF_PEER_FULL_SYNC)
-#define MDF_84_CONNECTED_IND (1<<2)
-#define MDF_84_PEER_OUTDATED (1<<5)
 
 struct meta_data_on_disk_84 {
 	u64 la_size_sect;      /* last agreed size. */
@@ -319,7 +300,7 @@ static long signed_bit_to_kb(long bits, unsigned int bm_block_shift)
 	return bit_to_kb(bits, bm_block_shift);
 }
 
-static void drbd_get_syncer_progress(struct drbd_peer_device *pd,
+void drbd_get_syncer_progress_84(struct drbd_peer_device *pd,
 		enum drbd_repl_state repl_state, unsigned long *rs_total,
 		unsigned long *bits_left, unsigned int *per_mil_done)
 {
@@ -375,7 +356,7 @@ static void drbd_syncer_progress(struct drbd_peer_device *pd, struct seq_file *s
 	int stalled = 0;
 	unsigned int bm_block_shift = pd->device->last_bm_block_shift;
 
-	drbd_get_syncer_progress(pd, repl_state, &rs_total, &rs_left, &res);
+	drbd_get_syncer_progress_84(pd, repl_state, &rs_total, &rs_left, &res);
 
 	x = res/50;
 	y = 20-x;
@@ -503,6 +484,65 @@ static const char *drbd_conn_str_84(enum drbd_conn_state s)
 	return (int)s > (int)L_BEHIND ? "TOO_LARGE" : drbd_conn_s_names[s];
 }
 
+/*
+ * Select an 8.4-mode device's peer device (there is at most one: an
+ * 8.4-mode resource has one connection, which creates a peer device for
+ * every device) and fetch the raw state: the peer device's if one exists,
+ * else the device's own.
+ *
+ * The result is DRBD 9's unpacked union drbd_state, with DRBD 9's own
+ * disk/pdsk numbering and quorum bit still in place; drbd_pack_state_84()
+ * applies the v1 wire remap on top, seq_print_device_proc_drbd() feeds it
+ * to DRBD 9's own name lookups and must not.
+ *
+ * The caller holds rcu_read_lock() across this call and for as long as it
+ * keeps using *peer_device_r: the peer device is found without taking a
+ * reference.
+ *
+ * @peer_device_r: the selected peer device or NULL; may be NULL.
+ */
+static union drbd_state drbd_get_state_84(struct drbd_device *device,
+					  struct drbd_peer_device **peer_device_r)
+{
+	struct drbd_peer_device *peer_device;
+
+	peer_device = list_first_or_null_rcu(&device->peer_devices, struct drbd_peer_device,
+					     peer_devices);
+	if (peer_device_r)
+		*peer_device_r = peer_device;
+
+	return peer_device ? drbd_get_peer_device_state(peer_device, NOW)
+			    : drbd_get_device_state(device, NOW);
+}
+
+/*
+ * Pack a device's current state into an 8.4 wire state word (union
+ * drbd_state as u32).
+ *
+ * conn/repl numbering needs no translation: DRBD 9 split 8.4's enum
+ * drbd_conns into drbd_conn_state and drbd_repl_state but kept the numeric
+ * values. disk/pdsk do: DRBD 9 inserted D_DETACHING at index 2, so
+ * drbd_disk_state_84() shifts everything above it by one, the same remap
+ * send_state() uses for a pre-9.0 peer. s.quorum (bit 23) is _pad on 8.4
+ * and must read as 0.
+ *
+ * The result carries 8.4 numbering: do not feed it to drbd_disk_str() and
+ * friends.
+ */
+u32 drbd_pack_state_84(struct drbd_device *device)
+{
+	union drbd_state s;
+
+	rcu_read_lock();
+	s = drbd_get_state_84(device, NULL);
+	rcu_read_unlock();
+
+	s.disk = drbd_disk_state_84(s.disk);
+	s.pdsk = drbd_disk_state_84(s.pdsk);
+	s.quorum = 0;	/* bit 23 is _pad to 8.4 */
+
+	return s.i;
+}
 
 static int seq_print_device_proc_drbd(struct seq_file *m, struct drbd_device *device)
 {
@@ -514,11 +554,13 @@ static int seq_print_device_proc_drbd(struct seq_file *m, struct drbd_device *de
 	bool have_ldev;
 	char wp;
 
-	peer_device = list_first_or_null_rcu(&device->peer_devices, struct drbd_peer_device,
-					     peer_devices);
+	/*
+	 * Unpacked on purpose: state.disk/state.pdsk go to DRBD 9's own
+	 * drbd_disk_str() below. The caller holds rcu_read_lock().
+	 */
+	state = drbd_get_state_84(device, &peer_device);
 
 	if (peer_device) {
-		state = drbd_get_peer_device_state(peer_device, NOW);
 		connection = peer_device->connection;
 		send_kb = peer_device->send_cnt/2;
 		recv_kb = peer_device->recv_cnt/2;
@@ -526,7 +568,6 @@ static int seq_print_device_proc_drbd(struct seq_file *m, struct drbd_device *de
 			atomic_read(&peer_device->rs_pending_cnt);
 		unacked_cnt = atomic_read(&peer_device->unacked_cnt);
 	} else {
-		state = drbd_get_device_state(device, NOW);
 		connection = list_first_or_null_rcu(&device->resource->connections,
 						    struct drbd_connection, connections);
 		send_kb = 0;

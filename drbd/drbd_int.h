@@ -2975,13 +2975,19 @@ int drbd_send_peer_ack(struct drbd_connection *connection, u64 mask,
 
 /* DRBD 9 inserted D_DETACHING into enum drbd_disk_state; every state from
  * D_FAILED up is one higher than in DRBD 8.4, which used D_FAILED for both.
+ * The v1 netlink dialect puts every disk or pdsk value through this too.
  */
+static inline enum drbd_disk_state drbd_disk_state_84(enum drbd_disk_state state)
+{
+	if (state > D_DETACHING)
+		state--;
+	return state;
+}
+
 static inline void drbd_disk_states_to_84(union drbd_state *s)
 {
-	if (s->disk > D_DETACHING)
-		s->disk--;
-	if (s->pdsk > D_DETACHING)
-		s->pdsk--;
+	s->disk = drbd_disk_state_84(s->disk);
+	s->pdsk = drbd_disk_state_84(s->pdsk);
 }
 
 static inline void drbd_disk_states_from_84(union drbd_state *s)
