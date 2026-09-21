@@ -191,8 +191,9 @@ void drbd_nl_legacy_exit(void);
 
 /*
  * The drbd2 family is only built where the kernel has the split generic
- * netlink ops and the big-endian policy types the generated code needs;
- * elsewhere the module serves the legacy family alone.
+ * netlink ops, the big-endian policy types and the formatted extack
+ * messages the generated code and the adapter need; elsewhere the module
+ * serves the legacy family alone.
  */
 #ifdef CONFIG_DRBD_NL_DRBD2
 int drbd_nl_drbd2_init(void);

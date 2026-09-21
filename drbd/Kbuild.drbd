@@ -28,11 +28,15 @@ endif
 compat_objs += drbd-kernel-compat/drbd_wrappers.o
 
 # The drbd2 netlink family is built from the stock YNL output, which needs
-# the split generic netlink ops (v6.2) and the big-endian netlink policy
-# types (v6.1). Older kernels keep the legacy "drbd" family only; none of
-# the coccinelle compat rules are written for drbd2.
+# the split generic netlink ops, the big-endian netlink policy types and the
+# formatted extack messages, all of v6.2. Distribution kernels backport these
+# independently of each other, so every one of them is tested for. Older
+# kernels keep the legacy "drbd" family only; none of the coccinelle compat
+# rules are written for drbd2.
 CONFIG_DRBD_NL_DRBD2 := $(shell \
 	grep -qe '^.define COMPAT_HAVE_GENL_PRE_DOIT_SPLIT_OPS$$' $(src)/compat.h \
+	&& grep -qe '^.define COMPAT_HAVE_NLA_BE16$$' $(src)/compat.h \
+	&& grep -qe '^.define COMPAT_HAVE_NL_SET_ERR_MSG_FMT$$' $(src)/compat.h \
 	&& echo y)
 
 ifdef CONFIG_TLS
