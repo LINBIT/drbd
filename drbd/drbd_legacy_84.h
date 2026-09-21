@@ -62,6 +62,44 @@ u32 drbd_pack_state_84(struct drbd_device *device);
 void drbd_get_syncer_progress_84(struct drbd_peer_device *pd,
 		enum drbd_repl_state repl_state, unsigned long *rs_total,
 		unsigned long *bits_left, unsigned int *per_mil_done);
+
+/*
+ * Remap a DRBD 9 enum drbd_state_rv value to one 8.4 userland's own SS_*
+ * string table can render truthfully. SS_UNKNOWN_ERROR (0) through
+ * SS_O_VOL_PEER_PRI (-20), every success code and every enum drbd_ret_code
+ * are numerically identical in both dialects. From SS_INTERRUPTED (-21)
+ * down, DRBD 9 has nine codes 8.4 numbers differently (SS_INTERRUPTED
+ * collides with 8.4's SS_OUTDATE_WO_CONN) or lacks entirely (8.4 ends at
+ * SS_AFTER_LAST_ERROR = -22); passed through raw they would print a wrong
+ * message or "unknown error code". Map each to the nearest 8.4 code whose
+ * string does not mislead: the interrupted, timed-out and retried
+ * handshake cases to SS_IN_TRANSIENT_STATE ("retry"), a blocking
+ * read-only opener to SS_DEVICE_IN_USE, a handshake-forced disconnect to
+ * SS_CW_FAILED_BY_PEER, and the quorum, weak-connectivity, bitmap
+ * negotiation and sentinel codes, which have no 8.4 meaning, to
+ * SS_UNKNOWN_ERROR. compat84_put_outcome() is the only place a
+ * drbd_state_rv reaches the v1 wire.
+ */
+static inline enum drbd_state_rv drbd_state_rv_84(enum drbd_state_rv rv)
+{
+	switch (rv) {
+	case SS_INTERRUPTED:
+	case SS_TIMEOUT:
+	case SS_HANDSHAKE_RETRY:
+		return SS_IN_TRANSIENT_STATE;
+	case SS_PRIMARY_READER:
+		return SS_DEVICE_IN_USE;
+	case SS_HANDSHAKE_DISCONNECT:
+		return SS_CW_FAILED_BY_PEER;
+	case SS_WEAKLY_CONNECTED:
+	case SS_NO_QUORUM:
+	case SS_ATTACH_NO_BITMAP:
+	case SS_AFTER_LAST_ERROR:
+		return SS_UNKNOWN_ERROR;
+	default:
+		return rv;
+	}
+}
 #else
 static inline void drbd_md_decode_84(struct meta_data_on_disk_84 *on_disk, struct drbd_md *md) {};
 static inline void drbd_md_encode_84(struct drbd_device *device,
