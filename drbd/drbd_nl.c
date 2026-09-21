@@ -2461,10 +2461,7 @@ int drbd_adm_disk_opts(struct drbd_adm_ctx *adm_ctx)
 
 	__update_mdf_al_disabled(device, new_disk_conf->al_updates, NOW);
 
-	if (new_disk_conf->md_flushes)
-		clear_bit(MD_NO_FUA, &device->flags);
-	else
-		set_bit(MD_NO_FUA, &device->flags);
+	assign_bit(MD_NO_FUA, &device->flags, !new_disk_conf->md_flushes);
 
 	if (write_ordering_changed(old_disk_conf, new_disk_conf))
 		drbd_bump_write_ordering(device->resource, NULL, WO_BIO_BARRIER);
@@ -3602,10 +3599,8 @@ int drbd_adm_attach(struct drbd_adm_ctx *adm_ctx)
 
 	/* Reset the "barriers don't work" bits here, then force meta data to
 	 * be written, to ensure we determine if barriers are supported. */
-	if (device->ldev->disk_conf->md_flushes)
-		clear_bit(MD_NO_FUA, &device->flags);
-	else
-		set_bit(MD_NO_FUA, &device->flags);
+	assign_bit(MD_NO_FUA, &device->flags,
+		   !device->ldev->disk_conf->md_flushes);
 
 	drbd_resync_after_changed(device);
 	drbd_bump_write_ordering(resource, device->ldev, WO_BIO_BARRIER);
@@ -3634,12 +3629,10 @@ int drbd_adm_attach(struct drbd_adm_ctx *adm_ctx)
 	    may_restore_quorum(device))
 		set_bit(RESTORE_QUORUM, &device->flags);
 
-	if (drbd_md_test_flag(device->ldev, MDF_CRASHED_PRIMARY) &&
-	    !(resource->role[NOW] == R_PRIMARY && resource->susp_nod[NOW]) &&
-	    !device->exposed_data_uuid && !drbd_gen_obligation_outstanding(device))
-		set_bit(CRASHED_PRIMARY, &device->flags);
-	else
-		clear_bit(CRASHED_PRIMARY, &device->flags);
+	assign_bit(CRASHED_PRIMARY, &device->flags,
+		   drbd_md_test_flag(device->ldev, MDF_CRASHED_PRIMARY) &&
+		   !(resource->role[NOW] == R_PRIMARY && resource->susp_nod[NOW]) &&
+		   !device->exposed_data_uuid && !drbd_gen_obligation_outstanding(device));
 
 	if (drbd_md_test_flag(device->ldev, MDF_PRIMARY_LOST_QUORUM) &&
 	    !device->have_quorum[NOW])

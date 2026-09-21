@@ -5956,11 +5956,9 @@ static void copy_bitmap(struct drbd_device *device, int from_id, int to_id)
 	drbd_bm_lock(device, "copy_bitmap()", BM_LOCK_ALL);
 	drbd_bm_copy_slot(device, from_index, to_index);
 	/* the copy carries the reason the bits were set for */
-	if (test_bit(__MDF_PEER_BITMAP_AUTHORITATIVE, &peer_md[from_id].flags) &&
-	    _drbd_bm_total_weight(device, to_index) != 0)
-		set_bit(__MDF_PEER_BITMAP_AUTHORITATIVE, &peer_md[to_id].flags);
-	else
-		clear_bit(__MDF_PEER_BITMAP_AUTHORITATIVE, &peer_md[to_id].flags);
+	assign_bit(__MDF_PEER_BITMAP_AUTHORITATIVE, &peer_md[to_id].flags,
+		   test_bit(__MDF_PEER_BITMAP_AUTHORITATIVE, &peer_md[from_id].flags) &&
+		   _drbd_bm_total_weight(device, to_index) != 0);
 	peer_md[to_id].placeholder_src = peer_md[from_id].placeholder_src;
 	peer_md[to_id].placeholder_src_complete = peer_md[from_id].placeholder_src_complete;
 	drbd_bm_unlock(device);

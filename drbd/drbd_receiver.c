@@ -1290,10 +1290,8 @@ start:
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		set_bit(REPLICATION_NEXT, peer_device->flags);
-		if (discard_my_data)
-			set_bit(DISCARD_MY_DATA, peer_device->flags);
-		else
-			clear_bit(DISCARD_MY_DATA, peer_device->flags);
+		assign_bit(DISCARD_MY_DATA, peer_device->flags,
+			   discard_my_data);
 	}
 	rcu_read_unlock();
 	mutex_unlock(&connection->mutex[DATA_STREAM]);
@@ -5264,10 +5262,8 @@ static int receive_enable_replication_next(struct drbd_connection *connection,
 	if (!peer_device)
 		return config_unknown_volume(connection, pi);
 
-	if (p_enable_replication->enable)
-		set_bit(REPLICATION_NEXT, peer_device->flags);
-	else
-		clear_bit(REPLICATION_NEXT, peer_device->flags);
+	assign_bit(REPLICATION_NEXT, peer_device->flags,
+		   p_enable_replication->enable);
 
 	return 0;
 }
@@ -9988,10 +9984,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	clear_bit(RS_SOURCE_MISSED_END, peer_device->flags);
 	clear_bit(RS_PEER_MISSED_END, peer_device->flags);
 
-	if (peer_state.quorum)
-		set_bit(PEER_QUORATE, peer_device->flags);
-	else
-		clear_bit(PEER_QUORATE, peer_device->flags);
+	assign_bit(PEER_QUORATE, peer_device->flags, peer_state.quorum);
 
 	if (do_handshake) {
 		/* Ignoring state packets before the 2PC; they are from aborted 2PCs */

@@ -847,10 +847,7 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 
 	p = atomic_cmpxchg(&rdma_transport->first_path_connect_err, 1, err);
 	if (p == 1) {
-		if (cs->active)
-			set_bit(RESOLVE_CONFLICTS, &transport->flags);
-		else
-			clear_bit(RESOLVE_CONFLICTS, &transport->flags);
+		assign_bit(RESOLVE_CONFLICTS, &transport->flags, cs->active);
 		complete(&rdma_transport->connected);
 	}
 
