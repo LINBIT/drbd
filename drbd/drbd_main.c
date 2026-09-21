@@ -1261,8 +1261,8 @@ int drbd_send_sync_param(struct drbd_peer_device *peer_device)
 	int size, err;
 	const int apv = peer_device->connection->agreed_pro_version;
 	enum drbd_packet cmd;
-	struct net_conf *nc;
-	struct peer_device_conf *pdc;
+	struct drbd_net_conf *nc;
+	struct drbd_peer_device_conf *pdc;
 
 	rcu_read_lock();
 	nc = rcu_dereference(peer_device->connection->transport.net_conf);
@@ -1335,7 +1335,7 @@ int drbd_send_sync_param(struct drbd_peer_device *peer_device)
 int __drbd_send_protocol(struct drbd_connection *connection, enum drbd_packet cmd)
 {
 	struct p_protocol *p;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	size_t integrity_alg_len;
 	int size, cf;
 
@@ -1972,7 +1972,7 @@ int drbd_send_flush_requests_ack(struct drbd_connection *connection, u64 flush_s
 int drbd_send_enable_replication_next(struct drbd_peer_device *peer_device)
 {
 	struct p_enable_replication *p;
-	struct peer_device_conf *pdc;
+	struct drbd_peer_device_conf *pdc;
 	bool resync_without_replication;
 
 	set_bit(PEER_REPLICATION_NEXT, peer_device->flags);
@@ -2673,7 +2673,7 @@ int drbd_send_dagtag(struct drbd_connection *connection, u64 dagtag)
 static bool primary_peer_present(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	bool two_primaries, rv = false;
 
 	rcu_read_lock();
@@ -3034,7 +3034,7 @@ out:
 		add_opener(device, rv >= SS_SUCCESS);
 		/* Only interested in first open and last close. */
 		if (device->open_cnt == 1) {
-			struct device_info info;
+			struct drbd_device_info info;
 
 			device_to_info(&info, device);
 			mutex_lock(&notification_mutex);
@@ -3200,7 +3200,7 @@ static void drbd_release(struct gendisk *gd)
 	if (open_rw_cnt == 0 && open_ro_cnt == 0 && resource->auto_promoted_by.pid != 0)
 		memset(&resource->auto_promoted_by, 0, sizeof(resource->auto_promoted_by));
 	if (device->open_cnt == 0) {
-		struct device_info info;
+		struct drbd_device_info info;
 
 		device_to_info(&info, device);
 		mutex_lock(&notification_mutex);
@@ -3778,7 +3778,8 @@ static void wake_all_device_misc(struct drbd_resource *resource)
 	rcu_read_unlock();
 }
 
-int set_resource_options(struct drbd_resource *resource, struct res_opts *res_opts, const char *tag)
+int set_resource_options(struct drbd_resource *resource, struct drbd_res_opts *res_opts,
+			 const char *tag)
 {
 	struct drbd_connection *connection;
 	cpumask_var_t new_cpu_mask;
@@ -3786,7 +3787,7 @@ int set_resource_options(struct drbd_resource *resource, struct res_opts *res_op
 	bool wake_device_misc = false;
 	bool force_state_recalc = false;
 	unsigned long irq_flags;
-	struct res_opts *old_opts = &resource->res_opts;
+	struct drbd_res_opts *old_opts = &resource->res_opts;
 
 	if (!zalloc_cpumask_var(&new_cpu_mask, GFP_KERNEL))
 		return -ENOMEM;
@@ -3856,7 +3857,7 @@ fail:
 }
 
 struct drbd_resource *drbd_create_resource(const char *name,
-					   struct res_opts *res_opts)
+					   struct drbd_res_opts *res_opts)
 {
 	struct drbd_resource *resource;
 
@@ -4220,7 +4221,8 @@ static int init_submitter(struct drbd_device *device)
 }
 
 enum drbd_ret_code drbd_create_device(struct drbd_adm_ctx *adm_ctx, unsigned int minor,
-				      struct device_conf *device_conf, struct drbd_device **p_device)
+				      struct drbd_device_conf *device_conf,
+				      struct drbd_device **p_device)
 {
 	struct drbd_resource *resource = adm_ctx->resource;
 	struct drbd_connection *connection;

@@ -534,7 +534,7 @@ static bool may_be_up_to_date(struct drbd_device *device, enum which_state which
 			continue;
 		peer_device = peer_device_by_node_id(device, node_id);
 		if (peer_device) {
-			struct peer_device_conf *pdc = rcu_dereference(peer_device->conf);
+			struct drbd_peer_device_conf *pdc = rcu_dereference(peer_device->conf);
 
 			want_bitmap = pdc->bitmap;
 			peer_disk_state = peer_device->disk_state[NEW];
@@ -1304,7 +1304,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		bool err_io_before = device->cached_err_io;
-		struct res_opts *o = &resource->res_opts;
+		struct drbd_res_opts *o = &resource->res_opts;
 		struct drbd_peer_device *peer_device;
 		bool err_io;
 
@@ -1879,7 +1879,7 @@ static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_de
 		enum drbd_disk_state disk_state;
 		enum drbd_repl_state repl_state;
 		bool is_intentional_diskless, is_tiebreaker;
-		struct net_conf *nc;
+		struct drbd_net_conf *nc;
 
 		if (node_id == my_node_id) {
 			disk_state = device->disk_state[NEW];
@@ -1969,7 +1969,7 @@ static void __calc_quorum_no_disk(struct drbd_device *device, struct quorum_deta
 	for_each_peer_device_rcu(peer_device, device) {
 		enum drbd_disk_state disk_state;
 		enum drbd_repl_state repl_state;
-		struct net_conf *nc;
+		struct drbd_net_conf *nc;
 		bool is_tiebreaker;
 
 		repl_state = peer_device->repl_state[NEW];
@@ -2134,7 +2134,7 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 
 	if (role[OLD] != R_PRIMARY && role[NEW] == R_PRIMARY) {
 		for_each_connection_rcu(connection, resource) {
-			struct net_conf *nc;
+			struct drbd_net_conf *nc;
 
 			nc = rcu_dereference(connection->transport.net_conf);
 			if (!nc || nc->two_primaries)
@@ -2166,7 +2166,7 @@ handshake_found:
 	for_each_connection_rcu(connection, resource) {
 		enum drbd_conn_state *cstate = connection->cstate;
 		enum drbd_role *peer_role = connection->peer_role;
-		struct net_conf *nc;
+		struct drbd_net_conf *nc;
 		bool two_primaries;
 
 		if (cstate[NEW] == C_DISCONNECTING && cstate[OLD] == C_STANDALONE)
@@ -2302,8 +2302,9 @@ allow:
 
 			if (!(repl_state[OLD] == L_VERIFY_S || repl_state[OLD] == L_VERIFY_T) &&
 			     (repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T)) {
-				struct net_conf *nc = rcu_dereference(peer_device->connection->transport.net_conf);
+				struct drbd_net_conf *nc;
 
+				nc = rcu_dereference(peer_device->connection->transport.net_conf);
 				if (!nc || nc->verify_alg[0] == 0)
 					return SS_NO_VERIFY_ALG;
 			}
@@ -3378,7 +3379,7 @@ static bool primary_and_data_present(struct drbd_device *device)
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
 		struct drbd_connection *connection = peer_device->connection;
-		struct net_conf *nc;
+		struct drbd_net_conf *nc;
 
 		/* Do not consider the peer if we are disconnecting. */
 		if (resource->remote_state_change &&
@@ -4193,7 +4194,7 @@ int notify_resource_state_change(struct sk_buff *skb,
 	struct drbd_resource_state_change *resource_state_change =
 		((struct drbd_state_change *)state_change)->resource;
 	struct drbd_resource *resource = resource_state_change->resource;
-	struct resource_info resource_info = {
+	struct drbd_resource_info resource_info = {
 		.res_role = resource_state_change->role[NEW],
 		.res_susp = resource_state_change->susp[NEW],
 		.res_susp_nod = resource_state_change->susp_nod[NEW],
@@ -4215,7 +4216,7 @@ int notify_connection_state_change(struct sk_buff *skb,
 {
 	struct drbd_connection_state_change *connection_state_change = state_change;
 	struct drbd_connection *connection = connection_state_change->connection;
-	struct connection_info connection_info = {
+	struct drbd_connection_info connection_info = {
 		.conn_connection_state = connection_state_change->cstate[NEW],
 		.conn_role = connection_state_change->peer_role[NEW],
 	};
@@ -4232,7 +4233,7 @@ int notify_device_state_change(struct sk_buff *skb,
 {
 	struct drbd_device_state_change *device_state_change = state_change;
 	struct drbd_device *device = device_state_change->device;
-	struct device_info device_info;
+	struct drbd_device_info device_info;
 
 	device_state_change_to_info(&device_info, device_state_change);
 
@@ -4247,7 +4248,7 @@ int notify_peer_device_state_change(struct sk_buff *skb,
 {
 	struct drbd_peer_device_state_change *peer_device_state_change = state_change;
 	struct drbd_peer_device *peer_device = peer_device_state_change->peer_device;
-	struct peer_device_info peer_device_info;
+	struct drbd_peer_device_info peer_device_info;
 
 	peer_device_state_change_to_info(&peer_device_info, state_change);
 
@@ -4645,7 +4646,7 @@ static void drbd_run_resync(struct drbd_peer_device *peer_device, enum drbd_repl
 		 * response (implicit in drbd_resync_finished) reduces
 		 * the race considerably, but does not solve it. */
 		if (side == L_SYNC_SOURCE) {
-			struct net_conf *nc;
+			struct drbd_net_conf *nc;
 			int timeo;
 
 			rcu_read_lock();
@@ -5691,7 +5692,7 @@ static bool multiple_primaries_allowed(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection;
 	bool allowed = false;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 
 	rcu_read_lock();
 	for_each_connection_rcu(connection, resource) {
@@ -5735,7 +5736,7 @@ check_primaries_distances(struct drbd_resource *resource)
 
 		for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
 			struct drbd_connection *connection;
-			struct net_conf *nc;
+			struct drbd_net_conf *nc;
 			bool two_primaries;
 
 			if (!(common_server & NODE_MASK(node_id)))
@@ -5764,7 +5765,7 @@ check_ro_cnt_and_primary(struct drbd_resource *resource)
 	struct twopc_reply *reply = &resource->twopc_reply;
 	struct drbd_connection *connection;
 	enum drbd_state_rv rv = SS_SUCCESS;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 
 	if (drbd_open_ro_count(resource) == 0)
 		return rv;
@@ -6326,7 +6327,7 @@ change_cluster_wide_device_size(struct drbd_device *device,
 				uint64_t new_user_size,
 				enum dds_flags dds_flags,
 				bool automatic,
-				struct resize_parms *rs)
+				struct drbd_resize_parms *rs)
 {
 	struct drbd_resource *resource = device->resource;
 	struct twopc_reply *reply = &resource->twopc_reply;
@@ -7402,7 +7403,7 @@ static bool calc_data_accessible(struct drbd_state_change *state_change, int n_d
 				n_device * state_change->n_connections + n_connection];
 		struct drbd_peer_device *peer_device = peer_device_state_change->peer_device;
 		enum drbd_disk_state *peer_disk_state = peer_device_state_change->disk_state;
-		struct net_conf *nc;
+		struct drbd_net_conf *nc;
 
 		rcu_read_lock();
 		nc = rcu_dereference(peer_device->connection->transport.net_conf);
@@ -7438,7 +7439,7 @@ bool drbd_data_accessible(struct drbd_device *device, enum which_state which)
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
-		struct net_conf *nc;
+		struct drbd_net_conf *nc;
 
 		nc = rcu_dereference(peer_device->connection->transport.net_conf);
 		if (nc && !nc->allow_remote_read)
@@ -7466,7 +7467,7 @@ static u64 exposable_data_uuid(struct drbd_device *device)
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
-		struct net_conf *nc;
+		struct drbd_net_conf *nc;
 
 		nc = rcu_dereference(peer_device->connection->transport.net_conf);
 		if (nc && !nc->allow_remote_read)

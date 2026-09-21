@@ -422,7 +422,7 @@ static int drbd2_put_context(struct sk_buff *skb, int attrtype,
 	     nla_put_u32(skb, DRBD2_A_CONTEXT_MINOR, device->minor)))
 		goto fail;
 	if (connection) {
-		struct net_conf *nc;
+		struct drbd_net_conf *nc;
 		int err = 0;
 
 		if (nla_put_u32(skb, DRBD2_A_CONTEXT_PEER_NODE_ID, connection->peer_node_id))
@@ -454,7 +454,7 @@ fail:
  */
 
 static int drbd2_put_resource_info(struct sk_buff *skb, int attrtype,
-				   struct resource_info *info)
+				   struct drbd_resource_info *info)
 {
 	struct nlattr *nla = nla_nest_start(skb, attrtype);
 
@@ -476,7 +476,7 @@ fail:
 }
 
 static int drbd2_put_resource_statistics(struct sk_buff *skb, int attrtype,
-					 struct resource_statistics *s)
+					 struct drbd_resource_statistics *s)
 {
 	struct nlattr *nla = nla_nest_start(skb, attrtype);
 
@@ -494,7 +494,7 @@ fail:
 }
 
 static int drbd2_put_device_info(struct sk_buff *skb, int attrtype,
-				 struct device_info *info)
+				 struct drbd_device_info *info)
 {
 	struct nlattr *nla = nla_nest_start(skb, attrtype);
 
@@ -518,7 +518,7 @@ fail:
 }
 
 static int drbd2_put_device_statistics(struct sk_buff *skb, int attrtype,
-				       struct device_statistics *s)
+				       struct drbd_device_statistics *s)
 {
 	struct nlattr *nla = nla_nest_start(skb, attrtype);
 
@@ -550,7 +550,7 @@ fail:
 }
 
 static int drbd2_put_connection_info(struct sk_buff *skb, int attrtype,
-				     struct connection_info *info)
+				     struct drbd_connection_info *info)
 {
 	struct nlattr *nla = nla_nest_start(skb, attrtype);
 
@@ -569,7 +569,7 @@ fail:
 }
 
 static int drbd2_put_connection_statistics(struct sk_buff *skb, int attrtype,
-					   struct connection_statistics *s)
+					   struct drbd_connection_statistics *s)
 {
 	struct nlattr *nla = nla_nest_start(skb, attrtype);
 
@@ -588,7 +588,7 @@ fail:
 }
 
 static int drbd2_put_peer_device_info(struct sk_buff *skb, int attrtype,
-				      struct peer_device_info *info)
+				      struct drbd_peer_device_info *info)
 {
 	struct nlattr *nla = nla_nest_start(skb, attrtype);
 
@@ -616,7 +616,7 @@ fail:
 }
 
 static int drbd2_put_peer_device_statistics(struct sk_buff *skb, int attrtype,
-					    struct peer_device_statistics *s)
+					    struct drbd_peer_device_statistics *s)
 {
 	struct nlattr *nla = nla_nest_start(skb, attrtype);
 
@@ -671,7 +671,7 @@ fail:
 }
 
 static int drbd2_put_path_info(struct sk_buff *skb, int attrtype,
-			       struct drbd_path_info *info)
+			       struct drbd_nl_path_info *info)
 {
 	struct nlattr *nla = nla_nest_start(skb, attrtype);
 
@@ -692,7 +692,7 @@ fail:
  * describe state changes and carry no configuration, so they pass NULL.
  */
 
-static int drbd2_put_res_opts(struct sk_buff *skb, int attrtype, struct res_opts *c)
+static int drbd2_put_res_opts(struct sk_buff *skb, int attrtype, struct drbd_res_opts *c)
 {
 	struct nlattr *nla = nla_nest_start(skb, attrtype);
 
@@ -729,7 +729,7 @@ fail:
 	return -EMSGSIZE;
 }
 
-static int drbd2_put_disk_conf(struct sk_buff *skb, int attrtype, struct disk_conf *c)
+static int drbd2_put_disk_conf(struct sk_buff *skb, int attrtype, struct drbd_disk_conf *c)
 {
 	struct nlattr *nla = nla_nest_start(skb, attrtype);
 
@@ -771,7 +771,7 @@ fail:
  * The caller decides what the reader may see: the dump hands us a copy
  * with the shared secret cleared unless the reader has CAP_SYS_ADMIN.
  */
-static int drbd2_put_net_conf(struct sk_buff *skb, int attrtype, struct net_conf *c)
+static int drbd2_put_net_conf(struct sk_buff *skb, int attrtype, struct drbd_net_conf *c)
 {
 	struct nlattr *nla = nla_nest_start(skb, attrtype);
 
@@ -835,7 +835,7 @@ fail:
 	return -EMSGSIZE;
 }
 
-static int drbd2_put_device_conf(struct sk_buff *skb, int attrtype, struct device_conf *c)
+static int drbd2_put_device_conf(struct sk_buff *skb, int attrtype, struct drbd_device_conf *c)
 {
 	struct nlattr *nla = nla_nest_start(skb, attrtype);
 
@@ -857,7 +857,7 @@ fail:
 }
 
 static int drbd2_put_peer_device_conf(struct sk_buff *skb, int attrtype,
-				      struct peer_device_conf *c)
+				      struct drbd_peer_device_conf *c)
 {
 	struct nlattr *nla = nla_nest_start(skb, attrtype);
 
@@ -896,7 +896,7 @@ static int drbd2_put_connection_paths(struct sk_buff *skb,
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(path, &connection->transport.paths, list) {
-		struct drbd_path_info info = {
+		struct drbd_nl_path_info info = {
 			.path_established = test_bit(TR_ESTABLISHED, &path->flags),
 		};
 		struct nlattr *nla = nla_nest_start(skb, DRBD2_A_CONNECTION_PATH);
@@ -924,10 +924,10 @@ static int drbd2_put_connection_paths(struct sk_buff *skb,
 
 static int drbd2_put_resource(struct sk_buff *skb, int attrtype,
 			      struct drbd_resource *resource,
-			      struct res_opts *res_opts,
-			      struct resource_info *info,
-			      struct resource_statistics *statistics,
-			      struct rename_resource_info *rename_info)
+			      struct drbd_res_opts *res_opts,
+			      struct drbd_resource_info *info,
+			      struct drbd_resource_statistics *statistics,
+			      struct drbd_rename_resource_info *rename_info)
 {
 	struct nlattr *nla = nla_nest_start(skb, attrtype);
 
@@ -956,10 +956,10 @@ fail:
 
 static int drbd2_put_device(struct sk_buff *skb, int attrtype,
 			    struct drbd_device *device,
-			    struct disk_conf *disk_conf,
-			    struct device_conf *device_conf,
-			    struct device_info *info,
-			    struct device_statistics *statistics)
+			    struct drbd_disk_conf *disk_conf,
+			    struct drbd_device_conf *device_conf,
+			    struct drbd_device_info *info,
+			    struct drbd_device_statistics *statistics)
 {
 	struct nlattr *nla = nla_nest_start(skb, attrtype);
 
@@ -988,9 +988,9 @@ fail:
 static int drbd2_put_connection(struct sk_buff *skb, int attrtype,
 				struct drbd_resource *resource,
 				struct drbd_connection *connection,
-				struct net_conf *net_conf,
-				struct connection_info *info,
-				struct connection_statistics *statistics)
+				struct drbd_net_conf *net_conf,
+				struct drbd_connection_info *info,
+				struct drbd_connection_statistics *statistics)
 {
 	struct nlattr *nla = nla_nest_start(skb, attrtype);
 
@@ -1017,9 +1017,9 @@ fail:
 
 static int drbd2_put_peer_device(struct sk_buff *skb, int attrtype,
 				 struct drbd_peer_device *peer_device,
-				 struct peer_device_conf *conf,
-				 struct peer_device_info *info,
-				 struct peer_device_statistics *statistics)
+				 struct drbd_peer_device_conf *conf,
+				 struct drbd_peer_device_info *info,
+				 struct drbd_peer_device_statistics *statistics)
 {
 	struct drbd_device *device = peer_device->device;
 	struct nlattr *nla = nla_nest_start(skb, attrtype);
@@ -1049,7 +1049,7 @@ static int drbd2_put_path(struct sk_buff *skb, int attrtype,
 			  struct drbd_resource *resource,
 			  struct drbd_connection *connection,
 			  struct drbd_path *path,
-			  struct drbd_path_info *info)
+			  struct drbd_nl_path_info *info)
 {
 	struct nlattr *nla = nla_nest_start(skb, attrtype);
 
@@ -1294,7 +1294,7 @@ static int drbd2_parse_set(struct drbd_adm_ctx *ctx, int attrtype, int maxtype,
 	drbd2_parse_set((ctx), DRBD2_A_##NAME, ARRAY_SIZE(tb) - 1,	\
 			drbd2_##name##_nl_policy, (tb))
 
-static int drbd2_overlay_disk_conf(struct drbd_adm_ctx *ctx, struct disk_conf *s)
+static int drbd2_overlay_disk_conf(struct drbd_adm_ctx *ctx, struct drbd_disk_conf *s)
 {
 	struct nlattr *tb[DRBD2_A_DISK_CONF_BITMAP + 1];
 	int err;
@@ -1354,7 +1354,7 @@ static int drbd2_overlay_disk_conf(struct drbd_adm_ctx *ctx, struct disk_conf *s
 	return err;
 }
 
-static int drbd2_overlay_res_opts(struct drbd_adm_ctx *ctx, struct res_opts *s)
+static int drbd2_overlay_res_opts(struct drbd_adm_ctx *ctx, struct drbd_res_opts *s)
 {
 	struct nlattr *tb[DRBD2_A_RESOURCE_OPTS_EXPLICIT_DRBD8_COMPAT + 1];
 	int err;
@@ -1408,7 +1408,7 @@ static int drbd2_overlay_res_opts(struct drbd_adm_ctx *ctx, struct res_opts *s)
 	return err;
 }
 
-static int drbd2_overlay_net_conf(struct drbd_adm_ctx *ctx, struct net_conf *s)
+static int drbd2_overlay_net_conf(struct drbd_adm_ctx *ctx, struct drbd_net_conf *s)
 {
 	struct nlattr *tb[DRBD2_A_NET_CONF_RDMA_CTRL_SNDBUF_SIZE + 1];
 	int err;
@@ -1514,7 +1514,7 @@ static int drbd2_overlay_net_conf(struct drbd_adm_ctx *ctx, struct net_conf *s)
 }
 
 static int drbd2_overlay_peer_device_conf(struct drbd_adm_ctx *ctx,
-					  struct peer_device_conf *s)
+					  struct drbd_peer_device_conf *s)
 {
 	struct nlattr *tb[DRBD2_A_PEER_DEVICE_CONF_PEER_TIEBREAKER + 1];
 	int err;
@@ -1545,7 +1545,7 @@ static int drbd2_overlay_peer_device_conf(struct drbd_adm_ctx *ctx,
 	return 0;
 }
 
-static int drbd2_overlay_device_conf(struct drbd_adm_ctx *ctx, struct device_conf *s)
+static int drbd2_overlay_device_conf(struct drbd_adm_ctx *ctx, struct drbd_device_conf *s)
 {
 	struct nlattr *tb[DRBD2_A_DEVICE_CONF_DISCARD_GRANULARITY + 1];
 	int err;
@@ -1567,7 +1567,7 @@ static int drbd2_overlay_device_conf(struct drbd_adm_ctx *ctx, struct device_con
 	return 0;
 }
 
-static int drbd2_overlay_set_role_parms(struct drbd_adm_ctx *ctx, struct set_role_parms *s)
+static int drbd2_overlay_set_role_parms(struct drbd_adm_ctx *ctx, struct drbd_set_role_parms *s)
 {
 	struct nlattr *tb[DRBD2_A_SET_ROLE_PARMS_FORCE + 1];
 	int err;
@@ -1580,7 +1580,7 @@ static int drbd2_overlay_set_role_parms(struct drbd_adm_ctx *ctx, struct set_rol
 	return 0;
 }
 
-static int drbd2_overlay_resize_parms(struct drbd_adm_ctx *ctx, struct resize_parms *s)
+static int drbd2_overlay_resize_parms(struct drbd_adm_ctx *ctx, struct drbd_resize_parms *s)
 {
 	struct nlattr *tb[DRBD2_A_RESIZE_PARMS_AL_STRIPE_SIZE + 1];
 	int err;
@@ -1600,7 +1600,7 @@ static int drbd2_overlay_resize_parms(struct drbd_adm_ctx *ctx, struct resize_pa
 	return 0;
 }
 
-static int drbd2_overlay_start_ov_parms(struct drbd_adm_ctx *ctx, struct start_ov_parms *s)
+static int drbd2_overlay_start_ov_parms(struct drbd_adm_ctx *ctx, struct drbd_start_ov_parms *s)
 {
 	struct nlattr *tb[DRBD2_A_START_OV_PARMS_STOP_SECTOR + 1];
 	int err;
@@ -1617,7 +1617,7 @@ static int drbd2_overlay_start_ov_parms(struct drbd_adm_ctx *ctx, struct start_o
 }
 
 static int drbd2_overlay_new_c_uuid_parms(struct drbd_adm_ctx *ctx,
-					  struct new_c_uuid_parms *s)
+					  struct drbd_new_c_uuid_parms *s)
 {
 	struct nlattr *tb[DRBD2_A_NEW_CURRENT_UUID_PARMS_FORCE_RESYNC + 1];
 	int err;
@@ -1632,7 +1632,7 @@ static int drbd2_overlay_new_c_uuid_parms(struct drbd_adm_ctx *ctx,
 }
 
 static int drbd2_overlay_disconnect_parms(struct drbd_adm_ctx *ctx,
-					  struct disconnect_parms *s)
+					  struct drbd_disconnect_parms *s)
 {
 	struct nlattr *tb[DRBD2_A_DISCONNECT_PARMS_FORCE + 1];
 	int err;
@@ -1645,7 +1645,7 @@ static int drbd2_overlay_disconnect_parms(struct drbd_adm_ctx *ctx,
 	return 0;
 }
 
-static int drbd2_overlay_detach_parms(struct drbd_adm_ctx *ctx, struct detach_parms *s)
+static int drbd2_overlay_detach_parms(struct drbd_adm_ctx *ctx, struct drbd_detach_parms *s)
 {
 	struct nlattr *tb[DRBD2_A_DETACH_PARMS_INTENTIONAL_DISKLESS_DETACH + 1];
 	int err;
@@ -1661,7 +1661,7 @@ static int drbd2_overlay_detach_parms(struct drbd_adm_ctx *ctx, struct detach_pa
 }
 
 static int drbd2_overlay_invalidate_parms(struct drbd_adm_ctx *ctx,
-					  struct invalidate_parms *s)
+					  struct drbd_invalidate_parms *s)
 {
 	struct nlattr *tb[DRBD2_A_INVALIDATE_PARMS_RESET_BITMAP + 1];
 	int err;
@@ -1679,7 +1679,7 @@ static int drbd2_overlay_invalidate_parms(struct drbd_adm_ctx *ctx,
 }
 
 static int drbd2_overlay_invalidate_peer_parms(struct drbd_adm_ctx *ctx,
-					       struct invalidate_peer_parms *s)
+					       struct drbd_invalidate_peer_parms *s)
 {
 	struct nlattr *tb[DRBD2_A_INVALIDATE_PEER_PARMS_RESET_BITMAP + 1];
 	int err;
@@ -1699,7 +1699,7 @@ static int drbd2_overlay_invalidate_peer_parms(struct drbd_adm_ctx *ctx,
  * a parameter set of its own.
  */
 static int drbd2_overlay_forget_peer_parms(struct drbd_adm_ctx *ctx,
-					   struct forget_peer_parms *s)
+					   struct drbd_forget_peer_parms *s)
 {
 	if (ctx->peer_node_id == PEER_NODE_ID_UNSPECIFIED)
 		return -ENOMSG;
@@ -1707,7 +1707,7 @@ static int drbd2_overlay_forget_peer_parms(struct drbd_adm_ctx *ctx,
 	return 0;
 }
 
-static int drbd2_overlay_connect_parms(struct drbd_adm_ctx *ctx, struct connect_parms *s)
+static int drbd2_overlay_connect_parms(struct drbd_adm_ctx *ctx, struct drbd_connect_parms *s)
 {
 	struct nlattr *tb[DRBD2_A_CONNECT_PARMS_DISCARD_MY_DATA + 1];
 	int err;
@@ -1725,7 +1725,7 @@ static int drbd2_overlay_connect_parms(struct drbd_adm_ctx *ctx, struct connect_
  * A path is identified by the two addresses in the context of the
  * request; both are required.
  */
-static int drbd2_overlay_path_parms(struct drbd_adm_ctx *ctx, struct path_parms *s)
+static int drbd2_overlay_path_parms(struct drbd_adm_ctx *ctx, struct drbd_path_parms *s)
 {
 	struct nlattr *tb[DRBD2_A_CONTEXT_PEER_ADDRESS + 1];
 	struct genl_info *info = drbd2_req(ctx)->info;
@@ -1749,7 +1749,7 @@ static int drbd2_overlay_path_parms(struct drbd_adm_ctx *ctx, struct path_parms 
 }
 
 static int drbd2_overlay_rename_resource_parms(struct drbd_adm_ctx *ctx,
-					       struct rename_resource_parms *s)
+					       struct drbd_rename_resource_parms *s)
 {
 	struct nlattr *tb[DRBD2_A_RENAME_PARMS_NEW_NAME + 1];
 	int err;
@@ -1767,7 +1767,7 @@ static int drbd2_overlay_rename_resource_parms(struct drbd_adm_ctx *ctx,
 }
 
 static int drbd2_overlay_suspend_io_parms(struct drbd_adm_ctx *ctx,
-					  struct suspend_io_parms *s)
+					  struct drbd_suspend_io_parms *s)
 {
 	struct nlattr *tb[DRBD2_A_SUSPEND_IO_PARMS_BDEV_FREEZE + 1];
 	int err;
@@ -1962,8 +1962,8 @@ static void *drbd2_dump_put(struct sk_buff *skb, struct netlink_callback *cb, u8
 
 static int drbd2_emit_resource(struct sk_buff *skb, struct netlink_callback *cb,
 			       struct drbd_resource *resource,
-			       struct resource_info *info,
-			       struct resource_statistics *statistics)
+			       struct drbd_resource_info *info,
+			       struct drbd_resource_statistics *statistics)
 {
 	void *dh = drbd2_dump_put(skb, cb, DRBD2_CMD_RESOURCE_GET);
 
@@ -1979,9 +1979,9 @@ static int drbd2_emit_resource(struct sk_buff *skb, struct netlink_callback *cb,
 }
 
 static int drbd2_emit_device(struct sk_buff *skb, struct netlink_callback *cb, int retcode,
-			     struct drbd_device *device, struct disk_conf *disk_conf,
-			     struct device_info *info,
-			     struct device_statistics *statistics)
+			     struct drbd_device *device, struct drbd_disk_conf *disk_conf,
+			     struct drbd_device_info *info,
+			     struct drbd_device_statistics *statistics)
 {
 	void *dh;
 
@@ -2002,9 +2002,9 @@ static int drbd2_emit_device(struct sk_buff *skb, struct netlink_callback *cb, i
 static int drbd2_emit_connection(struct sk_buff *skb, struct netlink_callback *cb, int retcode,
 				 struct drbd_resource *resource,
 				 struct drbd_connection *connection,
-				 struct net_conf *net_conf,
-				 struct connection_info *info,
-				 struct connection_statistics *statistics)
+				 struct drbd_net_conf *net_conf,
+				 struct drbd_connection_info *info,
+				 struct drbd_connection_statistics *statistics)
 {
 	void *dh;
 
@@ -2024,9 +2024,9 @@ static int drbd2_emit_connection(struct sk_buff *skb, struct netlink_callback *c
 
 static int drbd2_emit_peer_device(struct sk_buff *skb, struct netlink_callback *cb, int retcode,
 				  struct drbd_peer_device *peer_device, unsigned int minor,
-				  struct peer_device_info *info,
-				  struct peer_device_statistics *statistics,
-				  struct peer_device_conf *conf)
+				  struct drbd_peer_device_info *info,
+				  struct drbd_peer_device_statistics *statistics,
+				  struct drbd_peer_device_conf *conf)
 {
 	void *dh;
 
@@ -2046,7 +2046,7 @@ static int drbd2_emit_peer_device(struct sk_buff *skb, struct netlink_callback *
 
 static int drbd2_emit_path(struct sk_buff *skb, struct netlink_callback *cb, int retcode,
 			   struct drbd_resource *resource, struct drbd_connection *connection,
-			   struct drbd_path *path, struct drbd_path_info *info)
+			   struct drbd_path *path, struct drbd_nl_path_info *info)
 {
 	void *dh;
 
@@ -2229,11 +2229,11 @@ fail:
 
 static int drbd2_notify_resource_state(struct sk_buff *skb, unsigned int seq,
 				       struct drbd_resource *resource,
-				       struct resource_info *info,
-				       struct rename_resource_info *rename_info,
+				       struct drbd_resource_info *info,
+				       struct drbd_rename_resource_info *rename_info,
 				       enum drbd_notification_type type)
 {
-	struct resource_statistics statistics;
+	struct drbd_resource_statistics statistics;
 	bool multicast = !skb;
 	void *dh;
 	int err;
@@ -2271,10 +2271,10 @@ failed:
 
 static int drbd2_notify_device_state(struct sk_buff *skb, unsigned int seq,
 				     struct drbd_device *device,
-				     struct device_info *info,
+				     struct drbd_device_info *info,
 				     enum drbd_notification_type type)
 {
-	struct device_statistics statistics;
+	struct drbd_device_statistics statistics;
 	bool multicast = !skb;
 	void *dh;
 	int err;
@@ -2313,10 +2313,10 @@ failed:
 
 static int drbd2_notify_connection_state(struct sk_buff *skb, unsigned int seq,
 					 struct drbd_connection *connection,
-					 struct connection_info *info,
+					 struct drbd_connection_info *info,
 					 enum drbd_notification_type type)
 {
-	struct connection_statistics statistics;
+	struct drbd_connection_statistics statistics;
 	bool multicast = !skb;
 	void *dh;
 	int err;
@@ -2356,10 +2356,10 @@ failed:
 
 static int drbd2_notify_peer_device_state(struct sk_buff *skb, unsigned int seq,
 					  struct drbd_peer_device *peer_device,
-					  struct peer_device_info *info,
+					  struct drbd_peer_device_info *info,
 					  enum drbd_notification_type type)
 {
-	struct peer_device_statistics statistics;
+	struct drbd_peer_device_statistics statistics;
 	bool multicast = !skb;
 	void *dh;
 	int err;
@@ -2402,7 +2402,7 @@ static int drbd2_notify_path_state(struct sk_buff *skb, unsigned int seq,
 				    */
 				   struct drbd_connection *connection,
 				   struct drbd_path *path,
-				   struct drbd_path_info *info,
+				   struct drbd_nl_path_info *info,
 				   enum drbd_notification_type type)
 {
 	bool multicast = !skb;

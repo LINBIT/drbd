@@ -114,7 +114,8 @@ static int dtt_recv(struct drbd_transport *transport, enum drbd_stream stream, v
 static int dtt_recv_bio(struct drbd_transport *transport, struct bio_list *bios, size_t size,
 			unsigned int *misalign_bits);
 static void dtt_stats(struct drbd_transport *transport, struct drbd_transport_stats *stats);
-static int dtt_net_conf_change(struct drbd_transport *transport, struct net_conf *new_net_conf);
+static int dtt_net_conf_change(struct drbd_transport *transport,
+			       struct drbd_net_conf *new_net_conf);
 static void dtt_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream, long timeout);
 static long dtt_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream);
 static int dtt_send_page(struct drbd_transport *transport, enum drbd_stream, struct page *page,
@@ -466,7 +467,7 @@ static int dtt_try_connect(struct dtt_path *path, struct socket **ret_socket)
 	const char *what;
 	struct socket *socket;
 	struct sockaddr_storage my_addr, peer_addr;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	int err;
 	int sndbuf_size, rcvbuf_size, connect_int;
 
@@ -658,7 +659,7 @@ static bool dtt_connection_established(struct drbd_transport *transport,
 				       struct socket **socket2,
 				       struct dtt_path **first_path)
 {
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	int timeout, good = 0;
 
 	if (!*socket1 || !*socket2)
@@ -730,7 +731,7 @@ static int dtt_wait_for_connect(struct drbd_transport *transport,
 	int connect_int, err = 0;
 	long timeo;
 	struct socket *s_estab = NULL;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	struct drbd_path *drbd_path2;
 	struct drbd_listener *drbd_listener;
 	struct dtt_listener *listener;
@@ -857,7 +858,7 @@ static int dtt_receive_first_packet(struct drbd_tcp_transport *tcp_transport, st
 	struct drbd_transport *transport = &tcp_transport->transport;
 	struct p_header80 *h = tcp_transport->rbuf[DATA_STREAM].base;
 	const unsigned int header_size = sizeof(*h);
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	int err;
 
 	rcu_read_lock();
@@ -1048,7 +1049,7 @@ static int dtt_init_listener(struct drbd_transport *transport,
 	struct sockaddr_storage my_addr;
 	struct dtt_listener *listener = container_of(drbd_listener, struct dtt_listener, listener);
 	struct socket *s_listen;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	const char *what = "";
 
 	rcu_read_lock();
@@ -1179,7 +1180,7 @@ static int dtt_connect(struct drbd_transport *transport)
 		container_of(transport, struct drbd_tcp_transport, transport);
 	struct dtt_path *connect_to_path, *first_path = NULL;
 	struct socket *dsocket, *csocket;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	bool tls, dsocket_is_server = false, csocket_is_server = false;
 	char peername[64];
 	key_serial_t tls_keyring, tls_privkey, tls_certificate;
@@ -1453,11 +1454,12 @@ out:
 	return err;
 }
 
-static int dtt_net_conf_change(struct drbd_transport *transport, struct net_conf *new_net_conf)
+static int dtt_net_conf_change(struct drbd_transport *transport,
+			       struct drbd_net_conf *new_net_conf)
 {
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
-	struct net_conf *old_net_conf;
+	struct drbd_net_conf *old_net_conf;
 	struct socket *data_socket = tcp_transport->stream[DATA_STREAM];
 	struct socket *control_socket = tcp_transport->stream[CONTROL_STREAM];
 
@@ -1539,7 +1541,7 @@ static int dtt_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
 	struct socket *socket = tcp_transport->stream[stream];
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	struct msghdr msg;
 	struct bio_vec bvec;
 	int len = size;

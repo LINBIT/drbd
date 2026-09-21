@@ -852,7 +852,7 @@ struct fifo_buffer *fifo_alloc(unsigned int fifo_size)
 static int drbd_rs_controller(struct drbd_peer_device *peer_device, u64 sect_in, u64 duration_ns)
 {
 	const u64 max_duration_ns = RS_MAKE_REQS_INTV_NS * 10;
-	struct peer_device_conf *pdc;
+	struct drbd_peer_device_conf *pdc;
 	unsigned int want;     /* The number of sectors we want in-flight */
 	int req_sect; /* Number of sectors to request in this turn */
 	int correction; /* Number of sectors more we need in-flight */
@@ -942,7 +942,7 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, u64 sect_in,
  */
 static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 {
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	ktime_t duration, now;
 	unsigned int sect_in;  /* Number of sectors that came in since the last turn */
 	int number, mxb;
@@ -1673,7 +1673,7 @@ static int w_resync_finished(struct drbd_work *w, int cancel)
 
 static long ping_timeout(struct drbd_connection *connection)
 {
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	long timeout;
 
 	rcu_read_lock();
@@ -3067,7 +3067,7 @@ bool drbd_stable_sync_source_present(struct drbd_peer_device *except_peer_device
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
 		enum drbd_repl_state repl_state;
-		struct net_conf *nc;
+		struct drbd_net_conf *nc;
 
 		if (peer_device == except_peer_device)
 			continue;
@@ -3126,7 +3126,7 @@ static void handle_congestion(struct drbd_peer_device *peer_device)
 {
 	struct drbd_resource *resource = peer_device->device->resource;
 	unsigned long irq_flags;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	enum drbd_on_congestion on_congestion;
 
 	rcu_read_lock();
@@ -3711,7 +3711,7 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
 	DEFINE_WAIT(wait);
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	int uncork, cork;
 	bool got_something = 0;
 

@@ -16,7 +16,7 @@ static void get_resource_name(const struct kref_debug_info *debug_info, char *na
 static void get_connection_name(const struct kref_debug_info *debug_info, char *name)
 {
 	struct drbd_connection *connection = container_of(debug_info, struct drbd_connection, kref_debug);
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	const char *resource_n =
 		connection->resource && connection->resource->name ? connection->resource->name : "unknown";
 

@@ -126,27 +126,27 @@ struct drbd_nl_dialect {
 	 */
 	int (*emit_resource)(struct sk_buff *skb, struct netlink_callback *cb,
 			     struct drbd_resource *resource,
-			     struct resource_info *info,
-			     struct resource_statistics *statistics);
+			     struct drbd_resource_info *info,
+			     struct drbd_resource_statistics *statistics);
 	int (*emit_device)(struct sk_buff *skb, struct netlink_callback *cb, int retcode,
 			   struct drbd_device *device,
-			   struct disk_conf *disk_conf /* NULL if diskless */,
-			   struct device_info *info,
-			   struct device_statistics *statistics);
+			   struct drbd_disk_conf *disk_conf /* NULL if diskless */,
+			   struct drbd_device_info *info,
+			   struct drbd_device_statistics *statistics);
 	int (*emit_connection)(struct sk_buff *skb, struct netlink_callback *cb, int retcode,
 			       struct drbd_resource *resource,
 			       struct drbd_connection *connection,
-			       struct net_conf *net_conf /* NULL if none */,
-			       struct connection_info *info,
-			       struct connection_statistics *statistics);
+			       struct drbd_net_conf *net_conf /* NULL if none */,
+			       struct drbd_connection_info *info,
+			       struct drbd_connection_statistics *statistics);
 	int (*emit_peer_device)(struct sk_buff *skb, struct netlink_callback *cb, int retcode,
 				struct drbd_peer_device *peer_device, unsigned int minor,
-				struct peer_device_info *info,
-				struct peer_device_statistics *statistics,
-				struct peer_device_conf *conf /* NULL if none */);
+				struct drbd_peer_device_info *info,
+				struct drbd_peer_device_statistics *statistics,
+				struct drbd_peer_device_conf *conf /* NULL if none */);
 	int (*emit_path)(struct sk_buff *skb, struct netlink_callback *cb, int retcode,
 			 struct drbd_resource *resource, struct drbd_connection *connection,
-			 struct drbd_path *path, struct drbd_path_info *info);
+			 struct drbd_path *path, struct drbd_nl_path_info *info);
 
 	/*
 	 * Notification emitters. skb == NULL: allocate a message, build it
@@ -157,24 +157,24 @@ struct drbd_nl_dialect {
 	 */
 	int (*notify_resource_state)(struct sk_buff *skb, unsigned int seq,
 				     struct drbd_resource *resource,
-				     struct resource_info *info,
-				     struct rename_resource_info *rename_info,
+				     struct drbd_resource_info *info,
+				     struct drbd_rename_resource_info *rename_info,
 				     enum drbd_notification_type type);
 	int (*notify_device_state)(struct sk_buff *skb, unsigned int seq,
 				   struct drbd_device *device,
-				   struct device_info *info,
+				   struct drbd_device_info *info,
 				   enum drbd_notification_type type);
 	int (*notify_connection_state)(struct sk_buff *skb, unsigned int seq,
 				       struct drbd_connection *connection,
-				       struct connection_info *info,
+				       struct drbd_connection_info *info,
 				       enum drbd_notification_type type);
 	int (*notify_peer_device_state)(struct sk_buff *skb, unsigned int seq,
 					struct drbd_peer_device *peer_device,
-					struct peer_device_info *info,
+					struct drbd_peer_device_info *info,
 					enum drbd_notification_type type);
 	int (*notify_path_state)(struct sk_buff *skb, unsigned int seq,
 				 struct drbd_connection *connection, struct drbd_path *path,
-				 struct drbd_path_info *info,
+				 struct drbd_nl_path_info *info,
 				 enum drbd_notification_type type);
 	int (*notify_helper)(struct sk_buff *skb, unsigned int seq,
 			     struct drbd_device *device, struct drbd_connection *connection,
@@ -192,69 +192,71 @@ void drbd_nl_legacy_exit(void);
 int drbd_nl_drbd2_init(void);
 void drbd_nl_drbd2_exit(void);
 
-static inline int drbd_adm_overlay_disk_conf(struct drbd_adm_ctx *ctx, struct disk_conf *c)
+static inline int drbd_adm_overlay_disk_conf(struct drbd_adm_ctx *ctx, struct drbd_disk_conf *c)
 { return ctx->d->overlay(ctx, DRBD_NL_SET_DISK_CONF, c); }
 
-static inline int drbd_adm_overlay_net_conf(struct drbd_adm_ctx *ctx, struct net_conf *c)
+static inline int drbd_adm_overlay_net_conf(struct drbd_adm_ctx *ctx, struct drbd_net_conf *c)
 { return ctx->d->overlay(ctx, DRBD_NL_SET_NET_CONF, c); }
 
-static inline int drbd_adm_overlay_res_opts(struct drbd_adm_ctx *ctx, struct res_opts *c)
+static inline int drbd_adm_overlay_res_opts(struct drbd_adm_ctx *ctx, struct drbd_res_opts *c)
 { return ctx->d->overlay(ctx, DRBD_NL_SET_RES_OPTS, c); }
 
 static inline int drbd_adm_overlay_peer_device_conf(struct drbd_adm_ctx *ctx,
-						    struct peer_device_conf *c)
+						    struct drbd_peer_device_conf *c)
 { return ctx->d->overlay(ctx, DRBD_NL_SET_PEER_DEVICE_CONF, c); }
 
-static inline int drbd_adm_overlay_device_conf(struct drbd_adm_ctx *ctx, struct device_conf *c)
+static inline int drbd_adm_overlay_device_conf(struct drbd_adm_ctx *ctx, struct drbd_device_conf *c)
 { return ctx->d->overlay(ctx, DRBD_NL_SET_DEVICE_CONF, c); }
 
 static inline int drbd_adm_overlay_set_role_parms(struct drbd_adm_ctx *ctx,
-						  struct set_role_parms *c)
+						  struct drbd_set_role_parms *c)
 { return ctx->d->overlay(ctx, DRBD_NL_SET_SET_ROLE_PARMS, c); }
 
-static inline int drbd_adm_overlay_resize_parms(struct drbd_adm_ctx *ctx, struct resize_parms *c)
+static inline int drbd_adm_overlay_resize_parms(struct drbd_adm_ctx *ctx,
+						struct drbd_resize_parms *c)
 { return ctx->d->overlay(ctx, DRBD_NL_SET_RESIZE_PARMS, c); }
 
 static inline int drbd_adm_overlay_start_ov_parms(struct drbd_adm_ctx *ctx,
-						  struct start_ov_parms *c)
+						  struct drbd_start_ov_parms *c)
 { return ctx->d->overlay(ctx, DRBD_NL_SET_START_OV_PARMS, c); }
 
 static inline int drbd_adm_overlay_new_c_uuid_parms(struct drbd_adm_ctx *ctx,
-						    struct new_c_uuid_parms *c)
+						    struct drbd_new_c_uuid_parms *c)
 { return ctx->d->overlay(ctx, DRBD_NL_SET_NEW_C_UUID_PARMS, c); }
 
 static inline int drbd_adm_overlay_disconnect_parms(struct drbd_adm_ctx *ctx,
-						    struct disconnect_parms *c)
+						    struct drbd_disconnect_parms *c)
 { return ctx->d->overlay(ctx, DRBD_NL_SET_DISCONNECT_PARMS, c); }
 
-static inline int drbd_adm_overlay_detach_parms(struct drbd_adm_ctx *ctx, struct detach_parms *c)
+static inline int drbd_adm_overlay_detach_parms(struct drbd_adm_ctx *ctx,
+						struct drbd_detach_parms *c)
 { return ctx->d->overlay(ctx, DRBD_NL_SET_DETACH_PARMS, c); }
 
 static inline int drbd_adm_overlay_invalidate_parms(struct drbd_adm_ctx *ctx,
-						    struct invalidate_parms *c)
+						    struct drbd_invalidate_parms *c)
 { return ctx->d->overlay(ctx, DRBD_NL_SET_INVALIDATE_PARMS, c); }
 
 static inline int drbd_adm_overlay_invalidate_peer_parms(struct drbd_adm_ctx *ctx,
-							 struct invalidate_peer_parms *c)
+							 struct drbd_invalidate_peer_parms *c)
 { return ctx->d->overlay(ctx, DRBD_NL_SET_INVALIDATE_PEER_PARMS, c); }
 
 static inline int drbd_adm_overlay_forget_peer_parms(struct drbd_adm_ctx *ctx,
-						     struct forget_peer_parms *c)
+						     struct drbd_forget_peer_parms *c)
 { return ctx->d->overlay(ctx, DRBD_NL_SET_FORGET_PEER_PARMS, c); }
 
 static inline int drbd_adm_overlay_connect_parms(struct drbd_adm_ctx *ctx,
-						 struct connect_parms *c)
+						 struct drbd_connect_parms *c)
 { return ctx->d->overlay(ctx, DRBD_NL_SET_CONNECT_PARMS, c); }
 
-static inline int drbd_adm_overlay_path_parms(struct drbd_adm_ctx *ctx, struct path_parms *c)
+static inline int drbd_adm_overlay_path_parms(struct drbd_adm_ctx *ctx, struct drbd_path_parms *c)
 { return ctx->d->overlay(ctx, DRBD_NL_SET_PATH_PARMS, c); }
 
 static inline int drbd_adm_overlay_rename_resource_parms(struct drbd_adm_ctx *ctx,
-							 struct rename_resource_parms *c)
+							 struct drbd_rename_resource_parms *c)
 { return ctx->d->overlay(ctx, DRBD_NL_SET_RENAME_RESOURCE_PARMS, c); }
 
 static inline int drbd_adm_overlay_suspend_io_parms(struct drbd_adm_ctx *ctx,
-						    struct suspend_io_parms *c)
+						    struct drbd_suspend_io_parms *c)
 { return ctx->d->overlay(ctx, DRBD_NL_SET_SUSPEND_IO_PARMS, c); }
 
 __printf(2, 3) void drbd_adm_msg(struct drbd_adm_ctx *ctx, const char *fmt, ...);
@@ -332,11 +334,11 @@ int drbd_dump_initial_state(struct sk_buff *skb, struct netlink_callback *cb,
 int drbd_dump_initial_state_done(struct netlink_callback *cb);
 
 /* Statistics of a live object, for the dumps and for the notifications. */
-void resource_to_statistics(struct resource_statistics *s, struct drbd_resource *resource);
-void device_to_statistics(struct device_statistics *s, struct drbd_device *device);
-void connection_to_statistics(struct connection_statistics *s,
+void resource_to_statistics(struct drbd_resource_statistics *s, struct drbd_resource *resource);
+void device_to_statistics(struct drbd_device_statistics *s, struct drbd_device *device);
+void connection_to_statistics(struct drbd_connection_statistics *s,
 			      struct drbd_connection *connection);
-void peer_device_to_statistics(struct peer_device_statistics *s,
+void peer_device_to_statistics(struct drbd_peer_device_statistics *s,
 			       struct drbd_peer_device *peer_device);
 
 /*
@@ -349,23 +351,23 @@ void peer_device_to_statistics(struct peer_device_statistics *s,
 int drbd_notify_resource_state(struct sk_buff *skb, unsigned int seq,
 			       const struct drbd_nl_dialect *dialect,
 			       struct drbd_resource *resource,
-			       struct resource_info *resource_info,
-			       struct rename_resource_info *rename_resource_info,
+			       struct drbd_resource_info *resource_info,
+			       struct drbd_rename_resource_info *rename_resource_info,
 			       enum drbd_notification_type type);
 int drbd_notify_device_state(struct sk_buff *skb, unsigned int seq,
 			     const struct drbd_nl_dialect *dialect,
 			     struct drbd_device *device,
-			     struct device_info *device_info,
+			     struct drbd_device_info *device_info,
 			     enum drbd_notification_type type);
 int drbd_notify_connection_state(struct sk_buff *skb, unsigned int seq,
 				 const struct drbd_nl_dialect *dialect,
 				 struct drbd_connection *connection,
-				 struct connection_info *connection_info,
+				 struct drbd_connection_info *connection_info,
 				 enum drbd_notification_type type);
 int drbd_notify_peer_device_state(struct sk_buff *skb, unsigned int seq,
 				  const struct drbd_nl_dialect *dialect,
 				  struct drbd_peer_device *peer_device,
-				  struct peer_device_info *peer_device_info,
+				  struct drbd_peer_device_info *peer_device_info,
 				  enum drbd_notification_type type);
 
 #endif /* __DRBD_NL_H */

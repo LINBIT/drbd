@@ -921,7 +921,7 @@ static bool initial_states_received(struct drbd_connection *connection)
 
 void wait_initial_states_received(struct drbd_connection *connection)
 {
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	long timeout;
 
 	rcu_read_lock();
@@ -953,7 +953,7 @@ static void arm_connect_timer(struct drbd_connection *connection, unsigned long 
 static bool retry_by_rr_conflict(struct drbd_connection *connection)
 {
 	enum drbd_after_sb_p rr_conflict;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 
 	rcu_read_lock();
 	nc = rcu_dereference(connection->transport.net_conf);
@@ -1262,7 +1262,7 @@ static bool conn_connect(struct drbd_connection *connection)
 	int ping_timeo, ping_int, h, err, vnr, in_flight;
 	struct drbd_peer_device *peer_device;
 	enum drbd_stream stream;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	bool discard_my_data;
 	bool have_mutex;
 	bool no_addr = false;
@@ -1300,7 +1300,7 @@ start:
 			return false;
 		goto retry;
 	} else if (err == -EADDRNOTAVAIL) {
-		struct net_conf *nc;
+		struct drbd_net_conf *nc;
 		int connect_int;
 		long t;
 
@@ -1916,7 +1916,7 @@ static enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *connectio
 static enum write_ordering_e
 max_allowed_wo(struct drbd_backing_dev *bdev, enum write_ordering_e wo)
 {
-	struct disk_conf *dc;
+	struct drbd_disk_conf *dc;
 
 	dc = rcu_dereference(bdev->disk_conf);
 
@@ -2060,7 +2060,7 @@ int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, u
 
 static bool can_do_reliable_discards(struct drbd_device *device)
 {
-	struct disk_conf *dc;
+	struct drbd_disk_conf *dc;
 	bool can_do;
 
 	if (!bdev_max_discard_sectors(device->ldev->backing_bdev))
@@ -4317,7 +4317,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 {
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	struct drbd_peer_request *peer_req;
 	struct drbd_peer_request_details d;
 	int err, tp;
@@ -6020,7 +6020,7 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 		return SYNC_SOURCE_SET_BITMAP;
 
 	if (self == peer) {
-		struct net_conf *nc;
+		struct drbd_net_conf *nc;
 		int wire_protocol;
 
 		rcu_read_lock();
@@ -6758,7 +6758,7 @@ static enum sync_strategy drbd_attach_handshake(struct drbd_peer_device *peer_de
 	enum sync_strategy strategy;
 	enum sync_rule rule;
 	int peer_node_id, err;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	int rr_conflict, always_asbp;
 	bool need_full_sync_after_split_brain;
 
@@ -6893,7 +6893,7 @@ static enum sync_strategy drbd_sync_handshake(struct drbd_peer_device *peer_devi
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	enum sync_strategy strategy;
 	enum sync_rule rule;
 	int rr_conflict, always_asbp, peer_node_id = 0, err;
@@ -7144,7 +7144,7 @@ static int receive_protocol(struct drbd_connection *connection, struct packet_in
 	struct p_protocol *p = pi->data;
 	enum drbd_after_sb_p p_after_sb_0p, p_after_sb_1p, p_after_sb_2p;
 	int p_proto, p_discard_my_data, p_two_primaries, cf;
-	struct net_conf *nc, *old_net_conf, *new_net_conf = NULL;
+	struct drbd_net_conf *nc, *old_net_conf, *new_net_conf = NULL;
 	char integrity_alg[SHARED_SECRET_MAX] = "";
 	struct crypto_shash *peer_integrity_tfm = NULL;
 	void *int_dig_in = NULL, *int_dig_vv = NULL;
@@ -7242,7 +7242,7 @@ static int receive_protocol(struct drbd_connection *connection, struct packet_in
 		}
 	}
 
-	new_net_conf = kmalloc_obj(struct net_conf);
+	new_net_conf = kmalloc_obj(struct drbd_net_conf);
 	if (!new_net_conf)
 		goto disconnect;
 
@@ -7325,8 +7325,8 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 	unsigned int header_size, data_size, exp_max_sz;
 	struct crypto_shash *verify_tfm = NULL;
 	struct crypto_shash *csums_tfm = NULL;
-	struct net_conf *old_net_conf, *new_net_conf = NULL;
-	struct peer_device_conf *old_peer_device_conf = NULL;
+	struct drbd_net_conf *old_net_conf, *new_net_conf = NULL;
+	struct drbd_peer_device_conf *old_peer_device_conf = NULL;
 	const int apv = connection->agreed_pro_version;
 	struct fifo_buffer *old_plan = NULL, *new_plan = NULL;
 	struct drbd_resource *resource = connection->resource;
@@ -7424,7 +7424,7 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 		}
 
 		if (verify_tfm || csums_tfm) {
-			new_net_conf = kzalloc_obj(struct net_conf);
+			new_net_conf = kzalloc_obj(struct drbd_net_conf);
 			if (!new_net_conf)
 				goto disconnect;
 
@@ -7737,9 +7737,9 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		}
 
 		if (my_usize != p_usize) {
-			struct disk_conf *old_disk_conf, *new_disk_conf;
+			struct drbd_disk_conf *old_disk_conf, *new_disk_conf;
 
-			new_disk_conf = kzalloc_obj(struct disk_conf);
+			new_disk_conf = kzalloc_obj(struct drbd_disk_conf);
 			if (!new_disk_conf) {
 				err = -ENOMEM;
 				goto out;
@@ -8090,7 +8090,7 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 	struct drbd_resource *resource = device->resource;
 	int updated_uuids = 0, err = 0;
 	bool bad_server, uuid_match;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	bool two_primaries_allowed;
 
 	uuid_match =
@@ -8841,7 +8841,7 @@ far_away_change(struct drbd_connection *connection,
 
 	if (flags & CS_PREPARE && mask.role == role_MASK && val.role == R_PRIMARY &&
 	    resource->role[NOW] == R_PRIMARY) {
-		struct net_conf *nc;
+		struct drbd_net_conf *nc;
 		bool two_primaries_allowed = false;
 
 		rcu_read_lock();
@@ -9023,7 +9023,7 @@ static enum alt_rv when_done_lock(struct drbd_resource *resource, unsigned int f
 static enum alt_rv abort_local_transaction(struct drbd_connection *connection, unsigned int for_tid)
 {
 	struct drbd_resource *resource = connection->resource;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	enum alt_rv rv;
 	long t;
 
@@ -9094,7 +9094,8 @@ static bool is_prepare(enum drbd_packet cmd)
 
 
 enum determine_dev_size
-drbd_commit_size_change(struct drbd_device *device, struct resize_parms *rs, u64 nodes_to_reach)
+drbd_commit_size_change(struct drbd_device *device, struct drbd_resize_parms *rs,
+			u64 nodes_to_reach)
 {
 	struct twopc_resize *tr = &device->resource->twopc.resize;
 	struct drbd_peer_device *peer_device;
@@ -9123,12 +9124,12 @@ drbd_commit_size_change(struct drbd_device *device, struct resize_parms *rs, u64
 	rcu_read_unlock();
 
 	if (my_usize != tr->user_size) {
-		struct disk_conf *old_disk_conf, *new_disk_conf;
+		struct drbd_disk_conf *old_disk_conf, *new_disk_conf;
 
 		drbd_info(device, "New u_size %llu sectors\n",
 			  (unsigned long long)tr->user_size);
 
-		new_disk_conf = kzalloc_obj(struct disk_conf);
+		new_disk_conf = kzalloc_obj(struct drbd_disk_conf);
 		if (!new_disk_conf) {
 			device->ldev->disk_conf->disk_size = tr->user_size;
 			goto cont;
@@ -12097,7 +12098,7 @@ bool drbd_maybe_release_rotated_gen(struct drbd_device *device)
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
 		struct drbd_connection *connection = peer_device->connection;
-		struct net_conf *nc;
+		struct drbd_net_conf *nc;
 
 		if (peer_device->repl_state[NOW] < L_ESTABLISHED)
 			continue;	/* lost -> requirement discharged */
@@ -12514,7 +12515,7 @@ int drbd_do_auth(struct drbd_connection *connection)
 	unsigned int resp_size;
 	struct shash_desc *desc;
 	struct packet_info pi;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	int err, rv, dig_size;
 	bool peer_is_drbd_9 = connection->agreed_pro_version >= 110;
 	void *packet_body;
@@ -13914,7 +13915,7 @@ static void set_rcvtimeo(struct drbd_connection *connection, enum rcv_timeou_kin
 	struct drbd_transport *transport = &connection->transport;
 	struct drbd_transport_ops *tr_ops = &transport->class->ops;
 	bool ping_timeout = kind == PING_TIMEOUT;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	long t;
 
 	rcu_read_lock();
@@ -14161,7 +14162,7 @@ void drbd_send_acks_wf(struct work_struct *ws)
 	struct drbd_connection *connection =
 		container_of(ws, struct drbd_connection, send_acks_work);
 	struct drbd_transport *transport = &connection->transport;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	int tcp_cork, err;
 
 	rcu_read_lock();

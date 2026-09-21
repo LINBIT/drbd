@@ -70,7 +70,7 @@ identifier tls = tls;
 @@
 identifier transport, new_net_conf, ret;
 @@
-  dtt_net_conf_change(struct drbd_transport *transport, struct net_conf *new_net_conf) {
+  dtt_net_conf_change(struct drbd_transport *transport, struct drbd_net_conf *new_net_conf) {
   	...
   	int ret;
   	...

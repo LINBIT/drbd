@@ -1070,7 +1070,7 @@ static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_c
 	struct drbd_transport *transport = path->path.transport;
 	struct dtr_connect_state *cs = &path->cs;
 	long connect_int = 10 * HZ;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	int a;
 
 	dtr_remove_cm_from_path(path, failed_cm);
@@ -2132,7 +2132,7 @@ static int __dtr_post_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 	const struct ib_send_wr *send_wr_failed;
 	struct ib_device *device = cm->id->device;
 	unsigned long timeout;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	int i, err = -EIO;
 	bool was_active;
 
@@ -2401,7 +2401,7 @@ static int dtr_init_flow(struct dtr_path *path, enum drbd_stream stream)
 	unsigned int rcvbuf_size = RDMA_DEF_BUFFER_SIZE;
 	unsigned int sndbuf_size = RDMA_DEF_BUFFER_SIZE;
 	struct dtr_flow *flow = &path->flow[stream];
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	int err = 0;
 
 	rcu_read_lock();
@@ -2926,7 +2926,7 @@ static int dtr_prepare_connect(struct drbd_transport *transport)
 
 	struct dtr_stream *data_stream = NULL, *control_stream = NULL;
 	struct dtr_path *path;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	int timeout, err = -ENOMEM;
 
 	flush_signals(current);
@@ -3014,9 +3014,9 @@ static void dtr_finish_connect(struct drbd_transport *transport)
 	}
 }
 
-static int dtr_net_conf_change(struct drbd_transport *transport, struct net_conf *new_net_conf)
+static int dtr_net_conf_change(struct drbd_transport *transport, struct drbd_net_conf *new_net_conf)
 {
-	struct net_conf *old_net_conf;
+	struct drbd_net_conf *old_net_conf;
 	struct dtr_transport *dtr_transport = container_of(transport,
 		struct dtr_transport, transport);
 	int ret = 0;

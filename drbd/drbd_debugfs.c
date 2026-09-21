@@ -1844,7 +1844,7 @@ static int peer_device_proc_drbd_show(struct seq_file *m, void *ignored)
 	struct drbd_device *device = peer_device->device;
 	union drbd_state state;
 	const char *sn;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	bool have_ldev;
 	char wp;
 

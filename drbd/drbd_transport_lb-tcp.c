@@ -156,7 +156,8 @@ static int dtl_recv(struct drbd_transport *transport, enum drbd_stream stream, v
 static int dtl_recv_bio(struct drbd_transport *transport, struct bio_list *bios, size_t size,
 			unsigned int *misalign_bits);
 static void dtl_stats(struct drbd_transport *transport, struct drbd_transport_stats *stats);
-static int dtl_net_conf_change(struct drbd_transport *transport, struct net_conf *new_net_conf);
+static int dtl_net_conf_change(struct drbd_transport *transport,
+			       struct drbd_net_conf *new_net_conf);
 static void dtl_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream,
 			     long timeout);
 static long dtl_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream);
@@ -799,7 +800,7 @@ dtl_try_connect(struct drbd_transport *transport, struct dtl_path *path, struct 
 	const char *what;
 	struct socket *sock;
 	struct sockaddr_storage my_addr, peer_addr;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	int err;
 	int sndbuf_size, rcvbuf_size, connect_int;
 
@@ -1016,7 +1017,7 @@ static bool dtl_path_established(struct drbd_transport *transport, struct dtl_pa
 		container_of(transport, struct dtl_transport, transport);
 	bool lb = test_bit(DTL_LOAD_BALANCE, &dtl_transport->flags);
 	struct drbd_path *drbd_path = &path->path;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	enum drbd_stream i;
 	bool established;
 	int timeout;
@@ -1082,7 +1083,7 @@ static int dtl_receive_first_packet(struct dtl_transport *dtl_transport, struct 
 {
 	struct drbd_transport *transport = &dtl_transport->transport;
 	struct p_header80 header;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	int err;
 
 	rcu_read_lock();
@@ -1334,7 +1335,7 @@ static int dtl_init_listener(struct drbd_transport *transport,
 	struct sockaddr_storage my_addr;
 	struct dtl_listener *listener = container_of(drbd_listener, struct dtl_listener, listener);
 	struct socket *s_listen;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	const char *what = "";
 
 
@@ -1403,7 +1404,7 @@ static void dtl_setup_socket(struct dtl_transport *dtl_transport, struct socket 
 {
 	struct drbd_transport *transport = &dtl_transport->transport;
 	bool use_for_data = flow->stream_nr == DATA_STREAM;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	long timeout = HZ;
 
 	lockdep_assert_held(&dtl_transport->sockets_mutex);
@@ -1696,7 +1697,7 @@ static void dtl_connect_work_fn(struct work_struct *work)
 	}
 
 	if (to_connect && test_bit(DTL_CONNECTING, &dtl_transport->flags)) {
-		struct net_conf *nc;
+		struct drbd_net_conf *nc;
 		int connect_int = HZ;
 
 		rcu_read_lock();
@@ -1818,7 +1819,8 @@ static void dtl_finish_connect(struct drbd_transport *transport)
 	}
 }
 
-static int dtl_net_conf_change(struct drbd_transport *transport, struct net_conf *new_net_conf)
+static int dtl_net_conf_change(struct drbd_transport *transport,
+			       struct drbd_net_conf *new_net_conf)
 {
 	struct dtl_transport *dtl_transport =
 		container_of(transport, struct dtl_transport, transport);
@@ -1978,7 +1980,7 @@ static int dtl_select_send_flow(struct dtl_transport *dtl_transport,
 				enum drbd_stream st, struct dtl_flow **result)
 {
 	struct drbd_transport *transport = &dtl_transport->transport;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	long rem, timeout = HZ;
 	int err;
 
@@ -2314,7 +2316,7 @@ static void dtl_remove_path(struct drbd_path *drbd_path)
 	if (test_bit(TR_ESTABLISHED, &drbd_path->flags)) {
 		enum drbd_stream i;
 		long timeout = HZ * 5;
-		struct net_conf *nc;
+		struct drbd_net_conf *nc;
 		bool timed_out;
 
 		/* Send a FIN on both streams and let dtl_check_graceful_shutdown()

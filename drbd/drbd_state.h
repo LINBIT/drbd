@@ -207,7 +207,7 @@ bool is_suspended_fen(struct drbd_resource *resource, enum which_state which);
 
 enum dds_flags;
 enum determine_dev_size;
-struct resize_parms;
+struct drbd_resize_parms;
 
 enum determine_dev_size
 change_cluster_wide_device_size(struct drbd_device *device,
@@ -215,7 +215,7 @@ change_cluster_wide_device_size(struct drbd_device *device,
 				uint64_t new_user_size,
 				enum dds_flags dds_flags,
 				bool automatic,
-				struct resize_parms *rs);
+				struct drbd_resize_parms *rs);
 
 bool drbd_data_accessible(struct drbd_device *device, enum which_state which);
 bool drbd_res_data_accessible(struct drbd_resource *resource);

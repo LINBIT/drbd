@@ -535,7 +535,7 @@ static int seq_print_device_proc_drbd(struct seq_file *m, struct drbd_device *de
 		unacked_cnt = 0;
 	}
 	if (connection) {
-		struct net_conf *nc = rcu_dereference(connection->transport.net_conf);
+		struct drbd_net_conf *nc = rcu_dereference(connection->transport.net_conf);
 
 		wp = nc ? nc->wire_protocol - DRBD_PROT_A + 'A' : ' ';
 		epochs = connection->epochs;

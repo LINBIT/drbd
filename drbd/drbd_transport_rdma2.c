@@ -1672,7 +1672,7 @@ static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_c
 	struct drbd_transport *transport = path->path.transport;
 	struct dtr_connect_state *cs = &path->cs;
 	long connect_int = 10 * HZ;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	int a;
 
 	dtr_cancel_connect_timeout(failed_cm);
@@ -1706,7 +1706,7 @@ static void dtr_arm_connect_timeout(struct dtr_cm *cm)
 {
 	struct drbd_transport *transport = cm->path->path.transport;
 	long connect_int = 10 * HZ;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	bool was_active;
 
 	rcu_read_lock();
@@ -2355,7 +2355,7 @@ static void dtr_tx_timeout_fn(struct timer_list *t)
 static void dtr_arm_tx_timeout(struct dtr_cm *cm)
 {
 	struct drbd_transport *transport = &cm->rdma_transport->transport;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	unsigned int timeout;
 	bool was_active;
 
@@ -4333,7 +4333,7 @@ static u32 dtr_local_buffer_target_bytes(struct dtr_region_set *rs, u32 stride)
 	struct dtr_flow *flow = &path->flow[rs->stream];
 	u32 want = flow->rx_window_bytes;
 	u32 credit_cap, mxb_cap;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 
 	credit_cap = (u32)flow->rx_descs_max / 2 * rdma_transport->sges_max * PAGE_SIZE;
 
@@ -4950,7 +4950,7 @@ static void dtr_register_buffers_work_fn(struct work_struct *work)
  * of the DATA windows. An unset sndbuf tracks the matching rcvbuf, so the
  * sender may keep a full receive window in flight.
  */
-static void dtr_window_bytes(struct net_conf *nc, enum drbd_stream stream,
+static void dtr_window_bytes(struct drbd_net_conf *nc, enum drbd_stream stream,
 			     unsigned int *rx_bytes, unsigned int *tx_bytes)
 {
 	unsigned int rcvbuf = nc->rcvbuf_size ?: RDMA_DEF_BUFFER_SIZE;
@@ -4987,7 +4987,7 @@ static int dtr_init_flow(struct dtr_path *path, enum drbd_stream stream)
 	struct drbd_transport *transport = path->path.transport;
 	struct dtr_flow *flow = &path->flow[stream];
 	unsigned int rx_bytes, tx_bytes;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 
 	rcu_read_lock();
 	nc = rcu_dereference(transport->net_conf);
@@ -5630,7 +5630,7 @@ static int dtr_prepare_connect(struct drbd_transport *transport)
 
 	struct dtr_stream *data_stream = NULL, *control_stream = NULL;
 	struct dtr_path *path;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	int timeout, err = -ENOMEM;
 
 	flush_signals(current);
@@ -5723,9 +5723,9 @@ static void dtr_finish_connect(struct drbd_transport *transport)
 	}
 }
 
-static int dtr_net_conf_change(struct drbd_transport *transport, struct net_conf *new_net_conf)
+static int dtr_net_conf_change(struct drbd_transport *transport, struct drbd_net_conf *new_net_conf)
 {
-	struct net_conf *old_net_conf;
+	struct drbd_net_conf *old_net_conf;
 	struct dtr_transport *dtr_transport = container_of(transport,
 		struct dtr_transport, transport);
 	int ret = 0;
@@ -6452,7 +6452,7 @@ static void dtr_remove_path(struct drbd_path *del_path)
 	if (test_bit(TR_ESTABLISHED, &del_path->flags) && dtr_other_path_connected(path)) {
 		long timeout = HZ; /* fallback if net_conf went away */
 		unsigned long deadline;
-		struct net_conf *nc;
+		struct drbd_net_conf *nc;
 		long remaining;
 		int err;
 

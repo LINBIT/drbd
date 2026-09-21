@@ -1115,7 +1115,7 @@ static void drbd_report_io_error(struct drbd_device *device, struct drbd_request
 
 static int drbd_protocol_state_bits(struct drbd_connection *connection)
 {
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	int p;
 
 	rcu_read_lock();
@@ -1223,7 +1223,7 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		struct bio_and_error *m)
 {
 	struct drbd_device *device = req->device;
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	unsigned long flags;
 	int p;
 	int idx;
@@ -1643,7 +1643,7 @@ static bool remote_due_to_read_balancing(struct drbd_device *device,
 
 static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connection *connection)
 {
-	struct net_conf *nc;
+	struct drbd_net_conf *nc;
 	bool congested = false;
 	enum drbd_on_congestion on_congestion;
 	u32 cong_fill = 0, cong_extents = 0;
@@ -1758,7 +1758,7 @@ static u64 calc_nodes_to_read_from(struct drbd_device *device)
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
-		struct net_conf *nc;
+		struct drbd_net_conf *nc;
 
 		if (peer_device->disk_state[NOW] != D_UP_TO_DATE)
 			continue;
@@ -3106,7 +3106,7 @@ void request_timer_fn(struct timer_list *t)
 	}
 	for_each_connection(connection, resource) {
 		struct drbd_peer_device *peer_device = conn_peer_device(connection, device->vnr);
-		struct net_conf *nc;
+		struct drbd_net_conf *nc;
 		struct drbd_request *req;
 		unsigned long effective_net_timeout = 0;
 		unsigned long pre_send_jif = now;

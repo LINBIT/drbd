@@ -11,7 +11,7 @@ case RB_CONGESTED_REMOTE:
 }
 
 @ add_bdi_read_congested_device_to_statistics @
-struct device_statistics *s;
+struct drbd_device_statistics *s;
 @@
 - s->dev_lower_blocked = false;
 + s->dev_lower_blocked = bdi_congested(device->ldev->backing_bdev->bd_disk->bdi,
