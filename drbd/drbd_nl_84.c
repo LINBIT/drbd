@@ -17,6 +17,9 @@
 
 #include <linux/slab.h>
 #include <linux/drbd.h>
+#include <linux/in.h>
+#include <linux/in6.h>
+#include <linux/crc32c.h>
 #include <net/genetlink.h>
 #include <net/sock.h>
 
@@ -63,19 +66,15 @@ struct compat84_req {
 		u32 c_min_rate;
 	} peer_device_conf_84;
 
-	/* v1 disk_conf.fencing -> drbd_net_conf.fencing_policy; parsed while
-	 * overlaying DRBD_NL_SET_DISK_CONF. Applied by the attach/
-	 * disk-options handlers (compat84_apply_disk_conf_stash()) if a
-	 * connection already exists, otherwise deferred onto
-	 * struct drbd_resource.pending_fencing_policy_84* for the v1
-	 * connect handler to pick up.
+	/* v1 disk_conf.fencing -> drbd_net_conf.fencing_policy. Applied if a
+	 * connection exists, else deferred to
+	 * resource->pending_fencing_policy_84 for the connect handler.
 	 */
 	bool has_fencing_policy_84;
 	u32 fencing_policy_84;
 
-	/* v1 net_conf.{discard_my_data, tentative} -> struct drbd_connect_parms
-	 * (an exact two-for-two match); parsed while overlaying
-	 * DRBD_NL_SET_NET_CONF. Applied later in this series.
+	/* v1 net_conf.{discard_my_data, tentative} -> struct drbd_connect_parms,
+	 * applied through the DRBD_NL_SET_CONNECT_PARMS overlay case.
 	 */
 	struct {
 		bool has_discard_my_data;
@@ -83,6 +82,18 @@ struct compat84_req {
 		bool has_tentative;
 		unsigned char tentative;
 	} connect_parms_84;
+
+	/*
+	 * ctx_my_addr/ctx_peer_addr from DRBD_NLA_CFG_CONTEXT, raw
+	 * sockaddr bytes; v1 has no NLA_PATH_PARMS container. Parsed once
+	 * in drbd_pre_doit(), read by the DRBD_NL_SET_PATH_PARMS overlay
+	 * case and by compat84_resolve_peer_node_id(). *_len is 0 when the
+	 * attribute was not sent.
+	 */
+	u8 ctx_my_addr[128];
+	u32 ctx_my_addr_len;
+	u8 ctx_peer_addr[128];
+	u32 ctx_peer_addr_len;
 };
 
 /* One allocation for both, so that pre_doit zeroes the context only once. */
@@ -283,6 +294,105 @@ static int compat84_check_mandatory(const struct genl_split_ops *ops,
 }
 
 /*
+ * v1 has no ctx_peer_node_id attribute: an 8.4 resource has at most one
+ * peer. Resolve adm_ctx->peer_node_id (and adm_ctx->resource, when
+ * nothing else identifies it) here, before drbd_adm_ctx_resolve() runs,
+ * so that function needs no v1-specific fallback.
+ *
+ * Disconnect and net-options address the connection by its endpoint
+ * addresses (CTX_CONNECTION) and carry neither a resource name nor a
+ * minor, so the addresses are matched against every 8.4-mode resource's
+ * connections. Connect never gets here: it needs only the resource name
+ * and derives its own peer node id. The remaining peer-scoped commands
+ * (start-ov, invalidate-remote, pause-sync, resume-sync,
+ * get-timeout-type) address a minor only; an 8.4-mode resource has at
+ * most one connection, and the minor also pins the volume.
+ *
+ * Only 8.4-mode resources are considered, so a v1 request cannot act on
+ * a DRBD 9 native resource by naming its addresses. Both branches are
+ * skipped when a resource name was sent as well: drbd_adm_ctx_resolve()
+ * re-resolves adm_ctx->resource from the name unconditionally and
+ * would leak the reference taken here.
+ */
+static void compat84_resolve_peer_node_id(struct drbd_adm_ctx *adm_ctx)
+{
+	struct compat84_req *req = compat84_req(adm_ctx);
+	struct drbd_connection *connection = NULL;
+	struct drbd_resource *resource = NULL;
+	unsigned int volume = VOLUME_UNSPECIFIED;
+
+	rcu_read_lock();
+	if (req->ctx_my_addr_len && req->ctx_peer_addr_len && !adm_ctx->resource_name) {
+		struct drbd_resource *r;
+
+		for_each_resource_rcu(r, &drbd_resources) {
+			struct drbd_connection *c;
+
+			if (!r->res_opts.drbd8_compat_mode)
+				continue;
+
+			for_each_connection_rcu(c, r) {
+				struct drbd_path *path;
+
+				list_for_each_entry_rcu(path, &c->transport.paths, list) {
+					if (path->my_addr_len != req->ctx_my_addr_len ||
+					    memcmp(&path->my_addr, req->ctx_my_addr,
+						   path->my_addr_len))
+						continue;
+					if (path->peer_addr_len != req->ctx_peer_addr_len ||
+					    memcmp(&path->peer_addr, req->ctx_peer_addr,
+						   path->peer_addr_len))
+						continue;
+					connection = c;
+					break;
+				}
+				if (connection)
+					break;
+			}
+			if (connection) {
+				resource = r;
+				break;
+			}
+		}
+	} else if (adm_ctx->minor != -1U && !adm_ctx->resource_name) {
+		struct drbd_device *device = minor_to_device(adm_ctx->minor);
+
+		if (device && device->resource->res_opts.drbd8_compat_mode) {
+			resource = device->resource;
+			connection = list_first_or_null_rcu(&resource->connections,
+							     struct drbd_connection,
+							     connections);
+			volume = device->vnr;
+		}
+	}
+
+	if (connection) {
+		kref_get(&resource->kref);
+		kref_debug_get(&resource->kref_debug, 2);
+		adm_ctx->resource = resource;
+		adm_ctx->peer_node_id = connection->peer_node_id;
+		if (volume != VOLUME_UNSPECIFIED)
+			adm_ctx->volume = volume;
+	}
+	rcu_read_unlock();
+}
+
+/*
+ * Every resource this dialect creates is in DRBD 8.4 compatibility mode.
+ * A native DRBD 9 resource (from the drbd2 family) is not one 8.4
+ * userland can drive, whether it is named by resource or by minor.
+ */
+static bool compat84_reject_native(struct drbd_adm_ctx *adm_ctx)
+{
+	if (!adm_ctx->resource || adm_ctx->resource->res_opts.drbd8_compat_mode)
+		return false;
+
+	drbd_adm_msg(adm_ctx, "%s", "not a DRBD 8.4 compatibility mode resource");
+	adm_ctx->result = ERR_INVALID_REQUEST;
+	return true;
+}
+
+/*
  * Allocates the command context together with the v1 request state,
  * stores it in info->user_ptr[0], prepares the reply skb and resolves the
  * objects the command refers to. Rejects unknown netlink versions with
@@ -378,15 +488,30 @@ int drbd_pre_doit(const struct genl_split_ops *ops, struct sk_buff *skb,
 		nla = nested_attr_tb[DRBD_A_DRBD_CFG_CONTEXT_CTX_RESOURCE_NAME];
 		if (nla)
 			adm_ctx->resource_name = nla_data(nla);
-		/*
-		 * v1's DRBD_NLA_CFG_CONTEXT has no ctx_peer_node_id (8.4
-		 * resources have at most one peer connection): leave
-		 * adm_ctx->peer_node_id at PEER_NODE_ID_UNSPECIFIED.
-		 */
+		/* No ctx_peer_node_id in v1; the addresses stand in for it. */
+		nla = nested_attr_tb[DRBD_A_DRBD_CFG_CONTEXT_CTX_MY_ADDR];
+		if (nla) {
+			req->ctx_my_addr_len = min_t(u32, nla_len(nla), sizeof(req->ctx_my_addr));
+			memcpy(req->ctx_my_addr, nla_data(nla), req->ctx_my_addr_len);
+		}
+		nla = nested_attr_tb[DRBD_A_DRBD_CFG_CONTEXT_CTX_PEER_ADDR];
+		if (nla) {
+			req->ctx_peer_addr_len =
+				min_t(u32, nla_len(nla), sizeof(req->ctx_peer_addr));
+			memcpy(req->ctx_peer_addr, nla_data(nla), req->ctx_peer_addr_len);
+		}
 		kfree(nested_attr_tb);
 	}
 
-	if (drbd_adm_ctx_resolve(adm_ctx, flags) != NO_ERROR) {
+	/*
+	 * Only commands that need a connection or peer device inside
+	 * drbd_adm_ctx_resolve(); connect is deliberately excluded.
+	 */
+	if (flags & (DRBD_ADM_NEED_CONNECTION | DRBD_ADM_NEED_PEER_DEVICE))
+		compat84_resolve_peer_node_id(adm_ctx);
+
+	if (drbd_adm_ctx_resolve(adm_ctx, flags) != NO_ERROR ||
+	    compat84_reject_native(adm_ctx)) {
 		/* Send error reply now; NULL reply_skb so the handler bails
 		 * out. post_doit will drop the kref references.
 		 */
@@ -443,6 +568,18 @@ static bool compat84_has_set(struct drbd_adm_ctx *ctx, enum drbd_nl_attr_set set
 		[DRBD_NL_SET_DETACH_PARMS]	= DRBD_NLA_DETACH_PARMS,
 	};
 
+	/*
+	 * v1 has no NLA_CONNECT_PARMS container: discard_my_data and
+	 * tentative arrive inside net_conf and are stashed while
+	 * overlaying it, so report whether there is a stashed value.
+	 */
+	if (set == DRBD_NL_SET_CONNECT_PARMS) {
+		struct compat84_req *req = compat84_req(ctx);
+
+		return req->connect_parms_84.has_discard_my_data ||
+			req->connect_parms_84.has_tentative;
+	}
+
 	if (!tla[set])
 		return false;
 	return compat84_req(ctx)->info->attrs[tla[set]] != NULL;
@@ -459,8 +596,9 @@ static bool compat84_has_set(struct drbd_adm_ctx *ctx, enum drbd_nl_attr_set set
  * field whose attribute is present, so the local struct is pre-seeded
  * from dst and copied back whole: an absent attribute round-trips its
  * old value, preserving drbd_nl.h's "absent attributes leave dst
- * untouched" contract. The one-shot action parms start from a zeroed
- * dst, so a zeroed local struct already matches.
+ * untouched" contract. Most one-shot action parms start from a zeroed
+ * dst, so a zeroed local struct already matches; resize_parms and
+ * start_ov_parms do not, and are pre-seeded the same way.
  *
  * The v1 disk_conf treats backing_dev/meta_dev/meta_dev_idx as required, so
  * a plain disk-options call parses with err == -ENOMSG while every other
@@ -677,18 +815,27 @@ static int compat84_overlay(struct drbd_adm_ctx *ctx, enum drbd_nl_attr_set set,
 		kfree(ntb);
 
 		/*
-		 * fencing is the v1 disk_conf's field on the wire, but its DRBD 9
-		 * home is net_conf.fencing_policy: unreachable from the
-		 * DISK_CONF overlay above. The attach/disk-options handler
-		 * stashed it there while parsing disk_conf, then re-enters
-		 * this same overlay() entry point for NET_CONF once it has
-		 * resolved the resource's single connection, so merge it in
-		 * here too. A real NET_CONF request (connect, net-options)
-		 * never sets this flag: it carries no disk_conf, so
-		 * DISK_CONF's overlay case above never ran for it.
+		 * fencing lives in the v1 disk_conf on the wire but in
+		 * drbd_net_conf.fencing_policy on DRBD 9. The attach/disk-options
+		 * handler stashed it while parsing disk_conf and re-enters
+		 * this overlay for NET_CONF once it has the connection. A
+		 * real NET_CONF request never has this flag set.
 		 */
 		if (req->has_fencing_policy_84)
 			d->fencing_policy = req->fencing_policy_84;
+
+		/*
+		 * DRBD 9 requires a connection name; v1 has no such concept.
+		 * Default it only for a freshly created connection (name_len
+		 * == 0), matching the name drbd9 drbdsetup's own compat84 shim
+		 * passes (--_name=remote).
+		 */
+		if (!d->name_len) {
+			static const char v1_conn_name[] = "remote";
+
+			strscpy(d->name, v1_conn_name, sizeof(d->name));
+			d->name_len = strlen(v1_conn_name);
+		}
 
 		return err;
 	}
@@ -824,12 +971,40 @@ static int compat84_overlay(struct drbd_adm_ctx *ctx, enum drbd_nl_attr_set set,
 
 		return 0;
 	}
+	case DRBD_NL_SET_PATH_PARMS: {
+		struct drbd_path_parms *d = dst;
+
+		/*
+		 * v1 carries the endpoint addresses in DRBD_NLA_CFG_CONTEXT,
+		 * parsed once per request into req; drbd_adm_new_path()
+		 * calls here once per path.
+		 */
+		if (!req->ctx_my_addr_len || !req->ctx_peer_addr_len)
+			return -ENOMSG;
+
+		memcpy(d->my_addr, req->ctx_my_addr, req->ctx_my_addr_len);
+		d->my_addr_len = req->ctx_my_addr_len;
+		memcpy(d->peer_addr, req->ctx_peer_addr, req->ctx_peer_addr_len);
+		d->peer_addr_len = req->ctx_peer_addr_len;
+		return 0;
+	}
+	case DRBD_NL_SET_CONNECT_PARMS: {
+		struct drbd_connect_parms *d = dst;
+
+		/*
+		 * Stashed by the NET_CONF case; dst is a fresh zeroed struct,
+		 * so an unsent field already defaults to false.
+		 */
+		if (req->connect_parms_84.has_discard_my_data)
+			d->discard_my_data = req->connect_parms_84.discard_my_data;
+		if (req->connect_parms_84.has_tentative)
+			d->tentative = req->connect_parms_84.tentative;
+		return 0;
+	}
 	case DRBD_NL_SET_DEVICE_CONF:
 	case DRBD_NL_SET_INVALIDATE_PARMS:
 	case DRBD_NL_SET_INVALIDATE_PEER_PARMS:
 	case DRBD_NL_SET_FORGET_PEER_PARMS:
-	case DRBD_NL_SET_CONNECT_PARMS:
-	case DRBD_NL_SET_PATH_PARMS:
 	case DRBD_NL_SET_RENAME_RESOURCE_PARMS:
 	case DRBD_NL_SET_SUSPEND_IO_PARMS:
 		/* No v1 counterpart: report a missing required attribute
@@ -1070,6 +1245,43 @@ int drbd_nl_get_status_dumpit(struct sk_buff *skb, struct netlink_callback *cb)
 }
 
 /*
+ * Core functions such as drbd_adm_net_opts() and adm_disconnect() index
+ * compat84_req(ctx)->info->attrs[] unconditionally, sized to whichever v1
+ * command allocated this request. A synthetic re-entry on behalf of a
+ * different command (the fencing re-entry below, connect's rollback) can
+ * index past the end of that array, a real general protection fault.
+ * Substitute a full-sized, all-absent attrs[] for the call: every
+ * has_set()/attr_present() then reports "not sent", which is right for a
+ * re-entry that feeds its values through req's stashed fields.
+ *
+ * Also clear adm_ctx->set_defaults for the call. drbd_adm_net_opts()
+ * honours it unconditionally, and in 8.4 fencing is a disk option, so
+ * "disk-options --set-defaults --fencing=..." (which drbdadm-84 adjust
+ * issues routinely) would otherwise reset the whole net_conf, shared
+ * secret included, while reporting success.
+ *
+ * Not used for the drbd_adm_peer_device_opts() re-entries: the
+ * resync-tuning fields genuinely live in disk_conf on 8.4, so
+ * "disk-options --set-defaults" is supposed to reset them too.
+ */
+static void compat84_call_with_empty_attrs(struct drbd_adm_ctx *ctx,
+					    int (*fn)(struct drbd_adm_ctx *))
+{
+	struct compat84_req *req = compat84_req(ctx);
+	struct nlattr *no_attrs[__DRBD_NLA_MAX] = { };
+	struct genl_info empty_info = *req->info;
+	struct genl_info *orig_info = req->info;
+	bool orig_set_defaults = ctx->set_defaults;
+
+	empty_info.attrs = no_attrs;
+	req->info = &empty_info;
+	ctx->set_defaults = false;
+	fn(ctx);
+	ctx->set_defaults = orig_set_defaults;
+	req->info = orig_info;
+}
+
+/*
  * Apply the resync-tuning and fencing values compat84_overlay() stashed
  * out of disk_conf, after drbd_adm_attach() or drbd_adm_disk_opts()
  * succeeded. 8.4's normal order is attach, then connect, so the peer
@@ -1138,8 +1350,10 @@ retry:
 	peer_device = list_first_or_null_rcu(&device->peer_devices,
 					      struct drbd_peer_device,
 					      peer_devices);
-	if (peer_device)
+	if (peer_device) {
 		kref_get(&peer_device->connection->kref);
+		kref_debug_get(&peer_device->connection->kref_debug, 2);
+	}
 	rcu_read_unlock();
 
 	if (!peer_device) {
@@ -1200,7 +1414,7 @@ retry:
 	}
 
 	if (req->has_fencing_policy_84 && (!have_resync || ctx->result == NO_ERROR))
-		drbd_adm_net_opts(ctx);
+		compat84_call_with_empty_attrs(ctx, drbd_adm_net_opts);
 }
 
 int drbd_nl_new_minor_doit(struct sk_buff *skb, struct genl_info *info)
@@ -1254,14 +1468,355 @@ int drbd_nl_resource_opts_doit(struct sk_buff *skb, struct genl_info *info)
 	return drbd_adm_resource_opts(ctx);
 }
 
+/*
+ * Render a raw sockaddr into the "af:addr:port" / "af:[addr]:port" text
+ * drbdadm-84 passes to drbdsetup-84. The kernel only sees the parsed
+ * sockaddr, so this reproduces the canonical form, not whatever a user
+ * typed by hand.
+ */
+static int compat84_addr_to_str(char *buf, size_t size, const u8 *addr, u32 addr_len)
+{
+	const struct sockaddr *sa = (const struct sockaddr *)addr;
+
+	if (addr_len >= sizeof(struct sockaddr_in6) && sa->sa_family == AF_INET6) {
+		const struct sockaddr_in6 *a6 = (const struct sockaddr_in6 *)addr;
+
+		return scnprintf(buf, size, "ipv6:[%pI6c]:%u",
+				  &a6->sin6_addr, ntohs(a6->sin6_port));
+	}
+	if (addr_len >= sizeof(struct sockaddr_in) && sa->sa_family == AF_INET) {
+		const struct sockaddr_in *a4 = (const struct sockaddr_in *)addr;
+
+		return scnprintf(buf, size, "ipv4:%pI4:%u",
+				  &a4->sin_addr, ntohs(a4->sin_port));
+	}
+	return -EINVAL;
+}
+
+/*
+ * v1's connect carries only an address pair; DRBD 9 needs a peer node id.
+ * drbd9's own compat84 shim (user/v9/drbdsetup_compat84.c, compare_addr())
+ * invents one when it drives one end of a mixed deployment, and this must
+ * match it: node ids are baked into the on-disk metadata slot layout, so
+ * disagreeing is a data-integrity hazard, not just a failed connect.
+ *
+ * The rule: crc32c(0x1a656f21, "af:addr:port") for both addresses; the
+ * larger hash gets node id 1. Both ends apply it to the same inputs, so
+ * the results are always complementary. drbd-utils keeps the hashes in an
+ * int, so "larger" is a signed comparison.
+ */
+static int compat84_connect_peer_node_id(struct compat84_req *req, u32 *peer_node_id)
+{
+	char my_str[64], peer_str[64];
+	int my_len, peer_len;
+	u32 my_hash, peer_hash;
+
+	if (!req->ctx_my_addr_len || !req->ctx_peer_addr_len)
+		return -EINVAL;
+
+	my_len = compat84_addr_to_str(my_str, sizeof(my_str),
+				       req->ctx_my_addr, req->ctx_my_addr_len);
+	peer_len = compat84_addr_to_str(peer_str, sizeof(peer_str),
+					 req->ctx_peer_addr, req->ctx_peer_addr_len);
+	if (my_len < 0 || peer_len < 0)
+		return -EINVAL;
+
+	my_hash = crc32c(0x1a656f21, my_str, my_len);
+	peer_hash = crc32c(0x1a656f21, peer_str, peer_len);
+	if (my_hash == peer_hash)
+		return -EINVAL;
+
+	*peer_node_id = ((s32)my_hash > (s32)peer_hash) ? 0 : 1;
+	return 0;
+}
+
+/* The per-device half of compat84_apply_pending_stash(); @device is referenced. */
+static void compat84_apply_pending_resync(struct drbd_adm_ctx *ctx,
+					  struct drbd_device *device)
+{
+	struct compat84_req *req = compat84_req(ctx);
+	struct drbd_resource *resource = device->resource;
+	struct drbd_peer_device *peer_device;
+	bool have_resync;
+
+	if (mutex_lock_interruptible(&resource->adm_mutex))
+		return;
+	have_resync = device->pending_peer_device_conf_84.has_resync_rate ||
+		      device->pending_peer_device_conf_84.has_c_plan_ahead ||
+		      device->pending_peer_device_conf_84.has_c_delay_target ||
+		      device->pending_peer_device_conf_84.has_c_fill_target ||
+		      device->pending_peer_device_conf_84.has_c_max_rate ||
+		      device->pending_peer_device_conf_84.has_c_min_rate;
+	if (have_resync) {
+		/* Two distinct anonymous struct types: copy field by field. */
+		req->peer_device_conf_84.has_resync_rate =
+			device->pending_peer_device_conf_84.has_resync_rate;
+		req->peer_device_conf_84.resync_rate =
+			device->pending_peer_device_conf_84.resync_rate;
+		req->peer_device_conf_84.has_c_plan_ahead =
+			device->pending_peer_device_conf_84.has_c_plan_ahead;
+		req->peer_device_conf_84.c_plan_ahead =
+			device->pending_peer_device_conf_84.c_plan_ahead;
+		req->peer_device_conf_84.has_c_delay_target =
+			device->pending_peer_device_conf_84.has_c_delay_target;
+		req->peer_device_conf_84.c_delay_target =
+			device->pending_peer_device_conf_84.c_delay_target;
+		req->peer_device_conf_84.has_c_fill_target =
+			device->pending_peer_device_conf_84.has_c_fill_target;
+		req->peer_device_conf_84.c_fill_target =
+			device->pending_peer_device_conf_84.c_fill_target;
+		req->peer_device_conf_84.has_c_max_rate =
+			device->pending_peer_device_conf_84.has_c_max_rate;
+		req->peer_device_conf_84.c_max_rate =
+			device->pending_peer_device_conf_84.c_max_rate;
+		req->peer_device_conf_84.has_c_min_rate =
+			device->pending_peer_device_conf_84.has_c_min_rate;
+		req->peer_device_conf_84.c_min_rate =
+			device->pending_peer_device_conf_84.c_min_rate;
+	}
+	mutex_unlock(&resource->adm_mutex);
+
+	if (!have_resync)
+		return;
+
+	rcu_read_lock();
+	peer_device = list_first_or_null_rcu(&device->peer_devices,
+					      struct drbd_peer_device,
+					      peer_devices);
+	rcu_read_unlock();
+	if (!peer_device)
+		return;
+
+	/* drbd_adm_peer_device_opts() takes resource->adm_mutex
+	 * itself; must not be held here.
+	 */
+	ctx->peer_device = peer_device;
+	drbd_adm_peer_device_opts(ctx);
+	ctx->peer_device = NULL;
+
+	if (ctx->result == NO_ERROR) {
+		if (!mutex_lock_interruptible(&resource->adm_mutex)) {
+			memset(&device->pending_peer_device_conf_84, 0,
+			       sizeof(device->pending_peer_device_conf_84));
+			mutex_unlock(&resource->adm_mutex);
+		}
+	} else {
+		drbd_warn(device,
+			  "could not apply deferred 8.4 resync tuning after connect\n");
+	}
+}
+
+/*
+ * The other end of compat84_apply_disk_conf_stash(): apply the deferred
+ * values now that connect has created the connection and a peer device
+ * for every volume. A failure here does not undo the connect; the values
+ * are retried on the next connect.
+ */
+static void compat84_apply_pending_stash(struct drbd_adm_ctx *ctx)
+{
+	struct compat84_req *req = compat84_req(ctx);
+	struct drbd_resource *resource = ctx->resource;
+	struct drbd_device *device;
+	int vnr;
+
+	/*
+	 * The per-device step sleeps on adm_mutex; hold a device reference
+	 * across it so a concurrent del-minor cannot free the device.
+	 */
+	rcu_read_lock();
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		kref_get(&device->kref);
+		rcu_read_unlock();
+		compat84_apply_pending_resync(ctx, device);
+		kref_put(&device->kref, drbd_destroy_device);
+		rcu_read_lock();
+	}
+	rcu_read_unlock();
+
+	if (!resource->pending_fencing_policy_84_set)
+		return;
+
+	if (mutex_lock_interruptible(&resource->adm_mutex))
+		return;
+	req->fencing_policy_84 = resource->pending_fencing_policy_84;
+	req->has_fencing_policy_84 = true;
+	mutex_unlock(&resource->adm_mutex);
+
+	/*
+	 * Routed through compat84_call_with_empty_attrs() like the fencing
+	 * re-entry in compat84_apply_disk_conf_stash(): a client may set
+	 * --set-defaults on connect too.
+	 */
+	compat84_call_with_empty_attrs(ctx, drbd_adm_net_opts);
+	req->has_fencing_policy_84 = false;
+
+	if (ctx->result == NO_ERROR) {
+		if (!mutex_lock_interruptible(&resource->adm_mutex)) {
+			resource->pending_fencing_policy_84_set = false;
+			mutex_unlock(&resource->adm_mutex);
+		}
+	} else {
+		drbd_warn(resource, "could not apply deferred 8.4 fencing policy after connect\n");
+	}
+}
+
+/*
+ * v1's single CONNECT carries what DRBD 9 splits into new-peer, new-path
+ * and connect; drbdsetup-84 has no commands to issue them separately.
+ *
+ * drbd_adm_new_peer()/_new_path()/_connect() report their outcome in
+ * ctx->result, and drbd_adm_connect()'s success path writes an enum
+ * drbd_state_rv there on top of the enum drbd_ret_code its failure paths
+ * use, so success is the same range check drbd_adm_down() relies on, not
+ * "== NO_ERROR".
+ */
+static bool compat84_result_ok(int result)
+{
+	return result >= SS_SUCCESS && result <= NO_ERROR;
+}
+
+/*
+ * A v1 disconnect deletes the connection's path (8.4 forgets the
+ * connection's addresses once it is StandAlone) but keeps the connection
+ * and its peer devices, so the next connect has to pick it up again.
+ * Returns that path-less connection's peer node id, or -1 if there is none.
+ */
+static int compat84_pathless_peer_node_id(struct drbd_resource *resource)
+{
+	struct drbd_connection *connection;
+	int peer_node_id = -1;
+
+	rcu_read_lock();
+	connection = list_first_or_null_rcu(&resource->connections,
+					     struct drbd_connection, connections);
+	if (connection && list_empty(&connection->transport.paths))
+		peer_node_id = connection->peer_node_id;
+	rcu_read_unlock();
+
+	return peer_node_id;
+}
+
 int drbd_nl_connect_doit(struct sk_buff *skb, struct genl_info *info)
 {
-	return -EOPNOTSUPP;
+	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+	struct compat84_req *req = compat84_req(ctx);
+	struct drbd_connection *connection;
+	bool reused, path_added = false, node_ids_unset;
+	int pathless_id;
+	u32 peer_node_id;
+
+	if (!req->reply_skb)
+		return 0;
+
+	/* new-path assigns the node ids of an 8.4 resource on its first connect. */
+	mutex_lock(&ctx->resource->adm_mutex);
+	node_ids_unset = ctx->resource->res_opts.node_id == -1;
+	mutex_unlock(&ctx->resource->adm_mutex);
+
+	pathless_id = compat84_pathless_peer_node_id(ctx->resource);
+	reused = pathless_id >= 0;
+	if (reused) {
+		peer_node_id = pathless_id;
+	} else if (compat84_connect_peer_node_id(req, &peer_node_id)) {
+		drbd_adm_msg(ctx, "%s",
+			     "could not determine a peer node id from the given addresses");
+		ctx->result = ERR_INVALID_REQUEST;
+		return 0;
+	}
+	ctx->peer_node_id = peer_node_id;
+
+	if (!reused) {
+		drbd_adm_new_peer(ctx);
+		if (!compat84_result_ok(ctx->result))
+			return 0;
+	}
+
+	/*
+	 * drbd_adm_new_peer() only creates the connection; look it up the
+	 * way drbd_adm_ctx_resolve() would, so the calls below and
+	 * drbd_adm_ctx_release() see a normally resolved request.
+	 */
+	connection = drbd_get_connection_by_node_id(ctx->resource, peer_node_id);
+	if (!connection) {
+		/*
+		 * Cannot happen: nothing else removes a connection this
+		 * request just created under adm_mutex. ctx->connection is
+		 * still NULL, so drbd_adm_del_peer() has nothing to act on.
+		 */
+		drbd_adm_msg(ctx, "%s", "internal error: new peer vanished");
+		ctx->result = ERR_INVALID_REQUEST;
+		return 0;
+	}
+	kref_debug_get(&connection->kref_debug, 2);
+	ctx->connection = connection;
+
+	/* A reused connection still has the previous connect's net options. */
+	if (reused)
+		drbd_adm_net_opts(ctx);
+	if (compat84_result_ok(ctx->result)) {
+		drbd_adm_new_path(ctx);
+		path_added = compat84_result_ok(ctx->result);
+	}
+	if (path_added)
+		drbd_adm_connect(ctx);
+
+	if (!compat84_result_ok(ctx->result)) {
+		int result = ctx->result;
+
+		if (!reused) {
+			/*
+			 * v1 has no del-peer, so a failed connect must not leave a
+			 * peer behind: tear down whatever of {peer, path} was
+			 * created. adm_disconnect() reads an attrs[] index
+			 * CONNECT's policy does not carry, hence
+			 * compat84_call_with_empty_attrs().
+			 */
+			compat84_call_with_empty_attrs(ctx, drbd_adm_del_peer);
+			/*
+			 * Unassign the node ids again, or a retry with other
+			 * addresses keeps the ones derived from these.
+			 */
+			if (node_ids_unset) {
+				mutex_lock(&ctx->resource->adm_mutex);
+				if (list_empty(&ctx->resource->connections))
+					ctx->resource->res_opts.node_id = -1;
+				mutex_unlock(&ctx->resource->adm_mutex);
+			}
+		} else if (path_added) {
+			/* Back to the path-less state the last disconnect left. */
+			drbd_adm_del_path(ctx);
+		}
+		ctx->result = result;
+		return 0;
+	}
+
+	/*
+	 * The connect succeeded and that is what the reply reports;
+	 * compat84_apply_pending_stash() writes its own outcomes to
+	 * ctx->result.
+	 */
+	compat84_apply_pending_stash(ctx);
+	ctx->result = NO_ERROR;
+	return 0;
 }
 
 int drbd_nl_disconnect_doit(struct sk_buff *skb, struct genl_info *info)
 {
-	return -EOPNOTSUPP;
+	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+
+	if (!compat84_req(ctx)->reply_skb)
+		return 0;
+	drbd_adm_disconnect(ctx);
+	if (!compat84_result_ok(ctx->result))
+		return 0;
+
+	/*
+	 * 8.4 forgets a StandAlone connection's addresses, so that the next
+	 * connect may name different ones; do the same by deleting the path.
+	 * drbd_nl_connect_doit() then reuses the path-less connection.
+	 */
+	drbd_adm_del_path(ctx);
+	return 0;
 }
 
 int drbd_nl_attach_doit(struct sk_buff *skb, struct genl_info *info)
@@ -1321,13 +1876,52 @@ int drbd_nl_start_ov_doit(struct sk_buff *skb, struct genl_info *info)
 	return drbd_adm_start_ov(ctx);
 }
 
+/* True if no device in @resource has a live disk. */
+static bool compat84_resource_has_no_disk(struct drbd_resource *resource)
+{
+	struct drbd_device *d;
+	int vnr;
+	bool none = true;
+
+	rcu_read_lock();
+	idr_for_each_entry(&resource->devices, d, vnr) {
+		if (get_ldev_if_state(d, D_FAILED)) {
+			put_ldev(d);
+			none = false;
+			break;
+		}
+	}
+	rcu_read_unlock();
+	return none;
+}
+
 int drbd_nl_detach_doit(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+	struct drbd_device *device = ctx->device;
+	struct drbd_resource *resource = ctx->resource;
 
 	if (!compat84_req(ctx)->reply_skb)
 		return 0;
-	return drbd_adm_detach(ctx);
+	drbd_adm_detach(ctx);
+	if (ctx->result == NO_ERROR) {
+		/*
+		 * Bound the stashes to the attach that produced them, or a
+		 * detach without ever connecting followed by an attach that
+		 * does not resend them would still apply the old values on
+		 * the next connect. The resync-tuning stash is per device.
+		 * The fencing stash is per resource, and a multi-volume 8.4
+		 * resource must not lose it when one volume detaches, so
+		 * clear it only once no device has a disk left.
+		 */
+		mutex_lock(&resource->adm_mutex);
+		memset(&device->pending_peer_device_conf_84, 0,
+		       sizeof(device->pending_peer_device_conf_84));
+		if (compat84_resource_has_no_disk(resource))
+			resource->pending_fencing_policy_84_set = false;
+		mutex_unlock(&resource->adm_mutex);
+	}
+	return 0;
 }
 
 int drbd_nl_invalidate_doit(struct sk_buff *skb, struct genl_info *info)
@@ -1425,7 +2019,11 @@ int drbd_nl_chg_disk_opts_doit(struct sk_buff *skb, struct genl_info *info)
 
 int drbd_nl_chg_net_opts_doit(struct sk_buff *skb, struct genl_info *info)
 {
-	return -EOPNOTSUPP;
+	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+
+	if (!compat84_req(ctx)->reply_skb)
+		return 0;
+	return drbd_adm_net_opts(ctx);
 }
 
 int drbd_nl_get_resources_dumpit(struct sk_buff *skb, struct netlink_callback *cb)
