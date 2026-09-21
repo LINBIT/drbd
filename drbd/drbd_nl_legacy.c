@@ -21,6 +21,7 @@
 
 #include "drbd_int.h"
 #include "drbd_nl.h"
+#include "drbd_legacy_84.h"
 
 #include <uapi/linux/drbd_genl.h>
 #include <linux/drbd_nl_gen.h>
@@ -1589,6 +1590,16 @@ void drbd_nl_legacy_exit(void)
 {
 	genl_unregister_family(&drbd_nl_family);
 }
+
+#ifdef CONFIG_DRBD_COMPAT_84
+/*
+ * The 8.4 metadata support without the version 1 dialect: nobody consumes
+ * the fused sync-progress event drbd_nl_84.c would emit.
+ */
+void compat84_notify_sync_progress(struct drbd_peer_device *peer_device)
+{
+}
+#endif
 
 #ifndef CONFIG_DRBD_NL_DRBD2
 /*

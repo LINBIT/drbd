@@ -92,6 +92,13 @@ static inline enum drbd_state_rv drbd_state_rv_84(enum drbd_state_rv rv)
 		return rv;
 	}
 }
+
+/*
+ * Fused v1 SIB_SYNC_PROGRESS event, called from update_on_disk_bitmap()
+ * (drbd_sender.c), mainline 8.4's own call site; already throttled there
+ * by drbd_lazy_bitmap_update_due().
+ */
+void compat84_notify_sync_progress(struct drbd_peer_device *peer_device);
 #else
 static inline void drbd_md_decode_84(struct meta_data_on_disk_84 *on_disk, struct drbd_md *md) {};
 static inline void drbd_md_encode_84(struct drbd_device *device,
@@ -103,6 +110,7 @@ static inline u32 drbd_pack_state_84(struct drbd_device *device) { return 0; };
 static inline void drbd_get_syncer_progress_84(struct drbd_peer_device *pd,
 		enum drbd_repl_state repl_state, unsigned long *rs_total,
 		unsigned long *bits_left, unsigned int *per_mil_done) {};
+static inline void compat84_notify_sync_progress(struct drbd_peer_device *peer_device) {};
 #endif  /* CONFIG_DRBD_COMPAT_84 */
 
 #endif  /* __DRBD_LEGACY_84_H */

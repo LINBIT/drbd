@@ -22,6 +22,7 @@
 #include "drbd_protocol.h"
 #include "drbd_req.h"
 #include "drbd_meta_data.h"
+#include "drbd_legacy_84.h"
 
 void drbd_panic_after_delayed_completion_of_aborted_request(struct drbd_device *device);
 
@@ -3294,6 +3295,13 @@ static void update_on_disk_bitmap(struct drbd_peer_device *peer_device, bool res
 			drbd_resync_finished(peer_device, D_MASK);
 		}
 	}
+
+	/* v1 dialect only: fused SIB_SYNC_PROGRESS DRBD_EVENT, at the same
+	 * point and under the same throttle mainline's own
+	 * update_on_disk_bitmap() broadcasts one from (drivers/block/drbd/
+	 * drbd_worker.c). No-op stub without CONFIG_DRBD_COMPAT_84.
+	 */
+	compat84_notify_sync_progress(peer_device);
 
 	/* update timestamp, in case it took a while to write out stuff */
 	peer_device->rs_last_writeout = jiffies;

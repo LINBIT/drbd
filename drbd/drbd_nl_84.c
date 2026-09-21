@@ -45,6 +45,76 @@ enum drbd_state_info_bcast_reason {
 	SIB_SYNC_PROGRESS = 5,
 };
 
+/*
+ * Defined below compat84_fill_state_info(); forward declared for the
+ * notify hooks above it. @prev_state_84/@new_state_84 are read only for
+ * SIB_STATE_CHANGE, @helper_name/@helper_exit_code only for
+ * SIB_HELPER_PRE/SIB_HELPER_POST.
+ */
+static int compat84_emit_event(struct drbd_device *device,
+			       enum drbd_state_info_bcast_reason reason,
+			       u32 prev_state_84, u32 new_state_84,
+			       const char *helper_name, int helper_exit_code);
+
+/*
+ * 8.4 reports one SIB_STATE_CHANGE event per device and state change, with
+ * the packed state before and after it; DRBD 9 notifies each object on its
+ * own. The notify hooks write their object's old and new fields into the
+ * device's pending pair, both taken from the state-change snapshot, and
+ * the hook that ends the state change (no NOTIFY_CONTINUES) sends one event
+ * per device whose 8.4 state moved. Fields no hook touches come from the
+ * live state and are equal on both sides. notification_mutex serializes
+ * all of this.
+ */
+static void compat84_event_get(struct drbd_device *device,
+			       union drbd_state *prev, union drbd_state *new)
+{
+	if (!device->bcast_pending_84) {
+		device->bcast_prev_84 = drbd_pack_state_84(device);
+		device->bcast_new_84 = device->bcast_prev_84;
+		device->bcast_cstate_prev_84 = -1;
+		device->bcast_cstate_new_84 = -1;
+		device->bcast_pending_84 = true;
+	}
+	prev->i = device->bcast_prev_84;
+	new->i = device->bcast_new_84;
+}
+
+static void compat84_event_put(struct drbd_device *device,
+			       union drbd_state prev, union drbd_state new)
+{
+	device->bcast_prev_84 = prev.i;
+	device->bcast_new_84 = new.i;
+}
+
+static void compat84_event_flush(struct drbd_resource *resource,
+				 enum drbd_notification_type type)
+{
+	struct drbd_device *device;
+	int vnr;
+
+	if (type & NOTIFY_CONTINUES)
+		return;
+
+	rcu_read_lock();
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		u32 prev = device->bcast_prev_84, new = device->bcast_new_84;
+
+		if (!device->bcast_pending_84)
+			continue;
+		device->bcast_pending_84 = false;
+		if (prev == new)
+			continue;
+
+		kref_get(&device->kref);
+		rcu_read_unlock();
+		compat84_emit_event(device, SIB_STATE_CHANGE, prev, new, NULL, 0);
+		kref_put(&device->kref, drbd_destroy_device);
+		rcu_read_lock();
+	}
+	rcu_read_unlock();
+}
+
 /* Per-request state of the v1 dialect; hangs off drbd_adm_ctx.req. */
 struct compat84_req {
 	struct genl_info *info;
@@ -152,6 +222,8 @@ static struct genl_family drbd_nl_family __ro_after_init = {
  * every gap as "- skipped N".
  */
 static atomic_t compat84_notify_seq = ATOMIC_INIT(2);
+/* ... and of DRBD_EVENT, mainline's drbd_bcast_event() drbd_genl_seq. */
+static atomic_t compat84_event_seq = ATOMIC_INIT(2);
 
 static int compat84_genl_multicast_events(struct sk_buff *skb)
 {
@@ -1674,6 +1746,37 @@ static int compat84_notify_resource_state(struct sk_buff *skb, unsigned int seq,
 		if (err && err != -ESRCH)
 			goto failed;
 	}
+
+	/*
+	 * Fused SIB_STATE_CHANGE DRBD_EVENT, see compat84_event_get(): a
+	 * role/suspend change is resource-wide, but 8.4's wire word is per
+	 * device. Multicast path only; the initial-state replay appends to a
+	 * dump. !info means NOTIFY_DESTROY, which has no transition to report.
+	 */
+	if (multicast && info && (type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY) {
+		struct drbd_device *device;
+		int vnr;
+
+		rcu_read_lock();
+		idr_for_each_entry(&resource->devices, device, vnr) {
+			union drbd_state prev, new;
+
+			compat84_event_get(device, &prev, &new);
+			prev.role = info->old_res_role;
+			new.role = info->res_role;
+			prev.susp = info->old_res_susp;
+			new.susp = info->res_susp || info->res_susp_quorum;
+			prev.susp_nod = info->old_res_susp_nod;
+			new.susp_nod = info->res_susp_nod;
+			prev.susp_fen = info->old_res_susp_fen;
+			new.susp_fen = info->res_susp_fen;
+			compat84_event_put(device, prev, new);
+		}
+		rcu_read_unlock();
+	}
+	if (multicast)
+		compat84_event_flush(resource, type);
+
 	return 0;
 
 nla_put_failure:
@@ -1755,6 +1858,19 @@ static int compat84_notify_device_state(struct sk_buff *skb, unsigned int seq,
 		if (err && err != -ESRCH)
 			goto failed;
 	}
+
+	/* Fused SIB_STATE_CHANGE DRBD_EVENT, see compat84_event_get(). */
+	if (multicast && info && (type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY) {
+		union drbd_state prev, new;
+
+		compat84_event_get(device, &prev, &new);
+		prev.disk = drbd_disk_state_84(info->old_dev_disk_state);
+		new.disk = drbd_disk_state_84(info->dev_disk_state);
+		compat84_event_put(device, prev, new);
+	}
+	if (multicast)
+		compat84_event_flush(device->resource, type);
+
 	return 0;
 
 nla_put_failure:
@@ -1821,6 +1937,39 @@ static int compat84_notify_connection_state(struct sk_buff *skb, unsigned int se
 		if (err && err != -ESRCH)
 			goto failed;
 	}
+
+	/*
+	 * Fused SIB_STATE_CHANGE DRBD_EVENT, see compat84_event_get(), for
+	 * every device behind this connection. state.conn takes the cstate
+	 * only when the peer device is not itself replicating (repl_state <=
+	 * L_OFF), matching combined_conn_state(). A peer-device notification
+	 * in the same state change knows the replication state before and
+	 * after it, so the cstate is recorded for it to decide with.
+	 */
+	if (multicast && info && (type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY) {
+		struct drbd_peer_device *peer_device;
+		int vnr;
+
+		rcu_read_lock();
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+			union drbd_state prev, new;
+
+			compat84_event_get(peer_device->device, &prev, &new);
+			prev.peer = info->old_conn_role;
+			new.peer = info->conn_role;
+			if (peer_device->repl_state[NOW] <= L_OFF) {
+				prev.conn = info->old_conn_connection_state;
+				new.conn = info->conn_connection_state;
+			}
+			compat84_event_put(peer_device->device, prev, new);
+			peer_device->device->bcast_cstate_prev_84 = info->old_conn_connection_state;
+			peer_device->device->bcast_cstate_new_84 = info->conn_connection_state;
+		}
+		rcu_read_unlock();
+	}
+	if (multicast)
+		compat84_event_flush(connection->resource, type);
+
 	return 0;
 
 nla_put_failure:
@@ -1900,6 +2049,43 @@ static int compat84_notify_peer_device_state(struct sk_buff *skb, unsigned int s
 		if (err && err != -ESRCH)
 			goto failed;
 	}
+
+	/*
+	 * Fused SIB_STATE_CHANGE DRBD_EVENT, see compat84_event_get().
+	 * state.conn takes the repl_state while it is actively replicating
+	 * (> L_OFF) and otherwise the cstate the connection hook recorded,
+	 * matching combined_conn_state(). The frequent RS_PROGRESS notifications
+	 * arrive here with old == new and send nothing.
+	 *
+	 * aftr_isp comes from peer_resync_susp_dependency on both sides; see
+	 * peer_device_state_change_to_info() for why the old side is exact.
+	 */
+	if (multicast && info && (type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY) {
+		struct drbd_device *device = peer_device->device;
+		union drbd_state prev, new;
+
+		compat84_event_get(device, &prev, &new);
+		prev.pdsk = drbd_disk_state_84(info->old_peer_disk_state);
+		new.pdsk = drbd_disk_state_84(info->peer_disk_state);
+		if (info->old_peer_repl_state > L_OFF)
+			prev.conn = info->old_peer_repl_state;
+		else if (device->bcast_cstate_prev_84 >= 0)
+			prev.conn = device->bcast_cstate_prev_84;
+		if (info->peer_repl_state > L_OFF)
+			new.conn = info->peer_repl_state;
+		else if (device->bcast_cstate_new_84 >= 0)
+			new.conn = device->bcast_cstate_new_84;
+		prev.user_isp = info->old_peer_resync_susp_user;
+		new.user_isp = info->peer_resync_susp_user;
+		prev.peer_isp = info->old_peer_resync_susp_peer;
+		new.peer_isp = info->peer_resync_susp_peer;
+		prev.aftr_isp = info->old_peer_resync_susp_dependency;
+		new.aftr_isp = info->peer_resync_susp_dependency;
+		compat84_event_put(device, prev, new);
+	}
+	if (multicast)
+		compat84_event_flush(peer_device->device->resource, type);
+
 	return 0;
 
 nla_put_failure:
@@ -1956,6 +2142,39 @@ static int compat84_notify_helper(struct sk_buff *skb, unsigned int seq,
 	/* skb has been consumed or freed in netlink_broadcast() */
 	if (err && err != -ESRCH)
 		goto fail;
+
+	/*
+	 * Fused SIB_HELPER_PRE/SIB_HELPER_POST DRBD_EVENT: drbd_khelper()
+	 * notifies with NOTIFY_CALL before running the helper and
+	 * NOTIFY_RESPONSE after, matching mainline's two drbd_bcast_event()
+	 * calls. A connection-scoped helper (fence-peer) has no device, so
+	 * fan out over every device behind the connection. Never deduped:
+	 * every helper invocation is reported.
+	 */
+	{
+		enum drbd_state_info_bcast_reason reason =
+			(type & ~NOTIFY_FLAGS) == NOTIFY_CALL ? SIB_HELPER_PRE : SIB_HELPER_POST;
+
+		if (device) {
+			compat84_emit_event(device, reason, 0, 0, name, status);
+		} else {
+			struct drbd_peer_device *peer_device;
+			int vnr;
+
+			rcu_read_lock();
+			idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+				struct drbd_device *dev = peer_device->device;
+
+				kref_get(&dev->kref);
+				rcu_read_unlock();
+				compat84_emit_event(dev, reason, 0, 0, name, status);
+				kref_put(&dev->kref, drbd_destroy_device);
+				rcu_read_lock();
+			}
+			rcu_read_unlock();
+		}
+	}
+
 	return 0;
 
 fail:
@@ -1963,6 +2182,18 @@ fail:
 	drbd_err(resource, "Error %d while broadcasting event. Event seq:%u\n",
 		err, seq);
 	return err;
+}
+
+/*
+ * SIB_SYNC_PROGRESS DRBD_EVENT, called from update_on_disk_bitmap()
+ * (drbd_sender.c), mainline 8.4's own call site for it. Always sent,
+ * although the packed state word does not move during a resync; the
+ * call site itself is throttled by
+ * drbd_lazy_bitmap_update_due().
+ */
+void compat84_notify_sync_progress(struct drbd_peer_device *peer_device)
+{
+	compat84_emit_event(peer_device->device, SIB_SYNC_PROGRESS, 0, 0, NULL, 0);
 }
 
 static int compat84_notify_initial_state_done(struct sk_buff *skb, unsigned int seq)
@@ -2087,48 +2318,16 @@ static u32 compat84_pack_disk_flags_84(struct drbd_device *device)
 }
 
 /*
- * Fill @si from @device and its (at most one, by 8.4-mode construction)
- * peer device. Ported from mainline's nla_put_status_info()
- * (drivers/block/drbd/drbd_nl.c:3801-3949), field for field, with DRBD 9
- * sources substituted for 8.4's flat device fields:
- *
- *   sib_reason              @reason
- *   current_state           drbd_pack_state_84(device) (already
- *                            8.4-numbered, do not remap again)
- *   prev_state, new_state    == current_state here; only SIB_STATE_CHANGE
- *                            (the DRBD_EVENT broadcast) carries real
- *                            os/ns
- *   capacity                get_capacity(device->vdisk)
- *   ed_uuid                 device->exposed_data_uuid
- *   uuids[], uuids_len       device->ldev->md.{current_uuid,history_uuids[]}
- *                            plus the persisted peer's (md.peers[!md.node_id])
- *                            bitmap_uuid, packed into 8.4's flat UI_SIZE
- *                            layout, under md.uuid_lock (mirrors mainline
- *                            :3901-3903). Needs only get_ldev(), like
- *                            mainline; no live peer_device or connection.
- *   disk_flags               compat84_pack_disk_flags_84() above; same
- *                            get_ldev()-only scope as the uuids
- *   bits_total, bits_oos     drbd_bm_bits()/_drbd_bm_total_weight() against
- *                            the persisted peer's bitmap_index: the latter
- *                            is peer-scoped on DRBD 9 (was device-scoped on
- *                            8.4), but the persisted bitmap_index needs no
- *                            live peer_device either, same as disk_flags
- *   bits_rs_total,           peer_device->rs_total/rs_failed (was
- *   bits_rs_failed           device->rs_total/rs_failed on 8.4), emitted
- *                            only while L_SYNC_SOURCE <= conn <=
- *                            L_PAUSED_SYNC_T (mainline :3908-3915)
- *   helper*                  zeroed; only a helper notification
- *                            (SIB_HELPER_PRE/POST) fills these
- *   send_cnt, recv_cnt,      peer_device->{send,recv,ap_pending,
- *   ap_pending_cnt,          rs_pending}_cnt (moved from device to
- *   rs_pending_cnt           peer_device on DRBD 9)
- *   read_cnt, writ_cnt,      device->{read,writ,al_writ,bm_writ}_cnt
- *   al_writ_cnt, bm_writ_cnt (stayed device-scoped: local IO/AL counters)
- *   ap_bio_cnt               sum of device->ap_bio_cnt[READ] and [WRITE]
- *                            (DRBD 9 split what was one 8.4 counter)
+ * Fill @si from @device and its single peer device, ported from mainline's
+ * nla_put_status_info() with DRBD 9 sources substituted for 8.4's flat
+ * device fields: the send/recv/pending counters and rs_total/rs_failed
+ * moved to the peer device, ap_bio_cnt was split into READ and WRITE, and
+ * bits_oos is per peer bitmap slot. The uuids, disk_flags and bitmap
+ * counters need only get_ldev(), not a live peer device.
  */
 static int compat84_fill_state_info(struct drbd_device *device, struct state_info *si,
-				    enum drbd_state_info_bcast_reason reason)
+				    enum drbd_state_info_bcast_reason reason,
+				    u32 prev_state_84, u32 new_state_84)
 {
 	struct drbd_peer_device *peer_device;
 	union drbd_state s;
@@ -2146,15 +2345,16 @@ static int compat84_fill_state_info(struct drbd_device *device, struct state_inf
 	s.i = drbd_pack_state_84(device);
 	si->current_state = s.i;
 	/*
-	 * Only SIB_STATE_CHANGE carries a real transition; the DRBD_EVENT
-	 * broadcast will pass the pre-transition state in on that path.
-	 * Every reason GET_STATUS passes here (its doit and
-	 * dump, both SIB_GET_STATUS_REPLY) has no "previous" state, so
-	 * both mirror current_state, matching mainline's own sib == NULL
-	 * case.
+	 * Only SIB_STATE_CHANGE carries a real transition; every other
+	 * reason mirrors current_state, as mainline's sib == NULL case does.
 	 */
-	si->prev_state = si->current_state;
-	si->new_state = si->current_state;
+	if (reason == SIB_STATE_CHANGE) {
+		si->prev_state = prev_state_84;
+		si->new_state = new_state_84;
+	} else {
+		si->prev_state = si->current_state;
+		si->new_state = si->current_state;
+	}
 
 	si->capacity = (u64)get_capacity(device->vdisk);
 	si->ed_uuid = device->exposed_data_uuid;
@@ -2285,29 +2485,29 @@ nla_put_failure:
 }
 
 /*
- * Port of mainline's nla_put_status_info() (drivers/block/drbd/
- * drbd_nl.c:3801-3949): the whole GET_STATUS reply for one device, not
- * just its STATE_INFO nest. drbdsetup-84's show_scmd() and
- * print_broadcast_events() read drbd_cfg_context/res_opts/disk_conf/
- * net_conf off this reply and never touch state_info at all, so all four
- * must be present (drbd-utils user/v84/drbdsetup.c) -- omitting them
- * makes "drbdsetup-84 show" and "drbdadm-84 adjust" produce nothing.
+ * Port of mainline's nla_put_status_info(): the whole GET_STATUS reply for
+ * one device. drbdsetup-84's show and print_broadcast_events() read
+ * drbd_cfg_context/res_opts/disk_conf/net_conf off this reply and never
+ * touch state_info, so all four must be present. Mainline's
+ * drbd_bcast_event() reuses this same payload for the fused DRBD_EVENT,
+ * and so does compat84_emit_event().
  *
- * exclude_sensitive mirrors mainline :3823 (sib || !capable(CAP_SYS_ADMIN));
- * GET_STATUS never has a sib (that is the broadcast path), so here it
- * is simply !capable(CAP_SYS_ADMIN) -- GET_STATUS carries no
- * GENL_ADMIN_PERM (drbd-84/drbd_nl_gen.c), so any unprivileged caller can
- * reach this, and without the mask a configured shared secret would leak
- * to them in cleartext.
+ * exclude_sensitive mirrors mainline's (sib || !capable(CAP_SYS_ADMIN)).
+ * SIB_GET_STATUS_REPLY is the only reason the two GET_STATUS entry points
+ * pass; every other reason comes through compat84_emit_event(), which runs
+ * from kernel threads where capable() is always true, so those must be
+ * masked unconditionally.
  */
 static int compat84_put_status_info(struct sk_buff *skb, struct drbd_device *device,
-				    enum drbd_state_info_bcast_reason reason)
+				    enum drbd_state_info_bcast_reason reason,
+				    u32 prev_state_84, u32 new_state_84,
+				    const char *helper_name, int helper_exit_code)
 {
 	struct drbd_resource *resource = device->resource;
 	struct drbd_peer_device *peer_device;
 	struct res_opts res_opts;
 	struct state_info si;
-	bool exclude_sensitive = !capable(CAP_SYS_ADMIN);
+	bool exclude_sensitive = reason != SIB_GET_STATUS_REPLY || !capable(CAP_SYS_ADMIN);
 	int got_ldev;
 	int err;
 
@@ -2349,14 +2549,73 @@ static int compat84_put_status_info(struct sk_buff *skb, struct drbd_device *dev
 	if (err)
 		goto out;
 
-	err = compat84_fill_state_info(device, &si, reason);
+	err = compat84_fill_state_info(device, &si, reason, prev_state_84, new_state_84);
 	if (err)
 		goto out;
+
+	if (reason == SIB_HELPER_PRE || reason == SIB_HELPER_POST) {
+		strscpy(si.helper, helper_name, sizeof(si.helper));
+		si.helper_len = min(strlen(helper_name), sizeof(si.helper));
+		si.helper_exit_code = helper_exit_code;
+	}
+
 	err = compat84_state_info_to_skb(skb, &si);
 
 out:
 	if (got_ldev)
 		put_ldev(device);
+	return err;
+}
+
+/*
+ * The fused v1 DRBD_EVENT, mainline's drbd_bcast_event(), reusing
+ * compat84_put_status_info() for the payload.
+ *
+ * SIB_STATE_CHANGE events come from compat84_event_flush(), which skips a
+ * state change that leaves the 8.4 state word unchanged. SIB_SYNC_PROGRESS
+ * (whose packed word does not move for the whole resync) and the helper
+ * reasons always go out; their call sites are throttled or one-shot on
+ * their own.
+ *
+ * Called from process or workqueue context only, hence GFP_NOIO.
+ */
+static int compat84_emit_event(struct drbd_device *device,
+			       enum drbd_state_info_bcast_reason reason,
+			       u32 prev_state_84, u32 new_state_84,
+			       const char *helper_name, int helper_exit_code)
+{
+	struct drbd_genlmsghdr *dh;
+	struct sk_buff *skb;
+	int err;
+
+	skb = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
+	if (!skb)
+		return -ENOMEM;
+
+	err = -EMSGSIZE;
+	dh = genlmsg_put(skb, 0, atomic_inc_return(&compat84_event_seq), &drbd_nl_family, 0,
+			 DRBD_ADM_EVENT);
+	if (!dh)
+		goto fail;
+	dh->minor = device->minor;
+	dh->ret_code = NO_ERROR;
+
+	err = compat84_put_status_info(skb, device, reason, prev_state_84, new_state_84,
+				       helper_name, helper_exit_code);
+	if (err)
+		goto fail;
+
+	genlmsg_end(skb, dh);
+	err = compat84_genl_multicast_events(skb);
+	/* skb has been consumed or freed in netlink_broadcast() */
+	if (err && err != -ESRCH)
+		goto failed_sent;
+	return 0;
+
+fail:
+	nlmsg_free(skb);
+failed_sent:
+	drbd_err(device, "Error %d while broadcasting fused event. Reason:%u\n", err, reason);
 	return err;
 }
 
@@ -2369,7 +2628,8 @@ int drbd_nl_get_status_doit(struct sk_buff *skb, struct genl_info *info)
 	if (!req->reply_skb)
 		return 0;
 
-	err = compat84_put_status_info(req->reply_skb, ctx->device, SIB_GET_STATUS_REPLY);
+	err = compat84_put_status_info(req->reply_skb, ctx->device, SIB_GET_STATUS_REPLY,
+				       0, 0, NULL, 0);
 	if (err) {
 		nlmsg_free(req->reply_skb);
 		req->reply_skb = NULL;
@@ -2456,7 +2716,8 @@ next_resource:
 		dh->minor = device->minor;
 		dh->ret_code = NO_ERROR;
 
-		if (compat84_put_status_info(skb, device, SIB_GET_STATUS_REPLY)) {
+		if (compat84_put_status_info(skb, device, SIB_GET_STATUS_REPLY,
+					     0, 0, NULL, 0)) {
 cancel:
 			genlmsg_cancel(skb, dh);
 			goto out;

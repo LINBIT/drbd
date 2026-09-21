@@ -4202,6 +4202,21 @@ int notify_resource_state_change(struct sk_buff *skb,
 		.res_susp_quorum = state_change_is_susp_quorum(state_change, NEW) ||
 			resource_state_change->susp_uuid[NEW],
 		.res_fail_io = resource_state_change->fail_io[NEW],
+#ifdef CONFIG_DRBD_COMPAT_84
+		/*
+		 * old_res_susp mirrors drbd_get_resource_state()'s own .susp
+		 * formula (susp_user || susp_quorum || susp_uuid), evaluated
+		 * at OLD instead of NOW/NEW, so the v1 dialect's prev_state
+		 * combines the same three reasons into its one wire bit that
+		 * new_state's live drbd_pack_state_84() does.
+		 */
+		.old_res_role = resource_state_change->role[OLD],
+		.old_res_susp = resource_state_change->susp[OLD] ||
+			state_change_is_susp_quorum(state_change, OLD) ||
+			resource_state_change->susp_uuid[OLD],
+		.old_res_susp_nod = resource_state_change->susp_nod[OLD],
+		.old_res_susp_fen = state_change_is_susp_fen(state_change, OLD),
+#endif
 	};
 
 	return drbd_notify_resource_state(skb, seq, dialect, resource, &resource_info,
@@ -4219,6 +4234,10 @@ int notify_connection_state_change(struct sk_buff *skb,
 	struct drbd_connection_info connection_info = {
 		.conn_connection_state = connection_state_change->cstate[NEW],
 		.conn_role = connection_state_change->peer_role[NEW],
+#ifdef CONFIG_DRBD_COMPAT_84
+		.old_conn_connection_state = connection_state_change->cstate[OLD],
+		.old_conn_role = connection_state_change->peer_role[OLD],
+#endif
 	};
 
 	return drbd_notify_connection_state(skb, seq, dialect, connection,

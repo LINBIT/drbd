@@ -1842,6 +1842,21 @@ struct drbd_device {
 		bool has_c_min_rate;
 		u32 c_min_rate;
 	} pending_peer_device_conf_84;
+
+	/*
+	 * The fused SIB_STATE_CHANGE DRBD_EVENT (drbd_nl_84.c) this device owes
+	 * for the state change being notified: 8.4-packed state words before
+	 * and after it, collected across that change's resource, connection,
+	 * device and peer-device notifications, plus the connection's cstate
+	 * before and after it (-1 if the connection did not change), for the
+	 * peer-device notification to fall back to when it is not
+	 * replicating. Serialized by notification_mutex.
+	 */
+	bool bcast_pending_84;
+	u32 bcast_prev_84;
+	u32 bcast_new_84;
+	int bcast_cstate_prev_84;
+	int bcast_cstate_new_84;
 #endif
 
 	/* configured by drbdsetup */

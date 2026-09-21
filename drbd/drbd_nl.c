@@ -4523,6 +4523,11 @@ static void connection_to_info(struct drbd_connection_info *info,
 {
 	info->conn_connection_state = connection->cstate[NOW];
 	info->conn_role = connection->peer_role[NOW];
+#ifdef CONFIG_DRBD_COMPAT_84
+	/* No "before" state of its own; see resource_to_info() above. */
+	info->old_conn_connection_state = info->conn_connection_state;
+	info->old_conn_role = info->conn_role;
+#endif
 }
 
 #define str_to_info(info, field, str) ({ \
@@ -4548,6 +4553,23 @@ static void peer_device_to_info(struct drbd_peer_device_info *info,
 	info->peer_resync_susp_peer = peer_device->resync_susp_peer[NOW];
 	info->peer_resync_susp_max_parallel = peer_device->resync_susp_max_parallel[NOW];
 	__peer_device_to_info(info, peer_device, NOW);
+#ifdef CONFIG_DRBD_COMPAT_84
+	/*
+	 * No "before" state of its own; see resource_to_info() above. This
+	 * matters in particular for drbd_broadcast_peer_device_state()'s
+	 * RS_PROGRESS-driven NOTIFY_CHANGE call (drbd_nl.c): it fires far
+	 * more often than the resync bitmap-writeout path's own throttled
+	 * SIB_SYNC_PROGRESS emission, and without old == new here it would
+	 * feed compat84_notify_peer_device_state()'s fused-event code a
+	 * fabricated repl/disk-state transition from uninitialized stack
+	 * data instead of correctly reporting no change.
+	 */
+	info->old_peer_repl_state = info->peer_repl_state;
+	info->old_peer_disk_state = info->peer_disk_state;
+	info->old_peer_resync_susp_user = info->peer_resync_susp_user;
+	info->old_peer_resync_susp_peer = info->peer_resync_susp_peer;
+	info->old_peer_resync_susp_dependency = info->peer_resync_susp_dependency;
+#endif
 }
 
 void peer_device_state_change_to_info(struct drbd_peer_device_info *info,
@@ -4559,6 +4581,26 @@ void peer_device_state_change_to_info(struct drbd_peer_device_info *info,
 	info->peer_resync_susp_peer = state_change->resync_susp_peer[NEW];
 	info->peer_resync_susp_max_parallel = state_change->resync_susp_max_parallel[NEW];
 	__peer_device_to_info(info, state_change->peer_device, NEW);
+#ifdef CONFIG_DRBD_COMPAT_84
+	info->old_peer_repl_state = state_change->repl_state[OLD];
+	info->old_peer_disk_state = state_change->disk_state[OLD];
+	/*
+	 * Exact pre-transition values, straight from the frozen snapshot
+	 * (unlike the live peer_device object, where which_state's OLD
+	 * aliases NOW and would already read the post-transition value by
+	 * the time a notification runs). old_peer_resync_susp_dependency
+	 * combines resync_susp_dependency[OLD] and resync_susp_other_c[OLD],
+	 * but not resync_susp_comb_dep()'s third term (sync source with an
+	 * inconsistent local disk): that needs the sibling device's
+	 * disk_state[OLD], which this callback cannot reach. The v1 dialect
+	 * allows a single peer only, and with one peer that term is always
+	 * false, so the result equals resync_susp_comb_dep().
+	 */
+	info->old_peer_resync_susp_user = state_change->resync_susp_user[OLD];
+	info->old_peer_resync_susp_peer = state_change->resync_susp_peer[OLD];
+	info->old_peer_resync_susp_dependency =
+		state_change->resync_susp_dependency[OLD] || state_change->resync_susp_other_c[OLD];
+#endif
 }
 
 /* shared logic between device_to_info and device_state_change_to_info */
@@ -4587,6 +4629,10 @@ void device_to_info(struct drbd_device_info *info,
 	info->dev_disk_state = device->disk_state[NOW];
 	info->dev_has_quorum = device->have_quorum[NOW];
 	__device_to_info(info, device);
+#ifdef CONFIG_DRBD_COMPAT_84
+	/* No "before" state of its own; see resource_to_info() above. */
+	info->old_dev_disk_state = info->dev_disk_state;
+#endif
 }
 
 void device_state_change_to_info(struct drbd_device_info *info,
@@ -4595,6 +4641,9 @@ void device_state_change_to_info(struct drbd_device_info *info,
 	info->dev_disk_state = state_change->disk_state[NEW];
 	info->dev_has_quorum = state_change->have_quorum[NEW];
 	__device_to_info(info, state_change->device);
+#ifdef CONFIG_DRBD_COMPAT_84
+	info->old_dev_disk_state = state_change->disk_state[OLD];
+#endif
 }
 
 static bool is_resync_target_in_other_connection(struct drbd_peer_device *peer_device)
@@ -7210,6 +7259,25 @@ static void resource_to_info(struct drbd_resource_info *info,
 	info->res_susp_fen = is_suspended_fen(resource, NOW);
 	info->res_susp_quorum = resource->susp_quorum[NOW];
 	info->res_fail_io = resource->fail_io[NOW];
+#ifdef CONFIG_DRBD_COMPAT_84
+	/*
+	 * This snapshot has no "before" state of its own (unlike
+	 * notify_resource_state_change()'s state_change-derived one, drbd_
+	 * state.c) -- every caller of this function reports the live state
+	 * as either a fresh object or an out-of-band status reply, not a
+	 * transition. old == new here so a v1 dialect fused event, if one
+	 * is ever built from this snapshot, reports no change and
+	 * compat84_event_flush() skips it rather than printing a
+	 * fabricated transition. Combines susp_user/susp_quorum/susp_uuid
+	 * the same way drbd_get_resource_state()'s own .susp does, since
+	 * res_susp above is susp_user alone.
+	 */
+	info->old_res_role = info->res_role;
+	info->old_res_susp = resource->susp_user[NOW] || resource->susp_quorum[NOW] ||
+		resource->susp_uuid[NOW];
+	info->old_res_susp_nod = info->res_susp_nod;
+	info->old_res_susp_fen = info->res_susp_fen;
+#endif
 }
 
 int drbd_adm_new_resource(struct drbd_adm_ctx *adm_ctx)
