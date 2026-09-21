@@ -7,7 +7,7 @@
 #include "drbd_meta_data.h"
 
 /* MDF_84_* masks and the flags table they encode are declared in
- * drbd_legacy_84.h, shared with drbd_nl_84.c.
+ * drbd_legacy_84.h, shared with drbd_nl_84.c (GET_STATUS's disk_flags).
  */
 
 struct meta_data_on_disk_84 {

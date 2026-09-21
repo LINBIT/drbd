@@ -34,18 +34,10 @@ struct meta_data_on_disk_84;
 #define MDF_84_PEER_OUTDATED (1<<5)
 
 /*
- * Mask for the v1 DEVICE_STATISTICS dev_disk_flags and PEER_DEVICE_STATISTICS
- * peer_dev_flags wire attributes (drbd_nl_84.c's compat84_emit_device(),
- * compat84_emit_peer_device() and their compat84_notify_* twins), which copy
- * DRBD 9's raw device_to_statistics()/peer_device_to_statistics() output
- * (drbd_nl.c) onto the wire. These are plain masks, not a peer-bit
- * translation: DRBD 9's md.flags and peer_md.flags keep the same bit
- * positions as mainline 8.4's for every bit 8.4 knows about (peer flags:
- * PEER_DEV_FLAGS_84_MASK, matching mainline drivers/block/drbd/drbd_nl.c's
- * local enum mdf_peer_flag), so masking off DRBD 9's newer bits
- * (MDF_PRIMARY_LOST_QUORUM,
- * MDF_HAVE_QUORUM; MDF_PEER_DEVICE_SEEN, MDF_PEER_DIVERGENCE_BITMAP,
- * MDF_NODE_EXISTS, MDF_HAVE_BITMAP) is enough; nothing needs remapping.
+ * Mask for the v1 DEVICE_STATISTICS dev_disk_flags and
+ * PEER_DEVICE_STATISTICS peer_dev_flags attributes. DRBD 9 keeps 8.4's
+ * bit positions for every bit 8.4 knows about, so masking off the newer
+ * bits is enough; nothing needs remapping.
  */
 #define PEER_DEV_FLAGS_84_MASK (MDF_PEER_CONNECTED | MDF_PEER_OUTDATED | \
 				 MDF_PEER_FENCING | MDF_PEER_FULL_SYNC)
