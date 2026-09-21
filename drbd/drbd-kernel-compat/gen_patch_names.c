@@ -547,6 +547,9 @@ int main(int argc, char **argv)
 	patch(1, "struct_sockaddr_unsized", true, false,
 	      COMPAT_HAVE_STRUCT_SOCKADDR_UNSIZED, "present");
 
+	patch(1, "assign_bit", true, false,
+	      COMPAT_HAVE_ASSIGN_BIT, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
