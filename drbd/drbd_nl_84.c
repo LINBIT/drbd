@@ -17,6 +17,7 @@
 
 #include <linux/slab.h>
 #include <linux/drbd.h>
+#include <linux/drbd_limits.h>
 #include <linux/in.h>
 #include <linux/in6.h>
 #include <linux/crc32c.h>
@@ -1080,25 +1081,141 @@ static int compat84_put_timeout_type(struct drbd_adm_ctx *ctx, enum drbd_timeout
 }
 
 /*
- * Placeholders. Every emit_ and notify_ hook below is reached from
- * generic code paths that do not check for NULL (the dumps in
- * drbd_nl.c and the unconditional per-dialect fan-out in the
- * drbd_notify_..._state() functions), so a registered dialect can
- * never leave them NULL, no matter how far its own dump/notify support
- * has actually gotten.
+ * Placeholders. Every notify_ hook below (and, until this commit, every
+ * emit_ hook too) is reached from generic code paths that do not check
+ * for NULL (the dumps in drbd_nl.c and the unconditional per-dialect
+ * fan-out in the drbd_notify_..._state() functions), so a registered
+ * dialect can never leave them NULL, no matter how far its own
+ * dump/notify support has actually gotten.
  *
- * Later commits replace all of these except emit_path and
- * notify_path_state with real v1 wire emitters. Those two stay no-ops
- * permanently: DRBD 8.4 has no concept of a path object (that is a
- * multi-path DRBD 9 feature), so there is nothing for the v1 dialect to
- * ever emit here.
+ * A later commit replaces the notify_ hooks below with real v1 wire emitters,
+ * except notify_path_state, which stays a no-op permanently: DRBD 8.4 has
+ * no concept of a path object (that is a multi-path DRBD 9 feature), so
+ * there is nothing for the v1 dialect to ever emit here. emit_path is the
+ * same permanent no-op, for the same reason.
  */
+
+/*
+ * DRBD_NLA_CFG_CONTEXT for a dump row. v1's container carries ctx_volume,
+ * ctx_resource_name, ctx_my_addr and ctx_peer_addr (drbd/drbd-84/uapi/
+ * linux/drbd_genl.h): no ctx_peer_node_id, no ctx_conn_name (8.4 has
+ * neither concept).
+ *
+ * Unlike the ported nla_put_drbd_cfg_context() this is based on
+ * (drbd_nl_legacy.c:823), which takes a "path" argument because DRBD 9's
+ * v2 model hangs addresses off a struct drbd_path handed in by the
+ * caller, this one takes a "connection" argument instead: 8.4 has no
+ * path objects at the *wire* level (v1 has no GET_PATHS;
+ * compat84_emit_path() is a permanent no-op), but the v1 model has
+ * exactly one address pair per connection, by construction
+ * (drbd8_compat_mode caps a resource to one connection, and
+ * compat84_resolve_peer_node_id() above relies on that same connection
+ * having exactly one transport path). This mirrors mainline's own
+ * in-tree 8.4 driver, nla_put_drbd_cfg_context() (drivers/block/drbd/
+ * drbd_nl.c), which reads connection->my_addr/peer_addr directly because
+ * that tree has no transport/path abstraction at all; here the
+ * equivalent datum lives one level down, on the connection's single
+ * transport path.
+ *
+ * Takes its own rcu_read_lock() around the path lookup, the same
+ * "narrowly scoped, safe to nest in any caller" idiom
+ * nla_put_drbd_cfg_context() (drbd_nl_legacy.c) uses for ctx_conn_name,
+ * since not every caller here already holds one (the notify_* hooks
+ * below mostly don't at this point in their own function).
+ */
+static int compat84_put_cfg_context(struct sk_buff *skb, struct drbd_resource *resource,
+				    struct drbd_connection *connection,
+				    struct drbd_device *device)
+{
+	struct nlattr *nla;
+
+	nla = nla_nest_start_noflag(skb, DRBD_NLA_CFG_CONTEXT);
+	if (!nla)
+		goto nla_put_failure;
+	if (device)
+		nla_put_u32(skb, DRBD_A_DRBD_CFG_CONTEXT_CTX_VOLUME, device->vnr);
+	if (resource)
+		nla_put_string(skb, DRBD_A_DRBD_CFG_CONTEXT_CTX_RESOURCE_NAME, resource->name);
+	if (connection) {
+		struct drbd_path *path;
+
+		rcu_read_lock();
+		path = list_first_or_null_rcu(&connection->transport.paths,
+					      struct drbd_path, list);
+		if (path) {
+			if (path->my_addr_len)
+				nla_put(skb, DRBD_A_DRBD_CFG_CONTEXT_CTX_MY_ADDR,
+					path->my_addr_len, &path->my_addr);
+			if (path->peer_addr_len)
+				nla_put(skb, DRBD_A_DRBD_CFG_CONTEXT_CTX_PEER_ADDR,
+					path->peer_addr_len, &path->peer_addr);
+		}
+		rcu_read_unlock();
+	}
+	nla_nest_end(skb, nla);
+	return 0;
+
+nla_put_failure:
+	if (nla)
+		nla_nest_cancel(skb, nla);
+	return -EMSGSIZE;
+}
+
+/*
+ * The single peer device of an 8.4-mode device, or NULL if none exists
+ * yet. Callers hold rcu_read_lock(). Kept apart from drbd_get_state_84()
+ * (drbd_legacy_84.c), which couples the same lookup to a state fetch.
+ */
+static struct drbd_peer_device *compat84_single_peer_device(struct drbd_device *device)
+{
+	return list_first_or_null_rcu(&device->peer_devices, struct drbd_peer_device,
+				      peer_devices);
+}
 
 static int compat84_emit_resource(struct sk_buff *skb, struct netlink_callback *cb,
 				  struct drbd_resource *resource,
 				  struct drbd_resource_info *info,
 				  struct drbd_resource_statistics *statistics)
 {
+	struct resource_info info_84 = {
+		.res_role = info->res_role,
+		.res_susp = info->res_susp,
+		.res_susp_nod = info->res_susp_nod,
+		.res_susp_fen = info->res_susp_fen,
+		/* res_susp_quorum, res_fail_io: DRBD 9 only, no v1 attribute. */
+	};
+	struct resource_statistics statistics_84 = {
+		.res_stat_write_ordering = statistics->res_stat_write_ordering,
+	};
+	struct res_opts res_opts = {
+		.on_no_data = resource->res_opts.on_no_data,
+	};
+	struct drbd_genlmsghdr *dh;
+	int err;
+
+	memcpy(res_opts.cpu_mask, resource->res_opts.cpu_mask, sizeof(res_opts.cpu_mask));
+	res_opts.cpu_mask_len = resource->res_opts.cpu_mask_len;
+
+	dh = genlmsg_put(skb, NETLINK_CB(cb->skb).portid,
+			 cb->nlh->nlmsg_seq, &drbd_nl_family,
+			 NLM_F_MULTI, DRBD_ADM_GET_RESOURCES);
+	if (!dh)
+		return -ENOMEM;
+	dh->minor = -1U;
+	dh->ret_code = NO_ERROR;
+	err = compat84_put_cfg_context(skb, resource, NULL, NULL);
+	if (err)
+		return err;
+	err = res_opts_to_skb(skb, &res_opts);
+	if (err)
+		return err;
+	err = resource_info_to_skb(skb, &info_84);
+	if (err)
+		return err;
+	err = resource_statistics_to_skb(skb, &statistics_84);
+	if (err)
+		return err;
+	genlmsg_end(skb, dh);
 	return 0;
 }
 
@@ -1108,7 +1225,194 @@ static int compat84_emit_device(struct sk_buff *skb, struct netlink_callback *cb
 				struct drbd_device_info *info,
 				struct drbd_device_statistics *statistics)
 {
+	struct drbd_genlmsghdr *dh;
+	int err;
+
+	dh = genlmsg_put(skb, NETLINK_CB(cb->skb).portid,
+			 cb->nlh->nlmsg_seq, &drbd_nl_family,
+			 NLM_F_MULTI, DRBD_ADM_GET_DEVICES);
+	if (!dh)
+		return -ENOMEM;
+	dh->ret_code = retcode;
+	dh->minor = -1U;
+	if (retcode != NO_ERROR) {
+		genlmsg_end(skb, dh);
+		return 0;
+	}
+
+	dh->minor = device->minor;
+	err = compat84_put_cfg_context(skb, device->resource, NULL, device);
+	if (err)
+		return err;
+
+	/* v1 has no DRBD_NLA_DEVICE_CONF container. */
+
+	if (disk_conf) {
+		struct drbd_peer_device *peer_device = compat84_single_peer_device(device);
+		struct drbd_peer_device_conf *pdc =
+			peer_device ? rcu_dereference(peer_device->conf) : NULL;
+		struct drbd_net_conf *nc = peer_device ?
+			rcu_dereference(peer_device->connection->transport.net_conf) : NULL;
+		struct disk_conf dc = {
+			.meta_dev_idx = disk_conf->meta_dev_idx,
+			.disk_size = disk_conf->disk_size,
+			.on_io_error = disk_conf->on_io_error,
+			/*
+			 * fencing and the five resync-tuning fields below live
+			 * in net_conf.fencing_policy and struct
+			 * peer_device_conf on DRBD 9, unreachable from
+			 * disk_conf; see compat84_overlay()'s DISK_CONF case
+			 * for the write-side twin of this. Neither exists
+			 * before a peer device does, so 0 (v1's "unset")
+			 * until then.
+			 */
+			.fencing = nc ? nc->fencing_policy : 0,
+			.resync_rate = pdc ? pdc->resync_rate : 0,
+			.resync_after = disk_conf->resync_after,
+			.al_extents = disk_conf->al_extents,
+			.c_plan_ahead = pdc ? pdc->c_plan_ahead : 0,
+			.c_delay_target = pdc ? pdc->c_delay_target : 0,
+			.c_fill_target = pdc ? pdc->c_fill_target : 0,
+			.c_max_rate = pdc ? pdc->c_max_rate : 0,
+			.c_min_rate = pdc ? pdc->c_min_rate : 0,
+			.disk_barrier = disk_conf->disk_barrier,
+			.disk_flushes = disk_conf->disk_flushes,
+			.disk_drain = disk_conf->disk_drain,
+			.md_flushes = disk_conf->md_flushes,
+			.disk_timeout = disk_conf->disk_timeout,
+			.read_balancing = disk_conf->read_balancing,
+			.al_updates = disk_conf->al_updates,
+			.discard_zeroes_if_aligned = disk_conf->discard_zeroes_if_aligned,
+			.rs_discard_granularity = disk_conf->rs_discard_granularity,
+			.disable_write_same = disk_conf->disable_write_same,
+			/* max_bio_bvecs: no DRBD 9 equivalent, left 0 (matches
+			 * compat84_overlay()'s DISK_CONF case dropping it on
+			 * the write side).
+			 */
+		};
+
+		memcpy(dc.backing_dev, disk_conf->backing_dev, sizeof(dc.backing_dev));
+		dc.backing_dev_len = disk_conf->backing_dev_len;
+		memcpy(dc.meta_dev, disk_conf->meta_dev, sizeof(dc.meta_dev));
+		dc.meta_dev_len = disk_conf->meta_dev_len;
+
+		err = disk_conf_to_skb(skb, &dc);
+		if (err)
+			return err;
+	}
+
+	{
+		struct device_info info_84 = {
+			.dev_disk_state = drbd_disk_state_84(info->dev_disk_state),
+			/* is_intentional_diskless, dev_has_quorum, dev_is_open,
+			 * backing_dev_path: DRBD 9 only, no v1 attribute.
+			 */
+		};
+
+		err = device_info_to_skb(skb, &info_84);
+		if (err)
+			return err;
+	}
+	{
+		struct device_statistics stat_84 = {
+			.dev_size = statistics->dev_size,
+			.dev_read = statistics->dev_read,
+			.dev_write = statistics->dev_write,
+			.dev_al_writes = statistics->dev_al_writes,
+			.dev_bm_writes = statistics->dev_bm_writes,
+			.dev_upper_pending = statistics->dev_upper_pending,
+			.dev_lower_pending = statistics->dev_lower_pending,
+			.dev_upper_blocked = statistics->dev_upper_blocked,
+			.dev_lower_blocked = statistics->dev_lower_blocked,
+			.dev_al_suspended = statistics->dev_al_suspended,
+			.dev_exposed_data_uuid = statistics->dev_exposed_data_uuid,
+			.dev_current_uuid = statistics->dev_current_uuid,
+			.dev_disk_flags = statistics->dev_disk_flags & MDF_84_MASK,
+			.history_uuids_len = statistics->history_uuids_len,
+		};
+
+		BUILD_BUG_ON(sizeof(stat_84.history_uuids) != sizeof(statistics->history_uuids));
+		memcpy(stat_84.history_uuids, statistics->history_uuids,
+		       sizeof(stat_84.history_uuids));
+
+		err = device_statistics_to_skb(skb, &stat_84);
+		if (err)
+			return err;
+	}
+	genlmsg_end(skb, dh);
 	return 0;
+}
+
+/*
+ * struct drbd_net_conf -> struct net_conf. Does not mask shared_secret;
+ * callers reachable by an unprivileged listener use
+ * compat84_put_net_conf_masked(). Shared by GET_CONNECTIONS and
+ * GET_STATUS.
+ *
+ * unplug_watermark has no persistent DRBD 9 home, so it is reported as
+ * 8.4's compiled-in default rather than 0: drbdsetup-84 show prints any
+ * non-default value, and drbdadm-84 adjust would then reissue
+ * net-options --set-defaults on every run. A non-default value
+ * configured on genuine 8.4 cannot be reflected back.
+ */
+static void compat84_pack_net_conf_84(struct net_conf *out, struct drbd_net_conf *net_conf)
+{
+	*out = (struct net_conf){
+		.wire_protocol = net_conf->wire_protocol,
+		.unplug_watermark = DRBD_UNPLUG_WATERMARK_DEF,
+		.connect_int = net_conf->connect_int,
+		.timeout = net_conf->timeout,
+		.ping_int = net_conf->ping_int,
+		.ping_timeo = net_conf->ping_timeo,
+		.sndbuf_size = net_conf->sndbuf_size,
+		.rcvbuf_size = net_conf->rcvbuf_size,
+		.ko_count = net_conf->ko_count,
+		.max_buffers = net_conf->max_buffers,
+		.max_epoch_size = net_conf->max_epoch_size,
+		.after_sb_0p = net_conf->after_sb_0p,
+		.after_sb_1p = net_conf->after_sb_1p,
+		.after_sb_2p = net_conf->after_sb_2p,
+		.rr_conflict = net_conf->rr_conflict,
+		.on_congestion = net_conf->on_congestion,
+		.cong_fill = net_conf->cong_fill,
+		.cong_extents = net_conf->cong_extents,
+		.two_primaries = net_conf->two_primaries,
+		.tcp_cork = net_conf->tcp_cork,
+		.always_asbp = net_conf->always_asbp,
+		.use_rle = net_conf->use_rle,
+		.csums_after_crash_only = net_conf->csums_after_crash_only,
+		.sock_check_timeo = net_conf->sock_check_timeo,
+		/* discard_my_data/tentative: one-shot connect flags, no persistent home. */
+	};
+
+	memcpy(out->shared_secret, net_conf->shared_secret, sizeof(out->shared_secret));
+	out->shared_secret_len = net_conf->shared_secret_len;
+	memcpy(out->cram_hmac_alg, net_conf->cram_hmac_alg, sizeof(out->cram_hmac_alg));
+	out->cram_hmac_alg_len = net_conf->cram_hmac_alg_len;
+	memcpy(out->integrity_alg, net_conf->integrity_alg, sizeof(out->integrity_alg));
+	out->integrity_alg_len = net_conf->integrity_alg_len;
+	memcpy(out->verify_alg, net_conf->verify_alg, sizeof(out->verify_alg));
+	out->verify_alg_len = net_conf->verify_alg_len;
+	memcpy(out->csums_alg, net_conf->csums_alg, sizeof(out->csums_alg));
+	out->csums_alg_len = net_conf->csums_alg_len;
+}
+
+/*
+ * Pack and serialize @net_conf, zeroing the shared secret when
+ * @exclude_sensitive: a reply reachable by an unprivileged caller must not
+ * carry it (GET_STATUS and GET_CONNECTIONS carry no GENL_ADMIN_PERM).
+ */
+static int compat84_put_net_conf_masked(struct sk_buff *skb, struct drbd_net_conf *net_conf,
+					bool exclude_sensitive)
+{
+	struct net_conf nc;
+
+	compat84_pack_net_conf_84(&nc, net_conf);
+	if (exclude_sensitive) {
+		memset(nc.shared_secret, 0, sizeof(nc.shared_secret));
+		nc.shared_secret_len = 0;
+	}
+	return net_conf_to_skb(skb, &nc);
 }
 
 static int compat84_emit_connection(struct sk_buff *skb, struct netlink_callback *cb, int retcode,
@@ -1118,6 +1422,54 @@ static int compat84_emit_connection(struct sk_buff *skb, struct netlink_callback
 				    struct drbd_connection_info *info,
 				    struct drbd_connection_statistics *statistics)
 {
+	struct drbd_genlmsghdr *dh;
+	int err;
+
+	dh = genlmsg_put(skb, NETLINK_CB(cb->skb).portid,
+			 cb->nlh->nlmsg_seq, &drbd_nl_family,
+			 NLM_F_MULTI, DRBD_ADM_GET_CONNECTIONS);
+	if (!dh)
+		return -ENOMEM;
+	dh->ret_code = retcode;
+	dh->minor = -1U;
+	if (retcode != NO_ERROR) {
+		genlmsg_end(skb, dh);
+		return 0;
+	}
+
+	err = compat84_put_cfg_context(skb, resource, connection, NULL);
+	if (err)
+		return err;
+
+	/* v1 has no DRBD_NLA_PATH_PARMS container. */
+
+	if (net_conf) {
+		/* This dump carries no GENL_ADMIN_PERM. */
+		err = compat84_put_net_conf_masked(skb, net_conf, !capable(CAP_SYS_ADMIN));
+		if (err)
+			return err;
+	}
+	{
+		struct connection_info info_84 = {
+			.conn_connection_state = info->conn_connection_state,
+			.conn_role = info->conn_role,
+		};
+
+		err = connection_info_to_skb(skb, &info_84);
+		if (err)
+			return err;
+	}
+	{
+		struct connection_statistics stat_84 = {
+			.conn_congested = statistics->conn_congested,
+			/* ap_in_flight, rs_in_flight: DRBD 9 only, no v1 attribute. */
+		};
+
+		err = connection_statistics_to_skb(skb, &stat_84);
+		if (err)
+			return err;
+	}
+	genlmsg_end(skb, dh);
 	return 0;
 }
 
@@ -1127,6 +1479,69 @@ static int compat84_emit_peer_device(struct sk_buff *skb, struct netlink_callbac
 				     struct drbd_peer_device_statistics *statistics,
 				     struct drbd_peer_device_conf *conf)
 {
+	struct drbd_genlmsghdr *dh;
+	int err;
+
+	dh = genlmsg_put(skb, NETLINK_CB(cb->skb).portid,
+			 cb->nlh->nlmsg_seq, &drbd_nl_family,
+			 NLM_F_MULTI, DRBD_ADM_GET_PEER_DEVICES);
+	if (!dh)
+		return -ENOMEM;
+	dh->ret_code = retcode;
+	dh->minor = -1U;
+	if (retcode != NO_ERROR) {
+		genlmsg_end(skb, dh);
+		return 0;
+	}
+
+	dh->minor = minor;
+	err = compat84_put_cfg_context(skb, peer_device->device->resource,
+					peer_device->connection, peer_device->device);
+	if (err)
+		return err;
+
+	{
+		struct peer_device_info info_84 = {
+			.peer_repl_state = info->peer_repl_state,
+			.peer_disk_state = drbd_disk_state_84(info->peer_disk_state),
+			.peer_resync_susp_user = info->peer_resync_susp_user,
+			.peer_resync_susp_peer = info->peer_resync_susp_peer,
+			.peer_resync_susp_dependency = info->peer_resync_susp_dependency,
+			/* peer_is_intentional_diskless, peer_resync_susp_max_parallel:
+			 * DRBD 9 only, no v1 attribute.
+			 */
+		};
+
+		err = peer_device_info_to_skb(skb, &info_84);
+		if (err)
+			return err;
+	}
+	{
+		struct peer_device_statistics stat_84 = {
+			.peer_dev_received = statistics->peer_dev_received,
+			.peer_dev_sent = statistics->peer_dev_sent,
+			.peer_dev_pending = statistics->peer_dev_pending,
+			.peer_dev_unacked = statistics->peer_dev_unacked,
+			.peer_dev_out_of_sync = statistics->peer_dev_out_of_sync,
+			.peer_dev_resync_failed = statistics->peer_dev_resync_failed,
+			.peer_dev_bitmap_uuid = statistics->peer_dev_bitmap_uuid,
+			.peer_dev_flags = statistics->peer_dev_flags & PEER_DEV_FLAGS_84_MASK,
+			/* the fifteen resync/OV telemetry fields past this point:
+			 * DRBD 9 only, no v1 attribute.
+			 */
+		};
+
+		err = peer_device_statistics_to_skb(skb, &stat_84);
+		if (err)
+			return err;
+	}
+
+	/*
+	 * v1 has no DRBD_NLA_PEER_DEVICE_OPTS container; the resync-tuning
+	 * fields ride on GET_DEVICES's disk_conf instead.
+	 */
+
+	genlmsg_end(skb, dh);
 	return 0;
 }
 
@@ -1200,9 +1615,9 @@ static const struct drbd_nl_dialect drbd_nl_84_dialect = {
 	.attr_present = compat84_attr_present,
 	.put_timeout_type = compat84_put_timeout_type,
 	/*
-	 * Placeholders so that the unconditional dump/notify fan-out never
-	 * calls through a NULL pointer; see the comment above. Later commits
-	 * replace all but emit_path/notify_path_state with real
+	 * notify_* below are still placeholders so that the unconditional
+	 * notify fan-out never calls through a NULL pointer; see the comment
+	 * above. A later commit replaces all but notify_path_state with real
 	 * emitters.
 	 */
 	.emit_resource = compat84_emit_resource,
@@ -1221,17 +1636,57 @@ static const struct drbd_nl_dialect drbd_nl_84_dialect = {
 
 int drbd_adm_dump_devices_done(struct netlink_callback *cb)
 {
-	return 0;
+	return drbd_dump_devices_done(cb);
 }
 
 int drbd_adm_dump_connections_done(struct netlink_callback *cb)
 {
-	return 0;
+	return drbd_dump_connections_done(cb);
 }
 
 int drbd_adm_dump_peer_devices_done(struct netlink_callback *cb)
 {
-	return 0;
+	return drbd_dump_peer_devices_done(cb);
+}
+
+/*
+ * Ported from drbd_nl_legacy.c: dump callbacks run outside genl_lock(),
+ * so they cannot use the attribute parsing that relies on global tables.
+ * The attribute type numbers are the same in both dialects.
+ */
+static struct nlattr *compat84_find_cfg_context_attr(const struct nlmsghdr *nlh, int attr)
+{
+	const unsigned int hdrlen = GENL_HDRLEN + sizeof(struct drbd_genlmsghdr);
+	struct nlattr *nla;
+
+	nla = nla_find(nlmsg_attrdata(nlh, hdrlen), nlmsg_attrlen(nlh, hdrlen),
+		       DRBD_NLA_CFG_CONTEXT);
+	if (!nla)
+		return NULL;
+	return nla_find_nested(nla, attr);
+}
+
+/*
+ * Resolve the optional resource-name filter of a dump on its first call.
+ * The core expects the resource in cb->args[0], with a reference that the
+ * matching _done callback drops again. Returns true when the name is not
+ * known: no resource to walk, the caller reports that in its message.
+ */
+static bool compat84_dump_filter(struct netlink_callback *cb, int holder_nr)
+{
+	struct drbd_resource *resource;
+	struct nlattr *resource_filter;
+
+	resource_filter =
+		compat84_find_cfg_context_attr(cb->nlh, DRBD_A_DRBD_CFG_CONTEXT_CTX_RESOURCE_NAME);
+	if (IS_ERR_OR_NULL(resource_filter))
+		return false;
+	resource = drbd_find_resource(nla_data(resource_filter));
+	if (!resource)
+		return true;
+	kref_debug_get(&resource->kref_debug, holder_nr);
+	cb->args[0] = (long)resource;
+	return false;
 }
 
 int drbd_nl_get_status_doit(struct sk_buff *skb, struct genl_info *info)
@@ -2028,22 +2483,44 @@ int drbd_nl_chg_net_opts_doit(struct sk_buff *skb, struct genl_info *info)
 
 int drbd_nl_get_resources_dumpit(struct sk_buff *skb, struct netlink_callback *cb)
 {
-	return -EOPNOTSUPP;
+	return drbd_dump_resources(skb, cb, &drbd_nl_84_dialect);
 }
 
 int drbd_nl_get_devices_dumpit(struct sk_buff *skb, struct netlink_callback *cb)
 {
-	return -EOPNOTSUPP;
+	if (!cb->args[0] && !cb->args[1] && compat84_dump_filter(cb, 7)) {
+		int err = compat84_emit_device(skb, cb, ERR_RES_NOT_KNOWN,
+					       NULL, NULL, NULL, NULL);
+
+		return err ? err : skb->len;
+	}
+	return drbd_dump_devices(skb, cb, &drbd_nl_84_dialect);
 }
 
 int drbd_nl_get_connections_dumpit(struct sk_buff *skb, struct netlink_callback *cb)
 {
-	return -EOPNOTSUPP;
+	if (!cb->args[0]) {
+		if (compat84_dump_filter(cb, 6)) {
+			int err = compat84_emit_connection(skb, cb, ERR_RES_NOT_KNOWN,
+							   NULL, NULL, NULL, NULL, NULL);
+
+			return err ? err : skb->len;
+		}
+		if (cb->args[0])
+			cb->args[1] = DRBD_DUMP_SINGLE_RESOURCE;
+	}
+	return drbd_dump_connections(skb, cb, &drbd_nl_84_dialect);
 }
 
 int drbd_nl_get_peer_devices_dumpit(struct sk_buff *skb, struct netlink_callback *cb)
 {
-	return -EOPNOTSUPP;
+	if (!cb->args[0] && !cb->args[1] && compat84_dump_filter(cb, 9)) {
+		int err = compat84_emit_peer_device(skb, cb, ERR_RES_NOT_KNOWN,
+						    NULL, 0, NULL, NULL, NULL);
+
+		return err ? err : skb->len;
+	}
+	return drbd_dump_peer_devices(skb, cb, &drbd_nl_84_dialect);
 }
 
 int drbd_nl_get_initial_state_dumpit(struct sk_buff *skb, struct netlink_callback *cb)
