@@ -131,6 +131,20 @@ static struct genl_family drbd_nl_family __ro_after_init = {
 	.netnsok	= true,
 };
 
+/*
+ * Multicast sequence number of the events2 notifications, as mainline
+ * keeps it. The core's drbd_genl_seq also counts path and rename
+ * notifications, which v1 does not send, and drbdsetup-84 events2 reports
+ * every gap as "- skipped N".
+ */
+static atomic_t compat84_notify_seq = ATOMIC_INIT(2);
+
+static int compat84_genl_multicast_events(struct sk_buff *skb)
+{
+	return genlmsg_multicast_allns(&drbd_nl_family, skb, 0,
+				       DRBD_NLGRP_EVENTS);
+}
+
 static void drbd_adm_send_reply(struct sk_buff *skb, struct genl_info *info)
 {
 	genlmsg_end(skb, genlmsg_data(nlmsg_data(nlmsg_hdr(skb))));
@@ -1081,47 +1095,21 @@ static int compat84_put_timeout_type(struct drbd_adm_ctx *ctx, enum drbd_timeout
 }
 
 /*
- * Placeholders. Every notify_ hook below (and, until this commit, every
- * emit_ hook too) is reached from generic code paths that do not check
- * for NULL (the dumps in drbd_nl.c and the unconditional per-dialect
- * fan-out in the drbd_notify_..._state() functions), so a registered
- * dialect can never leave them NULL, no matter how far its own
- * dump/notify support has actually gotten.
- *
- * A later commit replaces the notify_ hooks below with real v1 wire emitters,
- * except notify_path_state, which stays a no-op permanently: DRBD 8.4 has
- * no concept of a path object (that is a multi-path DRBD 9 feature), so
- * there is nothing for the v1 dialect to ever emit here. emit_path is the
- * same permanent no-op, for the same reason.
+ * The emit_/notify_ hooks below are called unconditionally by the core,
+ * so none may be NULL. notify_path_state and emit_path are permanent
+ * no-ops: DRBD 8.4 has no path objects.
  */
 
 /*
- * DRBD_NLA_CFG_CONTEXT for a dump row. v1's container carries ctx_volume,
- * ctx_resource_name, ctx_my_addr and ctx_peer_addr (drbd/drbd-84/uapi/
- * linux/drbd_genl.h): no ctx_peer_node_id, no ctx_conn_name (8.4 has
- * neither concept).
+ * DRBD_NLA_CFG_CONTEXT for a dump row. v1's container carries
+ * ctx_volume, ctx_resource_name, ctx_my_addr and ctx_peer_addr; no
+ * ctx_peer_node_id or ctx_conn_name (8.4 has neither concept).
  *
- * Unlike the ported nla_put_drbd_cfg_context() this is based on
- * (drbd_nl_legacy.c:823), which takes a "path" argument because DRBD 9's
- * v2 model hangs addresses off a struct drbd_path handed in by the
- * caller, this one takes a "connection" argument instead: 8.4 has no
- * path objects at the *wire* level (v1 has no GET_PATHS;
- * compat84_emit_path() is a permanent no-op), but the v1 model has
- * exactly one address pair per connection, by construction
- * (drbd8_compat_mode caps a resource to one connection, and
- * compat84_resolve_peer_node_id() above relies on that same connection
- * having exactly one transport path). This mirrors mainline's own
- * in-tree 8.4 driver, nla_put_drbd_cfg_context() (drivers/block/drbd/
- * drbd_nl.c), which reads connection->my_addr/peer_addr directly because
- * that tree has no transport/path abstraction at all; here the
- * equivalent datum lives one level down, on the connection's single
- * transport path.
- *
- * Takes its own rcu_read_lock() around the path lookup, the same
- * "narrowly scoped, safe to nest in any caller" idiom
- * nla_put_drbd_cfg_context() (drbd_nl_legacy.c) uses for ctx_conn_name,
- * since not every caller here already holds one (the notify_* hooks
- * below mostly don't at this point in their own function).
+ * Takes a connection rather than a path: v1 has no path objects at the
+ * wire level, but an 8.4-mode connection carries exactly one transport
+ * path, and its address pair is what mainline's nla_put_drbd_cfg_context()
+ * emits from the connection directly. The rcu_read_lock() is local
+ * because not every caller holds one.
  */
 static int compat84_put_cfg_context(struct sk_buff *skb, struct drbd_resource *resource,
 				    struct drbd_connection *connection,
@@ -1553,13 +1541,97 @@ static int compat84_emit_path(struct sk_buff *skb, struct netlink_callback *cb, 
 	return 0;
 }
 
+/*
+ * Notifications run from process context (state-change work, admin paths,
+ * drbd_khelper()), never atomic, so GFP_NOIO as in the v2 adapter.
+ */
+
+static int compat84_put_notification_header(struct sk_buff *msg,
+					     enum drbd_notification_type type)
+{
+	struct drbd_notification_header nh = {
+		.nh_type = type,
+	};
+
+	return drbd_notification_header_to_skb(msg, &nh);
+}
+
 static int compat84_notify_resource_state(struct sk_buff *skb, unsigned int seq,
 					  struct drbd_resource *resource,
 					  struct drbd_resource_info *info,
 					  struct drbd_rename_resource_info *rename_info,
 					  enum drbd_notification_type type)
 {
+	struct drbd_resource_statistics resource_statistics;
+	struct drbd_genlmsghdr *dh;
+	bool multicast = false;
+	int err;
+
+	/*
+	 * v1 has no rename notification: NOTIFY_RENAME is DRBD 9 only and
+	 * a v1 client cannot parse it. The only caller passes skb == NULL.
+	 */
+	if ((type & ~NOTIFY_FLAGS) == NOTIFY_RENAME)
+		return 0;
+
+	if (!skb) {
+		skb = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
+		err = -ENOMEM;
+		if (!skb)
+			goto failed;
+		multicast = true;
+		seq = atomic_inc_return(&compat84_notify_seq);
+	}
+
+	err = -EMSGSIZE;
+	dh = genlmsg_put(skb, 0, seq, &drbd_nl_family, 0, DRBD_ADM_RESOURCE_STATE);
+	if (!dh)
+		goto nla_put_failure;
+	dh->minor = -1U;
+	dh->ret_code = NO_ERROR;
+	if (compat84_put_cfg_context(skb, resource, NULL, NULL) ||
+	    compat84_put_notification_header(skb, type))
+		goto nla_put_failure;
+
+	if (info) {
+		struct resource_info info_84 = {
+			.res_role = info->res_role,
+			.res_susp = info->res_susp,
+			.res_susp_nod = info->res_susp_nod,
+			.res_susp_fen = info->res_susp_fen,
+			/* res_susp_quorum, res_fail_io: DRBD 9 only, no v1 attribute. */
+		};
+
+		err = resource_info_to_skb(skb, &info_84);
+		if (err)
+			goto nla_put_failure;
+	}
+
+	resource_to_statistics(&resource_statistics, resource);
+	{
+		struct resource_statistics statistics_84 = {
+			.res_stat_write_ordering = resource_statistics.res_stat_write_ordering,
+		};
+
+		err = resource_statistics_to_skb(skb, &statistics_84);
+		if (err)
+			goto nla_put_failure;
+	}
+	genlmsg_end(skb, dh);
+	if (multicast) {
+		err = compat84_genl_multicast_events(skb);
+		/* skb has been consumed or freed in netlink_broadcast() */
+		if (err && err != -ESRCH)
+			goto failed;
+	}
 	return 0;
+
+nla_put_failure:
+	nlmsg_free(skb);
+failed:
+	drbd_err(resource, "Error %d while broadcasting event. Event seq:%u\n",
+		err, seq);
+	return err;
 }
 
 static int compat84_notify_device_state(struct sk_buff *skb, unsigned int seq,
@@ -1567,7 +1639,80 @@ static int compat84_notify_device_state(struct sk_buff *skb, unsigned int seq,
 					struct drbd_device_info *info,
 					enum drbd_notification_type type)
 {
+	struct drbd_device_statistics device_statistics;
+	struct device_statistics statistics_84;
+	struct drbd_genlmsghdr *dh;
+	bool multicast = false;
+	int err;
+
+	if (!skb) {
+		skb = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
+		err = -ENOMEM;
+		if (!skb)
+			goto failed;
+		multicast = true;
+		seq = atomic_inc_return(&compat84_notify_seq);
+	}
+
+	err = -EMSGSIZE;
+	dh = genlmsg_put(skb, 0, seq, &drbd_nl_family, 0, DRBD_ADM_DEVICE_STATE);
+	if (!dh)
+		goto nla_put_failure;
+	dh->minor = device->minor;
+	dh->ret_code = NO_ERROR;
+	if (compat84_put_cfg_context(skb, device->resource, NULL, device) ||
+	    compat84_put_notification_header(skb, type))
+		goto nla_put_failure;
+	if ((type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY) {
+		struct device_info info_84 = {
+			.dev_disk_state = drbd_disk_state_84(info->dev_disk_state),
+			/* is_intentional_diskless, dev_has_quorum, dev_is_open,
+			 * backing_dev_path: DRBD 9 only, no v1 attribute.
+			 */
+		};
+
+		if (device_info_to_skb(skb, &info_84))
+			goto nla_put_failure;
+	}
+	device_to_statistics(&device_statistics, device);
+	statistics_84 = (struct device_statistics) {
+		.dev_size = device_statistics.dev_size,
+		.dev_read = device_statistics.dev_read,
+		.dev_write = device_statistics.dev_write,
+		.dev_al_writes = device_statistics.dev_al_writes,
+		.dev_bm_writes = device_statistics.dev_bm_writes,
+		.dev_upper_pending = device_statistics.dev_upper_pending,
+		.dev_lower_pending = device_statistics.dev_lower_pending,
+		.dev_upper_blocked = device_statistics.dev_upper_blocked,
+		.dev_lower_blocked = device_statistics.dev_lower_blocked,
+		.dev_al_suspended = device_statistics.dev_al_suspended,
+		.dev_exposed_data_uuid = device_statistics.dev_exposed_data_uuid,
+		.dev_current_uuid = device_statistics.dev_current_uuid,
+		.dev_disk_flags = device_statistics.dev_disk_flags & MDF_84_MASK,
+		.history_uuids_len = device_statistics.history_uuids_len,
+	};
+	BUILD_BUG_ON(sizeof(statistics_84.history_uuids) !=
+		    sizeof(device_statistics.history_uuids));
+	memcpy(statistics_84.history_uuids, device_statistics.history_uuids,
+	      sizeof(statistics_84.history_uuids));
+	err = device_statistics_to_skb(skb, &statistics_84);
+	if (err)
+		goto nla_put_failure;
+	genlmsg_end(skb, dh);
+	if (multicast) {
+		err = compat84_genl_multicast_events(skb);
+		/* skb has been consumed or freed in netlink_broadcast() */
+		if (err && err != -ESRCH)
+			goto failed;
+	}
 	return 0;
+
+nla_put_failure:
+	nlmsg_free(skb);
+failed:
+	drbd_err(device, "Error %d while broadcasting event. Event seq:%u\n",
+		err, seq);
+	return err;
 }
 
 static int compat84_notify_connection_state(struct sk_buff *skb, unsigned int seq,
@@ -1575,7 +1720,65 @@ static int compat84_notify_connection_state(struct sk_buff *skb, unsigned int se
 					    struct drbd_connection_info *info,
 					    enum drbd_notification_type type)
 {
+	struct drbd_connection_statistics connection_statistics;
+	struct drbd_genlmsghdr *dh;
+	bool multicast = false;
+	int err;
+
+	if (!skb) {
+		skb = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
+		err = -ENOMEM;
+		if (!skb)
+			goto failed;
+		multicast = true;
+		seq = atomic_inc_return(&compat84_notify_seq);
+	}
+
+	err = -EMSGSIZE;
+	dh = genlmsg_put(skb, 0, seq, &drbd_nl_family, 0, DRBD_ADM_CONNECTION_STATE);
+	if (!dh)
+		goto nla_put_failure;
+	dh->minor = -1U;
+	dh->ret_code = NO_ERROR;
+	if (compat84_put_cfg_context(skb, connection->resource, connection, NULL) ||
+	    compat84_put_notification_header(skb, type))
+		goto nla_put_failure;
+	if ((type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY) {
+		struct connection_info info_84 = {
+			.conn_connection_state = info->conn_connection_state,
+			.conn_role = info->conn_role,
+		};
+
+		if (connection_info_to_skb(skb, &info_84))
+			goto nla_put_failure;
+	}
+	/* v1 has no DRBD_NLA_PATH_PARMS container. */
+	connection_to_statistics(&connection_statistics, connection);
+	{
+		struct connection_statistics statistics_84 = {
+			.conn_congested = connection_statistics.conn_congested,
+			/* ap_in_flight, rs_in_flight: DRBD 9 only, no v1 attribute. */
+		};
+
+		err = connection_statistics_to_skb(skb, &statistics_84);
+		if (err)
+			goto nla_put_failure;
+	}
+	genlmsg_end(skb, dh);
+	if (multicast) {
+		err = compat84_genl_multicast_events(skb);
+		/* skb has been consumed or freed in netlink_broadcast() */
+		if (err && err != -ESRCH)
+			goto failed;
+	}
 	return 0;
+
+nla_put_failure:
+	nlmsg_free(skb);
+failed:
+	drbd_err(connection, "Error %d while broadcasting event. Event seq:%u\n",
+		err, seq);
+	return err;
 }
 
 static int compat84_notify_peer_device_state(struct sk_buff *skb, unsigned int seq,
@@ -1583,7 +1786,78 @@ static int compat84_notify_peer_device_state(struct sk_buff *skb, unsigned int s
 					     struct drbd_peer_device_info *info,
 					     enum drbd_notification_type type)
 {
+	struct drbd_peer_device_statistics peer_device_statistics;
+	struct peer_device_statistics statistics_84;
+	struct drbd_resource *resource = peer_device->device->resource;
+	struct drbd_genlmsghdr *dh;
+	bool multicast = false;
+	int err;
+
+	if (!skb) {
+		skb = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
+		err = -ENOMEM;
+		if (!skb)
+			goto failed;
+		multicast = true;
+		seq = atomic_inc_return(&compat84_notify_seq);
+	}
+
+	err = -EMSGSIZE;
+	dh = genlmsg_put(skb, 0, seq, &drbd_nl_family, 0, DRBD_ADM_PEER_DEVICE_STATE);
+	if (!dh)
+		goto nla_put_failure;
+	dh->minor = -1U;
+	dh->ret_code = NO_ERROR;
+	if (compat84_put_cfg_context(skb, resource, peer_device->connection, peer_device->device) ||
+	    compat84_put_notification_header(skb, type))
+		goto nla_put_failure;
+	if ((type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY) {
+		struct peer_device_info info_84 = {
+			.peer_repl_state = info->peer_repl_state,
+			.peer_disk_state = drbd_disk_state_84(info->peer_disk_state),
+			.peer_resync_susp_user = info->peer_resync_susp_user,
+			.peer_resync_susp_peer = info->peer_resync_susp_peer,
+			.peer_resync_susp_dependency = info->peer_resync_susp_dependency,
+			/* peer_is_intentional_diskless, peer_resync_susp_max_parallel:
+			 * DRBD 9 only, no v1 attribute.
+			 */
+		};
+
+		if (peer_device_info_to_skb(skb, &info_84))
+			goto nla_put_failure;
+	}
+	peer_device_to_statistics(&peer_device_statistics, peer_device);
+	statistics_84 = (struct peer_device_statistics) {
+		.peer_dev_received = peer_device_statistics.peer_dev_received,
+		.peer_dev_sent = peer_device_statistics.peer_dev_sent,
+		.peer_dev_pending = peer_device_statistics.peer_dev_pending,
+		.peer_dev_unacked = peer_device_statistics.peer_dev_unacked,
+		.peer_dev_out_of_sync = peer_device_statistics.peer_dev_out_of_sync,
+		.peer_dev_resync_failed = peer_device_statistics.peer_dev_resync_failed,
+		.peer_dev_bitmap_uuid = peer_device_statistics.peer_dev_bitmap_uuid,
+		.peer_dev_flags = peer_device_statistics.peer_dev_flags & PEER_DEV_FLAGS_84_MASK,
+		/* the fifteen resync/OV telemetry fields past this point:
+		 * DRBD 9 only, no v1 attribute.
+		 */
+	};
+	err = peer_device_statistics_to_skb(skb, &statistics_84);
+	if (err)
+		goto nla_put_failure;
+	genlmsg_end(skb, dh);
+	if (multicast) {
+		err = compat84_genl_multicast_events(skb);
+		/* skb has been consumed or freed in netlink_broadcast() */
+		if (err && err != -ESRCH)
+			goto failed;
+	}
 	return 0;
+
+nla_put_failure:
+	nlmsg_free(skb);
+failed:
+	drbd_err(peer_device, "Error %d while broadcasting event. Event seq:%u\n",
+		err, seq);
+	return err;
 }
 
 /* Permanent no-op: DRBD 8.4 has no path objects. */
@@ -1595,17 +1869,72 @@ static int compat84_notify_path_state(struct sk_buff *skb, unsigned int seq,
 	return 0;
 }
 
+/* Helper events are never replayed, so "skb" is always NULL here. */
 static int compat84_notify_helper(struct sk_buff *skb, unsigned int seq,
 				  struct drbd_device *device, struct drbd_connection *connection,
 				  const char *name, int status,
 				  enum drbd_notification_type type)
 {
+	struct drbd_resource *resource = device ? device->resource : connection->resource;
+	struct drbd_helper_info helper_info;
+	struct drbd_genlmsghdr *dh;
+	int err;
+
+	strscpy(helper_info.helper_name, name, sizeof(helper_info.helper_name));
+	helper_info.helper_name_len = min(strlen(name), sizeof(helper_info.helper_name));
+	helper_info.helper_status = status;
+
+	skb = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
+	err = -ENOMEM;
+	if (!skb)
+		goto fail;
+
+	err = -EMSGSIZE;
+	seq = atomic_inc_return(&compat84_notify_seq);
+	dh = genlmsg_put(skb, 0, seq, &drbd_nl_family, 0, DRBD_ADM_HELPER);
+	if (!dh)
+		goto fail;
+	dh->minor = device ? device->minor : -1;
+	dh->ret_code = NO_ERROR;
+	if (compat84_put_cfg_context(skb, resource, connection, device) ||
+	    compat84_put_notification_header(skb, type) ||
+	    drbd_helper_info_to_skb(skb, &helper_info))
+		goto fail;
+	genlmsg_end(skb, dh);
+	err = compat84_genl_multicast_events(skb);
+	skb = NULL;
+	/* skb has been consumed or freed in netlink_broadcast() */
+	if (err && err != -ESRCH)
+		goto fail;
 	return 0;
+
+fail:
+	nlmsg_free(skb);
+	drbd_err(resource, "Error %d while broadcasting event. Event seq:%u\n",
+		err, seq);
+	return err;
 }
 
 static int compat84_notify_initial_state_done(struct sk_buff *skb, unsigned int seq)
 {
+	struct drbd_genlmsghdr *dh;
+	int err;
+
+	err = -EMSGSIZE;
+	dh = genlmsg_put(skb, 0, seq, &drbd_nl_family, 0, DRBD_ADM_INITIAL_STATE_DONE);
+	if (!dh)
+		goto nla_put_failure;
+	dh->minor = -1U;
+	dh->ret_code = NO_ERROR;
+	if (compat84_put_notification_header(skb, NOTIFY_EXISTS))
+		goto nla_put_failure;
+	genlmsg_end(skb, dh);
 	return 0;
+
+nla_put_failure:
+	nlmsg_free(skb);
+	pr_err("Error %d sending event. Event seq:%u\n", err, seq);
+	return err;
 }
 
 static const struct drbd_nl_dialect drbd_nl_84_dialect = {
@@ -1614,12 +1943,6 @@ static const struct drbd_nl_dialect drbd_nl_84_dialect = {
 	.overlay = compat84_overlay,
 	.attr_present = compat84_attr_present,
 	.put_timeout_type = compat84_put_timeout_type,
-	/*
-	 * notify_* below are still placeholders so that the unconditional
-	 * notify fan-out never calls through a NULL pointer; see the comment
-	 * above. A later commit replaces all but notify_path_state with real
-	 * emitters.
-	 */
 	.emit_resource = compat84_emit_resource,
 	.emit_device = compat84_emit_device,
 	.emit_connection = compat84_emit_connection,
@@ -2525,7 +2848,18 @@ int drbd_nl_get_peer_devices_dumpit(struct sk_buff *skb, struct netlink_callback
 
 int drbd_nl_get_initial_state_dumpit(struct sk_buff *skb, struct netlink_callback *cb)
 {
-	return -EOPNOTSUPP;
+	int ret;
+
+	/* the replayed notifications are sent under the sequence number of the dump */
+	ret = drbd_dump_initial_state(skb, cb, &drbd_nl_84_dialect, cb->nlh->nlmsg_seq);
+
+	/*
+	 * The vendored ops table has no .done for GET_INITIAL_STATE, so free the
+	 * state-change snapshot here once the dump ends, as mainline does.
+	 */
+	if (ret <= 0)
+		drbd_dump_initial_state_done(cb);
+	return ret;
 }
 
 int drbd_nl_legacy_init(void)

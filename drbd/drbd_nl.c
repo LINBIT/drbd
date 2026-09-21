@@ -7830,9 +7830,9 @@ static unsigned int notifications_for_state_change(struct drbd_state_change *sta
 static int get_initial_state(struct sk_buff *skb, struct netlink_callback *cb,
 			     const struct drbd_nl_dialect *dialect, unsigned int seq)
 {
-	struct drbd_state_change *state_change = (struct drbd_state_change *)cb->args[0];
+	struct drbd_state_change *state_change;
 	unsigned int n;
-	enum drbd_notification_type flags = 0;
+	enum drbd_notification_type flags;
 	int err = 0;
 
 	/* There is no need for taking notification_mutex here: it doesn't
@@ -7840,6 +7840,9 @@ static int get_initial_state(struct sk_buff *skb, struct netlink_callback *cb,
 	   events; we can always tell the events apart by the NOTIFY_EXISTS
 	   flag. */
 
+again:
+	state_change = (struct drbd_state_change *)cb->args[0];
+	flags = 0;
 	cb->args[5]--;
 	if (cb->args[5] == 1) {
 		err = dialect->notify_initial_state_done(skb, seq);
@@ -7896,6 +7899,13 @@ next:
 		cb->args[3] = notifications_for_state_change(next_state_change);
 		cb->args[4] = 0;
 	}
+	/*
+	 * A dialect may have nothing to send for an object (v1 has no paths).
+	 * An empty skb would end the dump before the INITIAL_STATE_DONE
+	 * message, so go on to the next notification.
+	 */
+	if (!err && !skb->len)
+		goto again;
 out:
 	if (err)
 		return err;
