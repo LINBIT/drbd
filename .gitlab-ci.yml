@@ -2,6 +2,7 @@ variables:
   RELEASE_BRANCH: master
   DRBD_VERSION_BASE: 9.3.0
   DRBD9_TESTS_REF: master
+  DRBD_MSIM_TESTS_REF: main
   BUILD_HELPERS_VERSION: f25470fd968061a3353c114c8b7a0ea7eb567b7e
   # we have to change the way GitLab CI clones the repository.
   # by default, it is shallow, which gives us a wrong commit count when
@@ -335,3 +336,49 @@ test:rdma:
       when: manual
   allow_failure: true
   script: VMSHED_TEST_SELECTION=rdma_ci run_test --variant=rdma
+
+# The whole-module simulator corpus. It compiles this commit's DRBD core
+# against a userspace kernel API and runs it in one process, so it needs no
+# VMs and no packages -- hence "needs: []", rather than the build:for-tests
+# dependency the .test jobs have.
+test:msim:
+  stage: test
+  rules:
+    - if: $CI_MERGE_REQUEST_ID
+  image: $LINBIT_DOCKER_REGISTRY/build-helpers:$BUILD_HELPERS_VERSION
+  timeout: 1h
+  needs: []
+  before_script:
+    # A full clone with tags of drbd-utils: the harness builds the drbdmeta
+    # the host runs from a tagged drbd-utils commit, extracted with the
+    # drbd-headers commit that tag records.
+    - git clone --recurse-submodules https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/drbd/drbd-utils.git
+    - git clone --branch ${DRBD_MSIM_TESTS_REF} https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/drbd/drbd-msim-tests.git
+    # `self` is this repository. A scenario pins its other versions by tag or
+    # by abbreviated SHA, and the since ladder attributes a directive to a
+    # release branch by containment, so both need the refs GIT_DEPTH: 0 and
+    # GIT_SUBMODULE_STRATEGY: normal already fetch here.
+    - |
+      cat > drbd-msim-tests/drbd-msim-tests.toml <<'EOF'
+      drbd = ".."
+      drbd-utils = "../drbd-utils"
+      scratch = "build"
+      EOF
+    # Fails before anything is built if a path does not resolve.
+    - ( cd drbd-msim-tests && ./msim-tests config )
+  # --mode drbd: DRBD is what is under test, so an unexpected failure is fatal
+  # and an unexpected pass -- the normal result of a fix -- is reported.
+  # --self names the commit rather than the working tree, so every version in
+  # the run is immutable and the expectation resolves for the commit that ran.
+  script:
+    - cd drbd-msim-tests && ./msim-tests run --mode drbd --self "$CI_COMMIT_SHA" --census census.txt
+  artifacts:
+    # provide a convenient name so that the downloaded artifacts can be identified
+    name: $CI_PROJECT_NAME-$CI_JOB_ID
+    when: always
+    expire_in: 1 week
+    paths:
+      # The per-scenario verdicts, and the report, choice log, stdout and
+      # stderr of every run that did not pass.
+      - drbd-msim-tests/census.txt
+      - drbd-msim-tests/build/runs/
