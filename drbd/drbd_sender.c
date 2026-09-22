@@ -1974,7 +1974,7 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 
 	aborted = device->disk_state[NOW] == D_OUTDATED && new_peer_disk_state == D_INCONSISTENT;
 	{
-	char tmp[sizeof(" but 01234567890123456789 4k blocks skipped")] = "";
+	char tmp[sizeof(" but 01234567890123456789 01234567890123456789k blocks skipped")] = "";
 
 	if (verify_done && peer_device->ov_skipped)
 		snprintf(tmp, sizeof(tmp), " but %lu %lluk blocks skipped",
