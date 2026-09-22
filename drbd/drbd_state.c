@@ -4963,8 +4963,17 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				   ... the peer that transitioned from primary to secondary
 				*/
 				drbd_send_uuids(peer_device, UUID_FLAG_GOT_STABLE, 0);
+				if (peer_disk_state[NEW] == D_OUTDATED &&
+				    peer_device->uuid_flags & UUID_FLAG_STABLE)
+					drbd_predict_peer_upgrade(peer_device);
 				put_ldev(device);
 			}
+
+			if (disk_state[OLD] == D_OUTDATED && disk_state[NEW] >= D_CONSISTENT &&
+			    peer_disk_state[NEW] == D_OUTDATED &&
+			    repl_state[NEW] == L_ESTABLISHED &&
+			    role[NEW] == R_SECONDARY && device_stable[NEW])
+				drbd_predict_peer_upgrade(peer_device);
 
 			if (peer_disk_state[OLD] == D_UP_TO_DATE &&
 			    (peer_disk_state[NEW] == D_FAILED || peer_disk_state[NEW] == D_INCONSISTENT) &&

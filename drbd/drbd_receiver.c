@@ -7641,7 +7641,7 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 {
 	enum drbd_role peer_role = peer_device->connection->peer_role[NOW];
 	enum drbd_repl_state new_repl_state;
-	enum drbd_disk_state peer_disk_state;
+	enum drbd_disk_state peer_disk_state, announced_pdsk;
 	enum sync_strategy strategy;
 	enum sync_rule rule;
 	int peer_node_id;
@@ -7658,12 +7658,15 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 	}
 
 	peer_disk_state = peer_device->disk_state[NOW];
+	/* the peer decides on the disk state it announced */
+	announced_pdsk = test_bit(PEER_UPGRADE_PREDICTED, &peer_device->flags) ?
+		D_OUTDATED : peer_disk_state;
 	if (reason == DISKLESS_PRIMARY)
 		disk_states_to_strategy(peer_device, peer_disk_state, &strategy,
 					&rule, &peer_node_id);
 	else
 		maybe_reconcile_equal_uuid_bitmap(peer_device, peer_device->comm_state.disk,
-						  peer_disk_state, &strategy, &rule);
+						  announced_pdsk, &strategy, &rule);
 
 	new_repl_state = strategy_to_repl_state(peer_device, peer_role, strategy);
 	if (new_repl_state != L_ESTABLISHED) {
@@ -7712,6 +7715,41 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 		peer_device->resync_again++;
 		drbd_info(peer_device, "...postponing this until current resync finished\n");
 	}
+}
+
+/* An Outdated peer upgrades itself when we trigger it (sanitize_state()); record
+ * that before its P_STATE, or a write in between is not replicated to it.
+ */
+void drbd_predict_peer_upgrade(struct drbd_peer_device *peer_device)
+{
+	struct drbd_device *device = peer_device->device;
+	enum drbd_disk_state disk_state = device->disk_state[NOW];
+	enum sync_strategy strategy;
+	unsigned long irq_flags;
+	enum sync_rule rule;
+	int peer_node_id;
+
+	/* An 8.4 peer does not upgrade itself on an established connection. */
+	if (peer_device->connection->agreed_pro_version < 110 ||
+	    disk_state < D_CONSISTENT || !get_ldev(device))
+		return;
+	strategy = drbd_handshake(peer_device, &rule, &peer_node_id, false);
+	reconcile_equal_uuid_bitmap_strategy(peer_device, disk_state, D_OUTDATED,
+					     &strategy, &rule);
+	put_ldev(device);
+	if (strategy != NO_SYNC)
+		return;
+
+	begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
+	if (peer_device->repl_state[NOW] != L_ESTABLISHED ||
+	    peer_device->disk_state[NOW] != D_OUTDATED ||
+	    device->disk_state[NOW] != disk_state) {
+		abort_state_change(device->resource, &irq_flags);
+		return;
+	}
+	__change_peer_disk_state(peer_device, disk_state);
+	set_bit(PEER_UPGRADE_PREDICTED, &peer_device->flags);
+	end_state_change(device->resource, &irq_flags, "peer-upgrade");
 }
 
 static void update_bitmap_slot_of_peer(struct drbd_peer_device *peer_device, int node_id, u64 bitmap_uuid)
@@ -8602,6 +8640,7 @@ static void peer_device_init_connect_state(struct drbd_peer_device *peer_device)
 	clear_bit(UUIDS_RECEIVED, &peer_device->flags);
 	clear_bit(CURRENT_UUID_RECEIVED, &peer_device->flags);
 	clear_bit(PEER_QUORATE, &peer_device->flags);
+	clear_bit(PEER_UPGRADE_PREDICTED, &peer_device->flags);
 	peer_device->connect_state = (union drbd_state) {{ .disk = D_MASK }};
 }
 
@@ -9601,6 +9640,9 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 	if (connection->agreed_pro_version < 110)
 		drbd_disk_states_from_84(&peer_state);
+
+	if (peer_device)
+		clear_bit(PEER_UPGRADE_PREDICTED, &peer_device->flags);
 
 	if (pi->vnr == -1) {
 		if (peer_state.role == R_SECONDARY) {
