@@ -9762,6 +9762,17 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		if (consider_resync) {
 			strategy = drbd_sync_handshake(peer_device, peer_state);
 			new_repl_state = strategy_to_repl_state(peer_device, peer_state.role, strategy);
+			/* An Outdated peer upgrades itself in this commit when it
+			 * connects to us as a stable UpToDate neighbor without a
+			 * resync (see sanitize_state()).  Record the same here, or
+			 * a write before its next P_STATE is not replicated to it.
+			 */
+			if (old_peer_state.conn < L_ESTABLISHED &&
+			    new_repl_state == L_ESTABLISHED &&
+			    peer_disk_state == D_OUTDATED &&
+			    device->disk_state[NOW] >= D_CONSISTENT &&
+			    peer_device->comm_uuid_flags & UUID_FLAG_STABLE)
+				peer_disk_state = device->disk_state[NOW];
 		} else if (old_peer_state.conn == L_ESTABLISHED &&
 			   (peer_state.disk == D_NEGOTIATING ||
 			    old_peer_state.disk == D_NEGOTIATING)) {
