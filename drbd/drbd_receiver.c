@@ -8560,6 +8560,9 @@ static int receive_req_state(struct drbd_connection *connection, struct packet_i
 	state_change->mask.i = be32_to_cpu(p->mask);
 	state_change->val.i = be32_to_cpu(p->val);
 
+	/* Only val holds disk states; mask.disk and mask.pdsk are bit masks. */
+	drbd_disk_states_from_84(&state_change->val);
+
 	/* P_STATE_CHG_REQ packets must have a valid vnr.  P_CONN_ST_CHG_REQ
 	 * packets have an undefined vnr. */
 	if (pi->cmd == P_STATE_CHG_REQ) {
@@ -9785,13 +9788,8 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 	peer_state.i = be32_to_cpu(p->state);
 
-	if (connection->agreed_pro_version < 110) {
-		/* Before drbd-9.0 there was no D_DETACHING it was D_FAILED... */
-		if (peer_state.disk >= D_DETACHING)
-			peer_state.disk++;
-		if (peer_state.pdsk >= D_DETACHING)
-			peer_state.pdsk++;
-	}
+	if (connection->agreed_pro_version < 110)
+		drbd_disk_states_from_84(&peer_state);
 
 	if (pi->vnr == -1) {
 		if (peer_state.role == R_SECONDARY) {

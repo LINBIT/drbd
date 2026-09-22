@@ -1729,13 +1729,8 @@ static int send_state(struct drbd_connection *connection, int vnr, union drbd_st
 	if (!p)
 		return -EIO;
 
-	if (connection->agreed_pro_version < 110) {
-		/* D_DETACHING was introduced with drbd-9.0 */
-		if (state.disk > D_DETACHING)
-			state.disk--;
-		if (state.pdsk > D_DETACHING)
-			state.pdsk--;
-	}
+	if (connection->agreed_pro_version < 110)
+		drbd_disk_states_to_84(&state);
 
 	p->state = cpu_to_be32(state.i); /* Within the send mutex */
 	return send_command(connection, vnr, P_STATE, DATA_STREAM);
@@ -1771,6 +1766,11 @@ int conn_send_state_req(struct drbd_connection *connection, int vnr, enum drbd_p
 	p = conn_prepare_command(connection, sizeof(*p), DATA_STREAM);
 	if (!p)
 		return -EIO;
+
+	/* Only val holds disk states; mask.disk and mask.pdsk are bit masks. */
+	if (connection->agreed_pro_version < 110)
+		drbd_disk_states_to_84(&val);
+
 	p->mask = cpu_to_be32(mask.i);
 	p->val = cpu_to_be32(val.i);
 
