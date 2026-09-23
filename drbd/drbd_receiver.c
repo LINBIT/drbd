@@ -9572,6 +9572,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	enum drbd_disk_state peer_disk_state;
 	enum drbd_repl_state new_repl_state;
 	bool peer_was_resync_target, do_handshake = false;
+	bool consumed_resync;
 	enum chg_state_flags begin_state_chg_flags = CS_VERBOSE | CS_WAIT_COMPLETE;
 	unsigned long irq_flags;
 	int rv;
@@ -9618,6 +9619,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	read_unlock_irq(&resource->state_rwlock);
  retry:
 	new_repl_state = max_t(enum drbd_repl_state, old_peer_state.conn, L_OFF);
+	consumed_resync = false;
 
 	/* If some other part of the code (ack_receiver thread, timeout)
 	 * already decided to close the connection again,
@@ -9741,7 +9743,8 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 					!test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
 		/* if we have both been inconsistent, and the peer has been
 		 * forced to be UpToDate with --force */
-		consider_resync |= test_bit(CONSIDER_RESYNC, &peer_device->flags);
+		consumed_resync = test_and_clear_bit(CONSIDER_RESYNC, &peer_device->flags);
+		consider_resync |= consumed_resync;
 		/* if we had been plain connected, and the admin requested to
 		 * start a sync by "invalidate" or "invalidate-remote" */
 		consider_resync |= (old_peer_state.conn == L_ESTABLISHED &&
@@ -9932,12 +9935,13 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 	begin_state_change(resource, &irq_flags, begin_state_chg_flags);
 	if (old_peer_state.i != drbd_get_peer_device_state(peer_device, NOW).i) {
+		if (consumed_resync)
+			set_bit(CONSIDER_RESYNC, &peer_device->flags);
 		old_peer_state = drbd_get_peer_device_state(peer_device, NOW);
 		abort_state_change_locked(resource);
 		write_unlock_irq(&resource->state_rwlock);
 		goto retry;
 	}
-	clear_bit(CONSIDER_RESYNC, &peer_device->flags);
 	if ((repl_is_sync_source(old_peer_state.conn) && new_repl_state == L_WF_BITMAP_S) ||
 	    (repl_is_sync_target(old_peer_state.conn) && new_repl_state == L_WF_BITMAP_T)) {
 		/* Re-entering the bitmap exchange is refused while that resync
