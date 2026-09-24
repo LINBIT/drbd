@@ -391,11 +391,15 @@ int tl_release(struct drbd_connection *connection,
 			 */
 			if ((s & RQ_NET_MASK) && !(s & RQ_EXP_BARR_ACK))
 				continue;
-			if (s & RQ_NET_DONE || (s & RQ_NET_MASK) == 0) {
-				drbd_warn(connection, "unexpected state flags: 0x%x during BarrierAck #%u\n",
+			/* Count only what the peer counts: writes still outstanding
+			 * towards it, not one already done or never sent to it.
+			 */
+			if (s & RQ_NET_DONE || (s & RQ_NET_MASK) == 0)
+				dynamic_drbd_dbg(connection,
+					"not counting state flags: 0x%x during BarrierAck #%u\n",
 					s, barrier_nr);
-			}
-			expect_size++;
+			else
+				expect_size++;
 		}
 		if (y_block_id && (struct drbd_request *)(unsigned long)y_block_id == r) {
 			req_y = r;
