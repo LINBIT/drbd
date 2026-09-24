@@ -884,8 +884,13 @@ static bool dtl_deactivate_other_paths(struct dtl_path *path)
 	struct drbd_path *drbd_path;
 
 	if (active) {
-		for_each_path_ref(drbd_path, transport)
-			dtl_path_adjust_listener(path, false);
+		for_each_path_ref(drbd_path, transport) {
+			struct dtl_path *other =
+				container_of(drbd_path, struct dtl_path, path);
+
+			if (other != path)
+				dtl_path_adjust_listener(other, false);
+		}
 	}
 
 	return active;
