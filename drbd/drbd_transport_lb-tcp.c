@@ -1908,6 +1908,12 @@ out:
 	return err;
 }
 
+/* Dedicated function to make the comparison of signed ints. */
+static bool dtl_exceeds_wmem_available(long long size, long long wmem_available)
+{
+	return size > wmem_available;
+}
+
 static int dtl_bio_chunk_size_available(struct bio *bio, int wmem_available,
 		struct bvec_iter *iter_scan)
 {
@@ -1974,7 +1980,7 @@ static int dtl_send_bio(struct drbd_transport *transport, struct bio *bio,
 		sk = flow->sock->sk;
 		wmem_available = READ_ONCE(sk->sk_sndbuf) - READ_ONCE(sk->sk_wmem_queued);
 
-		if (lb && iter.bi_size > wmem_available) {
+		if (lb && dtl_exceeds_wmem_available(iter.bi_size, wmem_available)) {
 			chunk = dtl_bio_chunk_size_available(bio, wmem_available, &iter_scan);
 		} else {
 			chunk = iter.bi_size;
