@@ -1129,6 +1129,7 @@ struct drbd_send_buffer {
 	char *pos; /* position within that page */
 	int allocated_size; /* currently allocated space */
 	int additional_size;  /* additional space to be added to next packet's size */
+	bool dead; /* a send failed: this stream carries a truncated packet */
 };
 
 struct drbd_mutable_buffer {
