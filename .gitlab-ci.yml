@@ -337,6 +337,18 @@ test:rdma:
   allow_failure: true
   script: VMSHED_TEST_SELECTION=rdma_ci run_test --variant=rdma
 
+test:rdma2:
+  stage: test
+  extends: [ .test ]
+  rules:
+    - if: $CI_MERGE_REQUEST_ID
+      changes:
+        - drbd/drbd_transport_rdma2.c
+    - if: $CI_MERGE_REQUEST_ID
+      when: manual
+  allow_failure: true
+  script: VMSHED_TEST_SELECTION=rdma_ci run_test --variant=rdma2
+
 # The whole-module simulator corpus. It compiles this commit's DRBD core
 # against a userspace kernel API and runs it in one process, so it needs no
 # VMs and no packages -- hence "needs: []", rather than the build:for-tests
