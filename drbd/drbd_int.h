@@ -37,6 +37,31 @@
 #include "drbd_transport.h"
 #include "drbd_polymorph_printk.h"
 
+/*
+ * The version DRBD advertises in /proc/drbd and in the module's "version"
+ * modinfo field.
+ *
+ * Released drbd-utils 9.x do not probe the netlink family: they take the
+ * first token after "version:" in /proc/drbd (or, with the module not yet
+ * loaded, "modinfo -F version drbd"). For 8.4 they exec their bundled
+ * drbdadm-84/drbdsetup-84; for anything else they run the DRBD 9 tools,
+ * which exit with "API mismatch" unless "drbd" is at family version 2. A
+ * build serving the v1 family must therefore say 8.4. 8.4.11 is what the
+ * in-tree module has reported since 2018; the real release is still shown
+ * as "core:" in /proc/drbd, in the kernel log and in debugfs.
+ *
+ * Only where "drbd" is actually v1, which CONFIG_DRBD_COMPAT_84 means. The
+ * out-of-tree module can instead serve DRBD 9's own version 2 of the family
+ * next to the 8.4 metadata support; its Kbuild then defines
+ * DRBD_NL_FAMILY_V2. That is what LINBIT's packages ship, and an 8.4 token
+ * there would send drbd-utils 9.x to drbdsetup-84 against a v2 family.
+ */
+#if defined(CONFIG_DRBD_COMPAT_84) && !defined(DRBD_NL_FAMILY_V2)
+#define DRBD_PROC_VERSION "8.4.11"
+#else
+#define DRBD_PROC_VERSION REL_VERSION
+#endif
+
 /* module parameter, defined in drbd_main.c */
 extern unsigned int drbd_minor_count;
 extern unsigned int drbd_protocol_version_min;

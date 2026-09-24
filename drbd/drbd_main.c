@@ -57,7 +57,7 @@ static void __net_exit __drbd_net_exit(struct net *net);
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, "
 	      "Lars Ellenberg <lars@linbit.com>");
 MODULE_DESCRIPTION("drbd - Distributed Replicated Block Device v" REL_VERSION);
-MODULE_VERSION(REL_VERSION);
+MODULE_VERSION(DRBD_PROC_VERSION);
 MODULE_LICENSE("GPL");
 MODULE_PARM_DESC(minor_count, "Approximate number of drbd devices ("
 		 __stringify(DRBD_MINOR_COUNT_MIN) "-" __stringify(DRBD_MINOR_COUNT_MAX) ")");
@@ -4679,6 +4679,9 @@ static int __init drbd_init(void)
 	       "Version: " REL_VERSION " (api:%d/proto:%d-%d)\n",
 	       DRBD_FAMILY_VERSION, PRO_VERSION_MIN, PRO_VERSION_MAX);
 	pr_info("%s\n", drbd_buildtag());
+#if defined(CONFIG_DRBD_COMPAT_84) && !defined(DRBD_NL_FAMILY_V2)
+	pr_info("serving the DRBD 8.4 netlink API, advertised as version " DRBD_PROC_VERSION "\n");
+#endif
 	pr_info("registered as block device major %d\n", DRBD_MAJOR);
 
 #ifdef CONFIG_DRBD_COMPAT_84

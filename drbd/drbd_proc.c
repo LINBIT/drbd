@@ -15,14 +15,22 @@ struct proc_dir_entry *drbd_proc;
 int drbd_seq_show(struct seq_file *seq, void *v)
 {
 	bool any_legacy;
+	/*
+	 * drbd-utils pick their tools by the token after "version:". A v1
+	 * build also names its real release as "core:". "(compat 8.4)" tells
+	 * drbdadm that "new-resource" without a node id gives an 8.4
+	 * compatibility resource; drbdadm-84 only acts on it after a 9.x token.
+	 */
 	static const char legacy_info[] =
-#ifdef CONFIG_DRBD_COMPAT_84
+#if defined(CONFIG_DRBD_COMPAT_84) && !defined(DRBD_NL_FAMILY_V2)
+		" (compat 8.4) core: " REL_VERSION;
+#elif defined(CONFIG_DRBD_COMPAT_84)
 		" (compat 8.4)";
 #else
 		"";
 #endif
 
-	seq_printf(seq, "version: " REL_VERSION " (api:%d/proto:%d-%d)%s\n%s\n",
+	seq_printf(seq, "version: " DRBD_PROC_VERSION " (api:%d/proto:%d-%d)%s\n%s\n",
 		   DRBD_FAMILY_VERSION, PRO_VERSION_MIN, PRO_VERSION_MAX, legacy_info,
 		   drbd_buildtag());
 
