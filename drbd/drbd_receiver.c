@@ -6228,11 +6228,11 @@ static bool primary_neighbor_decides(struct drbd_peer_device *peer_device,
  * Placed here, after the disk-state resolution, so it never preempts a real
  * resync direction; it only rescues the would-be NO_SYNC-drops-bits case.
  */
-static void maybe_reconcile_equal_uuid_bitmap(struct drbd_peer_device *peer_device,
-					      enum drbd_disk_state disk_state,
-					      enum drbd_disk_state peer_disk_state,
-					      enum sync_strategy *strategy,
-					      enum sync_rule *rule)
+static bool reconcile_equal_uuid_bitmap_strategy(struct drbd_peer_device *peer_device,
+						enum drbd_disk_state disk_state,
+						enum drbd_disk_state peer_disk_state,
+						enum sync_strategy *strategy,
+						enum sync_rule *rule)
 {
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
@@ -6243,13 +6243,13 @@ static void maybe_reconcile_equal_uuid_bitmap(struct drbd_peer_device *peer_devi
 	u64 local_uuid_flags;
 
 	if (*strategy != NO_SYNC)
-		return;
+		return false;
 	if (!(peer_device->comm_bm_set || peer_device->dirty_bits))
-		return;
+		return false;
 	if (!(connection->agreed_features & DRBD_FF_RECONCILE_RECONNECT))
-		return;
+		return false;
 	if (!connecting && !(by_provenance && peer_device->repl_state[NOW] == L_ESTABLISHED))
-		return;
+		return false;
 
 	if (by_provenance) {
 		/*
@@ -6265,22 +6265,22 @@ static void maybe_reconcile_equal_uuid_bitmap(struct drbd_peer_device *peer_devi
 		peer_holds = peer_device->dirty_bits &&
 			(peer_device->uuid_flags & UUID_FLAG_BITMAP_AUTHORITATIVE);
 		if (!we_hold && !peer_holds)
-			return;
+			return false;
 
 		if (we_hold != peer_holds) {
 			enum drbd_disk_state holder = we_hold ? disk_state : peer_disk_state;
 			enum drbd_disk_state other = we_hold ? peer_disk_state : disk_state;
 
 			if (holder != D_UP_TO_DATE || other < D_OUTDATED)
-				return;
+				return false;
 		} else if (disk_state != D_UP_TO_DATE || peer_disk_state != D_UP_TO_DATE) {
-			return;
+			return false;
 		}
 	} else {
 		bool one_sided = !peer_device->comm_bm_set != !peer_device->dirty_bits;
 
 		if (disk_state != D_UP_TO_DATE || peer_disk_state != D_UP_TO_DATE)
-			return;
+			return false;
 
 		/*
 		 * Without the provenance record, equal current UUIDs with
@@ -6307,27 +6307,18 @@ static void maybe_reconcile_equal_uuid_bitmap(struct drbd_peer_device *peer_devi
 		 */
 		if (connection->reconcile_handshake.lost_node_id == -1 &&
 		    !(one_sided && connection->reconcile_handshake.sent_lost_node))
-			return;
+			return false;
 
 		local_uuid_flags = drbd_collect_local_uuid_flags(peer_device, NULL);
 		if ((local_uuid_flags & UUID_FLAG_CRASHED_PRIMARY) ||
 		    (peer_device->uuid_flags & UUID_FLAG_CRASHED_PRIMARY) ||
 		    test_bit(PRIMARY_LOST_QUORUM, &device->flags) ||
 		    (peer_device->uuid_flags & UUID_FLAG_PRIMARY_LOST_QUORUM))
-			return;
+			return false;
 
 		we_hold = peer_device->comm_bm_set != 0;
 		peer_holds = peer_device->dirty_bits != 0;
 	}
-
-	/* Mark this as a reconciliation resync, like the connected dagtag reconcile
-	 * (receive_peer_dagtag).  Its bitmap is pessimistic (set for tails that may
-	 * have been delivered) between two full copies; the SyncTarget then forces
-	 * checksum-based resync, clearing the matching majority without transfer and
-	 * keeping its Inconsistent window short.  Cleared when the resync finishes
-	 * (sanitize_state) or on disconnect.
-	 */
-	set_bit(RECONCILIATION_RESYNC, &peer_device->flags);
 
 	*rule = RULE_RECONCILE_BITMAP;
 	if (we_hold != peer_holds) {
@@ -6380,6 +6371,28 @@ static void maybe_reconcile_equal_uuid_bitmap(struct drbd_peer_device *peer_devi
 				SYNC_SOURCE_USE_BITMAP : SYNC_TARGET_USE_BITMAP;
 		}
 	}
+
+	return true;
+}
+
+static void maybe_reconcile_equal_uuid_bitmap(struct drbd_peer_device *peer_device,
+					      enum drbd_disk_state disk_state,
+					      enum drbd_disk_state peer_disk_state,
+					      enum sync_strategy *strategy,
+					      enum sync_rule *rule)
+{
+	if (!reconcile_equal_uuid_bitmap_strategy(peer_device, disk_state, peer_disk_state,
+						  strategy, rule))
+		return;
+
+	/* Mark this as a reconciliation resync, like the connected dagtag reconcile
+	 * (receive_peer_dagtag).  Its bitmap is pessimistic (set for tails that may
+	 * have been delivered) between two full copies; the SyncTarget then forces
+	 * checksum-based resync, clearing the matching majority without transfer and
+	 * keeping its Inconsistent window short.  Cleared when the resync finishes
+	 * (sanitize_state) or on disconnect.
+	 */
+	set_bit(RECONCILIATION_RESYNC, &peer_device->flags);
 
 	drbd_info(peer_device,
 		  "strategy = %s to reconcile equal-UUID peers holding out-of-sync bits\n",
