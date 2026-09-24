@@ -333,6 +333,13 @@ bool drbd_stream_send_timed_out(struct drbd_transport *transport, enum drbd_stre
 	if (drop_it)
 		return true;
 
+	if (connection->transport.ko_count == 0) {
+		drbd_err(connection, "[%s/%d] sending time expired, pinging peer\n",
+			 current->comm, current->pid);
+		drbd_queue_ping(connection);
+		return false;
+	}
+
 	drop_it = !--connection->transport.ko_count;
 	if (!drop_it) {
 		drbd_err(connection, "[%s/%d] sending time expired, ko = %u\n",
