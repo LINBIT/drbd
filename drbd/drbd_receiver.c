@@ -1202,7 +1202,7 @@ static bool conn_connect(struct drbd_connection *connection)
 {
 	struct drbd_transport *transport = &connection->transport;
 	struct drbd_resource *resource = connection->resource;
-	int ping_timeo, ping_int, h, err, vnr;
+	int ping_timeo, ping_int, h, err, vnr, in_flight;
 	struct drbd_peer_device *peer_device;
 	enum drbd_stream stream;
 	struct net_conf *nc;
@@ -1331,8 +1331,17 @@ start:
 		goto retry;
 	}
 
-	atomic_set(&connection->ap_in_flight, 0);
 	atomic_set(&connection->rs_in_flight, 0);
+	/* A teardown while IO was suspended keeps requests for a resend, and
+	 * their sectors stay counted until the resend sends them again.  With
+	 * no such request left, or with a count below zero, what is left is an
+	 * accounting error from an earlier connection: do not carry it over.
+	 */
+	in_flight = atomic_read(&connection->ap_in_flight);
+	if (in_flight < 0 || (in_flight > 0 && !READ_ONCE(connection->req_not_net_done))) {
+		drbd_warn(connection, "ap_in_flight = %d on connect, expected 0\n", in_flight);
+		atomic_set(&connection->ap_in_flight, 0);
+	}
 	clear_bit(DAGTAG_STREAM_GONE, &connection->flags);
 
 	/* The last point before both the UUID exchange and arm_connect_timer():
@@ -11989,6 +11998,7 @@ static void conn_disconnect(struct drbd_connection *connection)
 	enum drbd_conn_state oc;
 	unsigned long irq_flags;
 	bool reconsider = false;
+	bool kept_for_resend;
 	int vnr, i;
 
 	clear_bit(CONN_DRY_RUN, &connection->flags);
@@ -12074,8 +12084,17 @@ static void conn_disconnect(struct drbd_connection *connection)
 	/* Apply these changes after peer_device_disconnected() because that
 	 * may cause the loss of other connections to be detected, which can
 	 * change the suspended state. */
+	kept_for_resend = resource->cached_susp;
 	tl_walk(connection, &connection->req_not_net_done,
-			resource->cached_susp ? CONNECTION_LOST_WHILE_SUSPENDED : CONNECTION_LOST);
+			kept_for_resend ? CONNECTION_LOST_WHILE_SUSPENDED : CONNECTION_LOST);
+
+	/* Every request towards this peer is done now and has given its sectors
+	 * back, except those the walk kept for a resend: those stay counted.
+	 */
+	i = atomic_read(&connection->ap_in_flight);
+	if (kept_for_resend ? i < 0 : i != 0)
+		drbd_warn(connection, "ap_in_flight = %d, expected %s\n",
+			  i, kept_for_resend ? "the sectors kept for resend" : "0");
 
 	/* Losing this peer may complete the informed-confirmation picture for a
 	 * still-unconfirmed rotated generation (its durable-ack requirement is
