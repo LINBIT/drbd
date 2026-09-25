@@ -242,7 +242,15 @@ static void dtl_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 
 	dtl_set_active(transport, false);
 	list_for_each_entry(drbd_path, &transport->paths, list) {
+		struct dtl_path *path = container_of(drbd_path, struct dtl_path, path);
 		bool was_established = test_and_clear_bit(TR_ESTABLISHED, &drbd_path->flags);
+
+		/* A FIN the peer sent while we closed this connection must not
+		 * outlive it: the next connection would not send on the path.
+		 */
+		clear_bit(DTL_PASSIVE_SHUT_DOWN_DATA, &path->flags);
+		clear_bit(DTL_PASSIVE_SHUT_DOWN_CONTROL, &path->flags);
+		clear_bit(DTL_REESTABLISH_PATH, &path->flags);
 
 		if (free_op == CLOSE_CONNECTION && was_established)
 			drbd_path_event(transport, drbd_path);
