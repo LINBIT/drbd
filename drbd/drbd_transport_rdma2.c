@@ -1411,6 +1411,13 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 	if (!dtr_path_ok(path)) {
 		if (path->cs.active)
 			dtr_cma_retry_connect(path, path->cm);
+		/* Release the PCS_FINISHING hold taken above, as the success path
+		 * does below, or __dtr_disconnect_path() waits a minute for it.
+		 */
+		p = atomic_xchg(&cs->passive_state, PCS_INACTIVE);
+		if (p > PCS_INACTIVE)
+			drbd_put_listener(&path->path);
+		wake_up(&cs->wq);
 		goto out_put;
 	}
 
