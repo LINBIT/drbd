@@ -6352,6 +6352,7 @@ retry:
 	reach_immediately = directly_connected_nodes(resource, NOW);
 
 	*reply = (struct twopc_reply) { 0 };
+	reply->vnr = device->vnr;
 
 	do
 		reply->tid = get_random_u32();
