@@ -181,6 +181,7 @@ static int dtl_init_listener(struct drbd_transport *transport, const struct sock
 			     struct net *net, struct drbd_listener *drbd_listener);
 static void dtl_destroy_listener(struct drbd_listener *generic_listener);
 static void dtl_set_socket_callbacks(struct dtl_transport *dtl_transport, struct dtl_flow *flow);
+static void dtl_state_change(struct sock *sk);
 
 
 static struct drbd_transport_class dtl_transport_class = {
@@ -945,6 +946,16 @@ static void dtl_socket_free(struct drbd_transport *transport, struct dtl_flow *f
 	s = xchg(&flow->sock, NULL);
 	if (!s)
 		return;
+
+	/* The shutdown below ends in inet_shutdown(), which reports the state
+	 * change to this socket's owner.  That owner is dtl_state_change(),
+	 * which would read our own close as a peer disconnect, so hand the
+	 * socket back to its original callback first.
+	 */
+	write_lock_bh(&s->sk->sk_callback_lock);
+	if (s->sk->sk_state_change == dtl_state_change)
+		s->sk->sk_state_change = flow->original_sk_state_change;
+	write_unlock_bh(&s->sk->sk_callback_lock);
 
 	/* Unpublish, then drop the reference the flow held.  dtl_flow_get_sock()
 	 * can no longer hand this socket out, so the remaining users are the
@@ -1737,18 +1748,8 @@ static int dtl_set_active(struct drbd_transport *transport, bool active)
 		int err;
 
 		mutex_lock(&dtl_transport->sockets_mutex);
-		for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
-			struct socket *sock = path->flow[i].sock;
-
-			if (sock && path->flow[i].original_sk_state_change) {
-				write_lock_bh(&sock->sk->sk_callback_lock);
-				sock->sk->sk_state_change =
-					path->flow[i].original_sk_state_change;
-				write_unlock_bh(&sock->sk->sk_callback_lock);
-			}
-
+		for (i = DATA_STREAM; i <= CONTROL_STREAM; i++)
 			dtl_socket_free(transport, &path->flow[i]);
-		}
 		mutex_unlock(&dtl_transport->sockets_mutex);
 
 		err = dtl_path_adjust_listener(path, active);
