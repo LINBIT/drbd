@@ -5679,7 +5679,12 @@ static int dtr_connect(struct drbd_transport *transport)
 
 	err = wait_for_completion_interruptible(&rdma_transport->connected);
 	if (err) {
+		/* The core signals the receiver when this attempt failed underneath
+		 * it (NetworkFailure); retry, as dtt_connect() does. conn_connect()
+		 * tells a disconnect request apart by C_DISCONNECTING.
+		 */
 		flush_signals(current);
+		err = -EAGAIN;
 		goto abort;
 	}
 
