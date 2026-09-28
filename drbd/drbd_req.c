@@ -101,7 +101,10 @@ static void queue_peer_ack_send(struct drbd_resource *resource,
 		unsigned int node_id = connection->peer_node_id;
 		if (connection->agreed_pro_version < 110 ||
 				connection->cstate[NOW] != C_CONNECTED) {
-			connection->last_peer_ack_dagtag_seen = peer_ack->dagtag_sector;
+			/* Do not jump back, as in process_peer_ack_list(). */
+			connection->last_peer_ack_dagtag_seen =
+				max(connection->last_peer_ack_dagtag_seen,
+				    peer_ack->dagtag_sector);
 			continue;
 		}
 
@@ -282,12 +285,15 @@ void drbd_req_destroy(struct kref *kref)
 
 	if (s & RQ_WRITE) {
 		/* There is a special case:
-		 * we may notice late that IO was suspended,
-		 * and postpone, or schedule for retry, a write,
-		 * before it even was submitted or sent.
-		 * In that case we do not want to touch the bitmap at all.
+		 * we may notice late that IO was suspended, or that we may not
+		 * write at all, and postpone, schedule for retry, or fail a
+		 * write, before it even was submitted or sent.  No peer lacks
+		 * anything for such a write, so we do not want to touch the
+		 * bitmap at all.  Such a write left drbd_send_and_submit()
+		 * before it got a dagtag, which is never 0 for a write with
+		 * data.
 		 */
-		if ((s & (RQ_POSTPONED|RQ_LOCAL_MASK)) != RQ_POSTPONED &&
+		if (req->dagtag_sector &&
 		    req->i.size && get_ldev_if_state(device, D_DETACHING)) {
 			struct drbd_peer_md *peer_md = device->ldev->md.peers;
 			unsigned long bits = -1, mask = -1;
@@ -336,7 +342,12 @@ void drbd_req_destroy(struct kref *kref)
 		}
 	}
 
-	if (s & RQ_WRITE && req->i.size) {
+	/* A write without a dagtag never entered the change stream and has
+	 * no position to acknowledge.  Publishing its zero dagtag moves the
+	 * peer-ack watermarks backwards, and a peer waiting for a higher one --
+	 * a sync target waiting for P_FLUSH_REQUESTS_ACK -- then waits forever.
+	 */
+	if (s & RQ_WRITE && req->i.size && req->dagtag_sector) {
 		struct drbd_request *peer_ack_req;
 
 		spin_lock(&resource->peer_ack_lock); /* local irq already disabled */
