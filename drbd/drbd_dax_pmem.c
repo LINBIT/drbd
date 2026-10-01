@@ -22,10 +22,30 @@
 #include "drbd_dax_pmem.h"
 #include "drbd_meta_data.h"
 
+/*
+ * Unit conversions for addressing the metadata area through DAX.
+ * DRBD keeps metadata offsets in sectors, dax_direct_access() works in pages.
+ */
+static pgoff_t md_sector_to_pgoff(sector_t sector)
+{
+	return sector >> (PAGE_SHIFT - SECTOR_SHIFT);
+}
+
+static long md_sectors_to_pages(sector_t nr_sectors)
+{
+	return nr_sectors >> (PAGE_SHIFT - SECTOR_SHIFT);
+}
+
+/* Signed, since the bitmap offset relative to the superblock may be negative. */
+static long md_sector_offset_to_bytes(long sector_offset)
+{
+	return sector_offset * SECTOR_SIZE;
+}
+
 static int map_superblock_for_dax(struct drbd_backing_dev *bdev, struct dax_device *dax_dev)
 {
 	long want = 1;
-	pgoff_t pgoff = bdev->md.md_offset >> (PAGE_SHIFT - SECTOR_SHIFT);
+	pgoff_t pgoff = md_sector_to_pgoff(bdev->md.md_offset);
 	void *kaddr;
 	long len;
 	int id;
@@ -79,10 +99,10 @@ int drbd_dax_map(struct drbd_backing_dev *bdev)
 	struct dax_device *dax_dev = bdev->dax_dev;
 	sector_t first_sector = drbd_md_first_sector(bdev);
 	sector_t al_sector = bdev->md.md_offset + bdev->md.al_offset;
-	long want = (drbd_md_last_sector(bdev) + 1 - first_sector) >> (PAGE_SHIFT - SECTOR_SHIFT);
-	pgoff_t pgoff = first_sector >> (PAGE_SHIFT - SECTOR_SHIFT);
-	long md_offset_byte = (bdev->md.md_offset - first_sector) << SECTOR_SHIFT;
-	long al_offset_byte = (al_sector - first_sector) << SECTOR_SHIFT;
+	long want = md_sectors_to_pages(drbd_md_last_sector(bdev) + 1 - first_sector);
+	pgoff_t pgoff = md_sector_to_pgoff(first_sector);
+	long md_offset_byte = md_sector_offset_to_bytes(bdev->md.md_offset - first_sector);
+	long al_offset_byte = md_sector_offset_to_bytes(al_sector - first_sector);
 	void *kaddr;
 	long len;
 	int id;
@@ -148,5 +168,5 @@ void *drbd_dax_bitmap(struct drbd_device *device, unsigned long want)
 	struct drbd_backing_dev *bdev = device->ldev;
 	unsigned char *md_on_pmem = (unsigned char *)bdev->md_on_pmem;
 
-	return md_on_pmem + (long)bdev->md.bm_offset * SECTOR_SIZE;
+	return md_on_pmem + md_sector_offset_to_bytes(bdev->md.bm_offset);
 }
