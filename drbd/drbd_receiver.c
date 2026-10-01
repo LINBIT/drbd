@@ -562,7 +562,7 @@ out_free_pages:
 
 /**
  * drbd_alloc_peer_req() - Allocate a drbd_peer_request
- * @drbd_peer_device: peer device object
+ * @peer_device:      peer device object
  * @gfp_mask:	      how to allocate and whether to loop until we succeed
  * @size:	      size (normal I/O), logical_block_size (w_same), 0 (trim)
  * @opf:              REQ_OP_READ or REQ_OP_WRITE
@@ -570,6 +570,8 @@ out_free_pages:
  * For REQ_OP_READ, it allocates the peer_req with a BIO and populates it
  * entirely with buffer pages. Otherwise it allocates the peer_req with
  * an empty BIO.
+ *
+ * Return: the new peer request, or NULL if the allocation failed.
  */
 struct drbd_peer_request *
 drbd_alloc_peer_req(struct drbd_peer_device *peer_device, gfp_t gfp_mask,

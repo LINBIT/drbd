@@ -844,10 +844,12 @@ out:
  * @size:	size of disk range in bytes
  * @bits:	bit values to use by bitmap index
  * @mask:	bitmap indexes to modify (mask set)
+ * @authoritative: whether the caller knows that the peers it sets out of sync
+ *		lack the blocks; if not, the bitmap slots record placeholders
+ * @src_node_id: for non-authoritative bits, the node whose resync data this
+ *		is, or -1 if no node can retire the placeholders
  *
- * The caller knows the peers it sets out of sync lack the blocks; the bits
- * are recorded as authoritative.  Returns a mask of the bitmap indexes which
- * were modified.
+ * Return: a mask of the bitmap indexes which were modified.
  */
 static unsigned long __drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
 				     unsigned long bits, unsigned long mask, bool authoritative,
