@@ -4,20 +4,21 @@
  */
 
 /*
-  In case DRBD's meta-data resides in persistent memory do a few things
-   different.
-
-   1 direct access the bitmap in place. Do not load it into DRAM, do not
-     write it back from DRAM.
-   2 Use a better fitting format for the on-disk activity log. Instead of
-     writing transactions, the unmangled LRU-cache hash table is there.
-*/
+ * In case DRBD's meta-data resides in persistent memory do a few things
+ * different.
+ *
+ * 1 direct access the bitmap in place. Do not load it into DRAM, do not
+ *   write it back from DRAM.
+ * 2 Use a better fitting format for the on-disk activity log. Instead of
+ *   writing transactions, the unmangled LRU-cache hash table is there.
+ */
 
 #include <linux/vmalloc.h>
 #include <linux/slab.h>
 #include <linux/dax.h>
 #include <linux/libnvdimm.h>
 #include <linux/blkdev.h>
+#include <linux/sizes.h>
 #include "drbd_int.h"
 #include "drbd_dax_pmem.h"
 #include "drbd_meta_data.h"
@@ -129,7 +130,6 @@ void drbd_dax_al_update(struct drbd_device *device, struct lc_element *al_ext)
 	arch_wb_cache_pmem(slot, sizeof(*slot));
 }
 
-
 void drbd_dax_al_begin_io_commit(struct drbd_device *device)
 {
 	struct lc_element *e;
@@ -148,11 +148,14 @@ int drbd_dax_al_initialize(struct drbd_device *device)
 {
 	struct al_on_pmem *al_on_pmem = device->ldev->al_on_pmem;
 	__be32 *slots = al_on_pmem->slots;
-	int i, al_slots = (device->ldev->md.al_size_4k << (12 - 2)) - 1;
+	/* The activity log area holds the magic followed by the slots. */
+	int i, al_slots = device->ldev->md.al_size_4k * (SZ_4K / sizeof(*slots)) - 1;
 
 	al_on_pmem->magic = cpu_to_be32(DRBD_AL_PMEM_MAGIC);
-	/* initialize all slots rather than just the configured number in case
-	 * the configuration is later changed */
+	/*
+	 * Initialize all slots rather than just the configured number in case
+	 * the configuration is later changed.
+	 */
 	for (i = 0; i < al_slots; i++) {
 		unsigned int extent_nr = i < device->act_log->nr_elements ?
 			lc_element_by_index(device->act_log, i)->lc_number :
