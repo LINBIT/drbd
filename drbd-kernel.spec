@@ -79,7 +79,7 @@ for the DRBD core and various transports.
 
 %{shell_to_tmpfile -n files_suse_kmod_drbd printf "%%s\\n" \
 	"%%defattr(-,root,root)" \
-	"/lib/modules/%%2-%%1" \
+	"%{?kernel_module_directory}%{!?kernel_module_directory:/lib/modules}/%%2-%%1" \
 	"%%doc COPYING" \
 	"%%doc ChangeLog" \
 	"%%doc drbd/k-config-%%2-%%1.gz" \
