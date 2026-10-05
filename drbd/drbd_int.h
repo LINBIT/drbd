@@ -761,6 +761,7 @@ enum peer_device_flag {
 	RECONCILE_PENDING,	/* post-loss reconcile owed, not yet armed;
 				 * bridges loss -> RECONCILIATION_RESYNC
 				 */
+	BITMAP_HELD_AT_PRIMARY_LOSS, /* had bits before the last lost primary */
 	UNSTABLE_RESYNC,	/* Sync source went unstable during resync. */
 	PEER_UPGRADE_PREDICTED,	/* Recorded the peer UpToDate before its P_STATE */
 	SEND_STATE_AFTER_AHEAD,
