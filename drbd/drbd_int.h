@@ -1892,6 +1892,15 @@ struct drbd_device {
 	ktime_t rs_drain_since;		/* when the device last became busy */
 	s64 rs_drain_busy_ns;		/* busy time in this interval, idle excluded */
 	unsigned int rs_drain_rate;	/* sectors per second, 0 until measured */
+	/* The backing device's service time for resync IO, timed on one probe
+	 * request submitted to an empty queue; see drbd_rs_depth_completed().
+	 */
+	u64 rs_lat_ns;			/* 0 until probed */
+	ktime_t rs_lat_probe_kt;	/* when the probe request was submitted */
+	int rs_lat_probe;		/* enum rs_lat_probe */
+	unsigned long rs_lat_due;	/* jiffies: the next periodic probe */
+	unsigned long rs_lat_wend;	/* jiffies: end of the watch window */
+	unsigned long rs_lat_wmin;	/* min latency in the window + 1, jiffies */
 	struct pending_bitmap_work_s {
 		atomic_t n;		/* inc when queued here, */
 		spinlock_t q_lock;	/* dec only once finished. */
@@ -2278,6 +2287,21 @@ sector_t drbd_partition_data_capacity(struct drbd_device *device);
  * it sizes, a resync starting up should leave RS_DEPTH_MIN_SECT quickly.
  */
 #define RS_DRAIN_SAMPLE_NS NSEC_PER_MSEC
+/* How often the backing device's service time is probed again, and the window
+ * over which resync completion latency is watched.
+ */
+#define RS_LAT_PROBE_INTV (10 * HZ)
+#define RS_LAT_WINDOW HZ
+/* A longer service time is a stalled device, not normal operation. */
+#define RS_LAT_MAX_NS (60ULL * NSEC_PER_SEC)
+/* No backing device works off resync IO faster (64 GiB/s, in sectors). */
+#define RS_DRAIN_RATE_MAX (1U << 27)
+
+enum rs_lat_probe {
+	RS_LAT_IDLE,	/* watching completion latency */
+	RS_LAT_DRAIN,	/* resync IO only into an empty queue; the first is the probe */
+	RS_LAT_TIMING,	/* the probe is at the device */
+};
 #define RS_MAKE_REQS_INTV_NS (NSEC_PER_SEC/10)
 
 /* We do bitmap IO in units of 4k blocks.
@@ -2710,7 +2734,8 @@ void drbd_verify_skipped_block(struct drbd_peer_device *peer_device,
 void drbd_conflict_submit_resync_request(struct drbd_peer_request *peer_req);
 void drbd_rs_depth_release(struct drbd_device *device);
 void drbd_rs_depth_queued(struct drbd_device *device, unsigned int sect);
-void drbd_rs_depth_completed(struct drbd_device *device, unsigned int sect);
+void drbd_rs_depth_completed(struct drbd_device *device, unsigned int sect,
+			     unsigned long submit_jif);
 void drbd_conflict_submit_peer_read(struct drbd_peer_request *peer_req);
 bool drbd_rs_depth_exceeded(struct drbd_peer_device *peer_device);
 void drbd_rs_depth_defer(struct drbd_peer_device *peer_device);

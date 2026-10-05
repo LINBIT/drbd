@@ -2854,14 +2854,18 @@ static void drbd_cleanup_received_resync_write(struct drbd_peer_request *peer_re
  * RS_DEPTH_MIN_SECT ends up at that floor, which is as far as bounding a queue
  * can go: below it a resync queues no more than the request the device is
  * working on, and an application request waits for that one in any case.
+ *
+ * On a high latency device (clat > RS_DEPTH_TARGET_MS), that alone
+ * would not keep it busy. Add the device's service time.
  */
 static unsigned int rs_depth_target_sect(struct drbd_device *device)
 {
-	u64 sect = (u64)READ_ONCE(device->rs_drain_rate) * RS_DEPTH_TARGET_MS;
+	u64 ns = (u64)RS_DEPTH_TARGET_MS * NSEC_PER_MSEC + READ_ONCE(device->rs_lat_ns);
+	u64 sect = (u64)READ_ONCE(device->rs_drain_rate) * ns;
 
-	do_div(sect, MSEC_PER_SEC);
+	sect = div64_u64(sect, NSEC_PER_SEC);
 
-	return sect < RS_DEPTH_MIN_SECT ? RS_DEPTH_MIN_SECT : sect;
+	return clamp_t(u64, sect, RS_DEPTH_MIN_SECT, INT_MAX);
 }
 
 /* Sectors the backing device delivers in one sample interval at the rate
@@ -2874,6 +2878,18 @@ static unsigned int rs_drain_sample_sect(struct drbd_device *device)
 	do_div(sect, NSEC_PER_SEC);
 
 	return max_t(u64, sect, RS_DEPTH_MIN_SECT);
+}
+
+/* May more resync IO go to the backing device?
+ * While a probe is due, only into an empty queue.
+ */
+static bool rs_depth_room(struct drbd_device *device)
+{
+	unsigned int queued = atomic_read(&device->rs_sect_queued);
+
+	if (READ_ONCE(device->rs_lat_probe) == RS_LAT_DRAIN)
+		return queued == 0;
+	return queued < rs_depth_target_sect(device);
 }
 
 bool drbd_rs_depth_exceeded(struct drbd_peer_device *peer_device)
@@ -2889,7 +2905,7 @@ bool drbd_rs_depth_exceeded(struct drbd_peer_device *peer_device)
 	if (c_min_rate == 0)
 		return false;
 
-	return atomic_read(&device->rs_sect_queued) >= rs_depth_target_sect(device);
+	return !rs_depth_room(device);
 }
 
 static void rs_depth_resume(struct drbd_device *device)
@@ -2961,8 +2977,7 @@ void drbd_rs_depth_release(struct drbd_device *device)
 	    !list_empty_careful(&submit_conflict->resync_reads))
 		queue_work(submit_conflict->wq, &submit_conflict->worker);
 
-	if (test_bit(RS_DEPTH_WAITERS, &device->flags) &&
-	    atomic_read(&device->rs_sect_queued) < rs_depth_target_sect(device))
+	if (test_bit(RS_DEPTH_WAITERS, &device->flags) && rs_depth_room(device))
 		rs_depth_resume(device);
 }
 
@@ -2975,8 +2990,52 @@ void drbd_rs_depth_queued(struct drbd_device *device, unsigned int sect)
 	/* Time the device from where it becomes busy: how long it was idle
 	 * says nothing about how fast it works resync IO off.
 	 */
-	if (atomic_add_return(sect, &device->rs_sect_queued) == sect)
-		device->rs_drain_since = ktime_get();
+	if (atomic_add_return(sect, &device->rs_sect_queued) == sect) {
+		ktime_t now = ktime_get();
+
+		device->rs_drain_since = now;
+		if (READ_ONCE(device->rs_lat_probe) == RS_LAT_DRAIN) {
+			device->rs_lat_probe_kt = now;
+			WRITE_ONCE(device->rs_lat_probe, RS_LAT_TIMING);
+		}
+	}
+}
+
+/* Does resync completion latency, read in jiffies, show a service time other
+ * than the one probed? Only one more than a jiffy away in either direction
+ * counts: lat_jif is a difference of two jiffies values.
+ */
+static bool rs_lat_changed(struct drbd_device *device, unsigned long lat_jif)
+{
+	u64 lat_ns = READ_ONCE(device->rs_lat_ns);
+	u64 lo = lat_jif ? (u64)jiffies_to_msecs(lat_jif - 1) * NSEC_PER_MSEC : 0;
+	u64 hi = (u64)jiffies_to_msecs(lat_jif + 1) * NSEC_PER_MSEC;
+
+	return lo > lat_ns + (u64)RS_DEPTH_TARGET_MS * NSEC_PER_MSEC || hi < lat_ns;
+}
+
+/* Watch resync completion latency in jiffies, which costs no clock read.
+ * Its minimum over a window is the service time plus the queue the
+ * bound allows; probe again when that disagrees with the probed
+ * service time, and every RS_LAT_PROBE_INTV in any case.
+ */
+static void rs_lat_watch(struct drbd_device *device, unsigned long submit_jif)
+{
+	unsigned long now = jiffies, lat = now - submit_jif + 1;
+	unsigned long wmin = device->rs_lat_wmin;
+
+	if (!wmin || lat < wmin) {
+		wmin = lat;
+		device->rs_lat_wmin = wmin;
+	}
+	if (time_before(now, device->rs_lat_wend))
+		return;
+
+	device->rs_lat_wmin = 0;
+	device->rs_lat_wend = now + RS_LAT_WINDOW;
+	if (rs_lat_changed(device, wmin - 1) ||
+	    time_after_eq(now, device->rs_lat_due))
+		WRITE_ONCE(device->rs_lat_probe, RS_LAT_DRAIN);
 }
 
 /* Resync IO completed at the backing device: the queue is shorter than it was,
@@ -2984,27 +3043,49 @@ void drbd_rs_depth_queued(struct drbd_device *device, unsigned int sect)
  * over busy time, so the rate is the device's own and not a function of how
  * much resync work happened to be there -- at the RS_DEPTH_MIN_SECT floor a
  * completion empties the queue, and that has to measure as well as any depth.
+ *
+ * The service time is timed on a probe: hold resync IO until the queue
+ * is empty, then time the first completion after the next submission.
+ * Every request that can complete first was submitted no earlier than
+ * the probe and completes no later, so that time is the service time
+ * of an idle queue.
  */
-void drbd_rs_depth_completed(struct drbd_device *device, unsigned int sect)
+void drbd_rs_depth_completed(struct drbd_device *device, unsigned int sect,
+			     unsigned long submit_jif)
 {
 	unsigned int drained, sect_since;
 	s64 busy_ns, elapsed_ns;
 	ktime_t now;
 	bool idle;
+	int probe;
 
 	drained = atomic_add_return(sect, &device->rs_drain_sect);
 	idle = atomic_sub_return(sect, &device->rs_sect_queued) == 0;
 	sect_since = drained - device->rs_drain_mark;
 
+	probe = READ_ONCE(device->rs_lat_probe);
+	if (probe == RS_LAT_IDLE)
+		rs_lat_watch(device, submit_jif);
+
 	/* Reading the clock can be costly.
 	 * Read it only where the answer is used: when the queue just ran empty
-	 * and the busy time has to stop there, or when this completion carries
-	 * enough sectors to end the sample.
+	 * and the busy time has to stop there, when this completion carries
+	 * enough sectors to end the sample, or when it ends a probe.
 	 */
-	if (!idle && sect_since < rs_drain_sample_sect(device))
+	if (!idle && sect_since < rs_drain_sample_sect(device) &&
+	    probe != RS_LAT_TIMING)
 		goto release;
 
 	now = ktime_get();
+	if (probe == RS_LAT_TIMING) {
+		WRITE_ONCE(device->rs_lat_ns,
+			   clamp_t(s64, ktime_to_ns(ktime_sub(now, device->rs_lat_probe_kt)),
+				   1, RS_LAT_MAX_NS));
+		device->rs_lat_due = jiffies + RS_LAT_PROBE_INTV;
+		device->rs_lat_wend = jiffies + RS_LAT_WINDOW;
+		device->rs_lat_wmin = 0;
+		WRITE_ONCE(device->rs_lat_probe, RS_LAT_IDLE);
+	}
 	elapsed_ns = ktime_to_ns(ktime_sub(now, device->rs_drain_since));
 	busy_ns = device->rs_drain_busy_ns + (elapsed_ns > 0 ? elapsed_ns : 0);
 
@@ -3015,7 +3096,7 @@ void drbd_rs_depth_completed(struct drbd_device *device, unsigned int sect)
 		u64 rate = (u64)sect_since * NSEC_PER_SEC;
 
 		WRITE_ONCE(device->rs_drain_rate,
-			   min_t(u64, div64_u64(rate, busy_ns), UINT_MAX));
+			   min_t(u64, div64_u64(rate, busy_ns), RS_DRAIN_RATE_MAX));
 		device->rs_drain_mark = drained;
 		device->rs_drain_busy_ns = 0;
 		device->rs_drain_since = now;

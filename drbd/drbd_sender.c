@@ -102,7 +102,8 @@ static void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req)
 	 * counted into the queue at submit.
 	 */
 	if (drbd_interval_is_resync(&peer_req->i))
-		drbd_rs_depth_completed(device, peer_req->i.size >> 9);
+		drbd_rs_depth_completed(device, peer_req->i.size >> 9,
+					peer_req->submit_jif);
 	io_error = test_bit(__EE_WAS_ERROR, &peer_req->flags);
 
 	drbd_queue_work(&connection->sender_work, &peer_req->w);
@@ -195,7 +196,8 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req)
 	if (type == INTERVAL_RESYNC_WRITE) {
 		atomic_add(peer_req->i.size >> 9, &device->rs_sect_done);
 		if (!(peer_req->flags & EE_TRIM))
-			drbd_rs_depth_completed(device, peer_req->i.size >> 9);
+			drbd_rs_depth_completed(device, peer_req->i.size >> 9,
+						peer_req->submit_jif);
 	}
 
 	if (peer_req->flags & EE_WAS_ERROR) {
@@ -3035,6 +3037,11 @@ void drbd_rs_controller_reset(struct drbd_peer_device *peer_device)
 	device->rs_drain_since = ktime_get();
 	device->rs_drain_busy_ns = 0;
 	WRITE_ONCE(device->rs_drain_rate, 0);
+	WRITE_ONCE(device->rs_lat_ns, 0);
+	WRITE_ONCE(device->rs_lat_probe, RS_LAT_DRAIN);
+	device->rs_lat_due = jiffies + RS_LAT_PROBE_INTV;
+	device->rs_lat_wend = jiffies + RS_LAT_WINDOW;
+	device->rs_lat_wmin = 0;
 
 	/* Updating the RCU protected object in place is necessary since
 	   this function gets called from atomic context.
