@@ -3038,6 +3038,7 @@ void drbd_rs_controller_reset(struct drbd_peer_device *peer_device)
 	device->rs_drain_busy_ns = 0;
 	WRITE_ONCE(device->rs_drain_rate, 0);
 	WRITE_ONCE(device->rs_lat_ns, 0);
+	WRITE_ONCE(device->rs_drain_sample_sect, RS_DEPTH_MIN_SECT);
 	WRITE_ONCE(device->rs_lat_probe, RS_LAT_DRAIN);
 	device->rs_lat_due = jiffies + RS_LAT_PROBE_INTV;
 	device->rs_lat_wend = jiffies + RS_LAT_WINDOW;

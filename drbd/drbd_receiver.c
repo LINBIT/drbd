@@ -2868,16 +2868,26 @@ static unsigned int rs_depth_target_sect(struct drbd_device *device)
 	return clamp_t(u64, sect, RS_DEPTH_MIN_SECT, INT_MAX);
 }
 
+/* Busy time the drain rate is measured over: at least one service time,
+ * so that a sample does not end on a burst of completions the device
+ * worked on concurrently.
+ */
+static u64 rs_drain_sample_ns(struct drbd_device *device)
+{
+	return max_t(u64, READ_ONCE(device->rs_lat_ns), RS_DRAIN_SAMPLE_NS);
+}
+
 /* Sectors the backing device delivers in one sample interval at the rate
  * measured so far, and RS_DEPTH_MIN_SECT until there is a rate.
+ * Computed where the rate or the service time changes, not per IO.
  */
 static unsigned int rs_drain_sample_sect(struct drbd_device *device)
 {
-	u64 sect = (u64)READ_ONCE(device->rs_drain_rate) * RS_DRAIN_SAMPLE_NS;
+	u64 sect = (u64)READ_ONCE(device->rs_drain_rate) * rs_drain_sample_ns(device);
 
-	do_div(sect, NSEC_PER_SEC);
+	sect = div64_u64(sect, NSEC_PER_SEC);
 
-	return max_t(u64, sect, RS_DEPTH_MIN_SECT);
+	return clamp_t(u64, sect, RS_DEPTH_MIN_SECT, UINT_MAX);
 }
 
 /* May more resync IO go to the backing device?
@@ -3072,7 +3082,7 @@ void drbd_rs_depth_completed(struct drbd_device *device, unsigned int sect,
 	 * and the busy time has to stop there, when this completion carries
 	 * enough sectors to end the sample, or when it ends a probe.
 	 */
-	if (!idle && sect_since < rs_drain_sample_sect(device) &&
+	if (!idle && sect_since < READ_ONCE(device->rs_drain_sample_sect) &&
 	    probe != RS_LAT_TIMING)
 		goto release;
 
@@ -3085,6 +3095,7 @@ void drbd_rs_depth_completed(struct drbd_device *device, unsigned int sect,
 		device->rs_lat_wend = jiffies + RS_LAT_WINDOW;
 		device->rs_lat_wmin = 0;
 		WRITE_ONCE(device->rs_lat_probe, RS_LAT_IDLE);
+		WRITE_ONCE(device->rs_drain_sample_sect, rs_drain_sample_sect(device));
 	}
 	elapsed_ns = ktime_to_ns(ktime_sub(now, device->rs_drain_since));
 	busy_ns = device->rs_drain_busy_ns + (elapsed_ns > 0 ? elapsed_ns : 0);
@@ -3092,7 +3103,7 @@ void drbd_rs_depth_completed(struct drbd_device *device, unsigned int sect,
 	if (idle)
 		device->rs_drain_busy_ns = busy_ns;  /* idle from here */
 
-	if (busy_ns >= RS_DRAIN_SAMPLE_NS) {
+	if (busy_ns >= rs_drain_sample_ns(device)) {
 		u64 rate = (u64)sect_since * NSEC_PER_SEC;
 
 		WRITE_ONCE(device->rs_drain_rate,
@@ -3100,6 +3111,7 @@ void drbd_rs_depth_completed(struct drbd_device *device, unsigned int sect,
 		device->rs_drain_mark = drained;
 		device->rs_drain_busy_ns = 0;
 		device->rs_drain_since = now;
+		WRITE_ONCE(device->rs_drain_sample_sect, rs_drain_sample_sect(device));
 	}
 
 release:

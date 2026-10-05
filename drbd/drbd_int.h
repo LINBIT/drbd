@@ -1892,6 +1892,7 @@ struct drbd_device {
 	ktime_t rs_drain_since;		/* when the device last became busy */
 	s64 rs_drain_busy_ns;		/* busy time in this interval, idle excluded */
 	unsigned int rs_drain_rate;	/* sectors per second, 0 until measured */
+	unsigned int rs_drain_sample_sect; /* rs_drain_sample_sect(), at the last change */
 	/* The backing device's service time for resync IO, timed on one probe
 	 * request submitted to an empty queue; see drbd_rs_depth_completed().
 	 */
