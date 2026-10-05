@@ -2020,6 +2020,7 @@ struct meta_data_on_disk_9;
 
 int drbd_thread_start(struct drbd_thread *thi);
 void _drbd_thread_stop(struct drbd_thread *thi, int restart, int wait);
+void drbd_thread_consume_restart(struct drbd_thread *thi);
 #ifdef CONFIG_SMP
 void drbd_thread_current_set_cpu(struct drbd_thread *thi);
 #else

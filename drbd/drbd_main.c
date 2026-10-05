@@ -701,6 +701,23 @@ int drbd_thread_start(struct drbd_thread *thi)
 }
 
 
+/* Like the restart path of drbd_thread_setup(), for a thread restarting in place. */
+void drbd_thread_consume_restart(struct drbd_thread *thi)
+{
+	unsigned long flags;
+	bool restarted = false;
+
+	spin_lock_irqsave(&thi->t_lock, flags);
+	if (thi->t_state == RESTARTING) {
+		thi->t_state = RUNNING;
+		restarted = true;
+	}
+	spin_unlock_irqrestore(&thi->t_lock, flags);
+
+	if (restarted)
+		flush_signals(current);
+}
+
 void _drbd_thread_stop(struct drbd_thread *thi, int restart, int wait)
 {
 	unsigned long flags;
