@@ -2261,6 +2261,8 @@ static void drbd_conflict_submit_write(struct drbd_request *req)
 	conflict = drbd_find_conflict(device, &req->i, 0);
 	if (drbd_interval_empty(&req->i))
 		drbd_insert_interval(&device->requests, &req->i);
+	if (conflict)
+		drbd_rs_depth_exempt(device, &req->i);
 	if (!conflict) {
 		set_bit(INTERVAL_SUBMITTED, &req->i.flags);
 	} else if (drbd_interval_is_local(conflict)) {

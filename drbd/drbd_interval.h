@@ -61,6 +61,11 @@ enum drbd_interval_flags {
 
 	/* For resync requests: whether this was canceled while waiting for conflict resolution. */
 	INTERVAL_CANCELED,
+
+	/* For resync requests: an application write waits for this one,
+	 * so the resync depth bound does not hold it back.
+	 */
+	INTERVAL_APP_WAITS,
 };
 
 /* Intervals used to manage conflicts between application requests and various

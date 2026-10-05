@@ -2924,6 +2924,32 @@ void drbd_rs_depth_defer(struct drbd_peer_device *peer_device)
 		rs_depth_resume(device);
 }
 
+/* An application write waits for the resync requests it conflicts with.
+ * Do not let it wait for the depth bound as well: exempt those
+ * requests from the bound, and release the ones already parked there.
+ */
+void drbd_rs_depth_exempt(struct drbd_device *device, struct drbd_interval *interval)
+{
+	struct conflict_worker *submit_conflict = &device->submit_conflict;
+	struct drbd_interval *i;
+	bool parked = false;
+
+	lockdep_assert_held(&device->interval_lock);
+
+	drbd_for_each_overlap(i, &device->requests, interval->sector, interval->size) {
+		if (i == interval || test_bit(INTERVAL_SUBMITTED, &i->flags) ||
+		    !drbd_should_defer_to_resync(interval, i))
+			continue;
+		if (test_and_set_bit(INTERVAL_APP_WAITS, &i->flags))
+			continue;
+		if (test_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &i->flags))
+			parked = true;
+	}
+
+	if (parked)
+		queue_work(submit_conflict->wq, &submit_conflict->worker);
+}
+
 /* Resync IO completed at the backing device, so the queue is shorter than it
  * was. Let the conflict submitter look again at what it is holding.
  */
@@ -3021,6 +3047,7 @@ void drbd_conflict_submit_resync_request(struct drbd_peer_request *peer_req)
 	 * shorten no queue. Its zero-out fallback does, and is not bounded.
 	 */
 	too_deep = !conflict && !canceled && !(peer_req->flags & EE_TRIM) &&
+		!test_bit(INTERVAL_APP_WAITS, &peer_req->i.flags) &&
 		drbd_rs_depth_exceeded(peer_device);
 	if (too_deep)
 		set_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &peer_req->i.flags);
@@ -4095,7 +4122,9 @@ void drbd_conflict_submit_peer_write(struct drbd_peer_request *peer_req)
 	clear_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &peer_req->i.flags);
 	canceled = test_bit(INTERVAL_CANCELED, &peer_req->i.flags);
 	conflict = drbd_find_conflict(device, &peer_req->i, 0);
-	if (!conflict && !canceled)
+	if (conflict)
+		drbd_rs_depth_exempt(device, &peer_req->i);
+	else if (!canceled)
 		set_bit(INTERVAL_SUBMITTED, &peer_req->i.flags);
 	spin_unlock_irq(&device->interval_lock);
 
@@ -4488,7 +4517,9 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	}
 	conflict = drbd_find_conflict(device, &peer_req->i, 0);
 	drbd_insert_interval(&device->requests, &peer_req->i);
-	if (!conflict)
+	if (conflict)
+		drbd_rs_depth_exempt(device, &peer_req->i);
+	else
 		set_bit(INTERVAL_SUBMITTED, &peer_req->i.flags);
 	spin_unlock_irq(&device->interval_lock);
 
@@ -4707,6 +4738,7 @@ void drbd_conflict_submit_peer_read(struct drbd_peer_request *peer_req)
 		}
 		too_deep = !conflict && !canceled &&
 			drbd_interval_is_resync(&peer_req->i) &&
+			!test_bit(INTERVAL_APP_WAITS, &peer_req->i.flags) &&
 			drbd_rs_depth_exceeded(peer_device);
 		if (canceled) {
 			submit = false;
