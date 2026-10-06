@@ -5975,9 +5975,14 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 		    target_connection->agreed_pro_version >= 118)
 			conn_connect2(target_connection);
 
-		t = wait_event_interruptible_timeout(resource->state_wait,
-						     cluster_wide_reply_ready(resource),
-						     twopc_timeout(resource));
+		if (context->flags & CS_NO_SIGNALS)
+			t = wait_event_timeout(resource->state_wait,
+					       cluster_wide_reply_ready(resource),
+					       twopc_timeout(resource));
+		else
+			t = wait_event_interruptible_timeout(resource->state_wait,
+							     cluster_wide_reply_ready(resource),
+							     twopc_timeout(resource));
 		if (t > 0)
 			rv = get_cluster_wide_reply(resource, context);
 		else

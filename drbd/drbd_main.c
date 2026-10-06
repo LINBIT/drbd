@@ -3150,7 +3150,6 @@ static void drbd_release(struct gendisk *gd)
 			resource->role[NOW] == R_PRIMARY &&
 			!test_bit(EXPLICIT_PRIMARY, &resource->flags)) {
 		union comm_pid_tag_buf tag;
-		sigset_t mask, oldmask;
 		int rv;
 
 		snprintf_current_comm_pid_tag(&tag, "auto-demote");
@@ -3161,17 +3160,14 @@ static void drbd_release(struct gendisk *gd)
 		 * not be affected by the state of the process. In particular,
 		 * it should ignore any pending signals. It may be the case
 		 * that the process is releasing DRBD because it is being
-		 * terminated using a signal.
+		 * terminated using a signal. Masking signals is not enough:
+		 * a group exit's SIGKILL and TIF_NOTIFY_SIGNAL are pending
+		 * through any mask, so the waits themselves ignore signals.
 		 */
-		sigfillset(&mask);
-		sigprocmask(SIG_BLOCK, &mask, &oldmask);
-
-		rv = drbd_set_role(resource, R_SECONDARY, 0, tag.buf, NULL);
+		rv = drbd_set_role(resource, R_SECONDARY, CS_NO_SIGNALS, tag.buf, NULL);
 		if (rv < SS_SUCCESS)
 			drbd_warn(resource, "Auto-demote failed: %s (%d)\n",
 					drbd_set_st_err_str(rv), rv);
-
-		sigprocmask(SIG_SETMASK, &oldmask, NULL);
 	}
 
 	if (open_ro_cnt == 0 && open_rw_cnt == 0 && resource->fail_io[NOW]) {
