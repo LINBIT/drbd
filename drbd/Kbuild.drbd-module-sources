@@ -21,6 +21,7 @@ __drbd-module-sources := $(sort $(shell     \
   | grep -vF drbd-headers/linux/ynl/   \
   | grep -vF drbd-headers/tests/       \
   | grep -vF drbd-headers/linux/drbd_genl_userspace \
+  | grep -vF drbd-headers/linux/drbd2_genl_userspace \
 ))
 
 define drbd-module-sources :=
@@ -46,6 +47,7 @@ drbd-headers/linux/YNL-VERSION
 drbd-headers/uapi/linux/drbd_limits.h
 drbd-headers/uapi/linux/drbd_genl.h
 drbd-headers/linux/genetlink-legacy.yaml
+drbd-headers/linux/genetlink.yaml
 drbd-headers/linux/generate.sh
 drbd-headers/windrbd/windrbd_ioctl.h
 drbd-kernel-compat/cocci_macros.h

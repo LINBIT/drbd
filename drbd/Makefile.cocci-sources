@@ -85,6 +85,8 @@ sources-ignored += drbd-84/uapi/linux/drbd_genl.h
 # generated for drbd-utils' userspace netlink, never compiled into the module
 sources-ignored += drbd-headers/linux/drbd_genl_userspace.c
 sources-ignored += drbd-headers/linux/drbd_genl_userspace.h
+sources-ignored += drbd-headers/linux/drbd2_genl_userspace.c
+sources-ignored += drbd-headers/linux/drbd2_genl_userspace.h
 
 __duplicates := $(shell printf "%s\n" $(sources) $(sources-ignored) | sort | uniq -d)
 $(if $(__duplicates),$(error duplicated entries found: $(__duplicates)))
