@@ -549,6 +549,21 @@ static bool disarm_stale_connect_timeout(struct drbd_connection *connection)
 	return true;
 }
 
+/* Before C_CONNECTED, the peer cannot announce a disconnect with a
+ * two-phase commit; closing the socket is its regular way to give up.
+ */
+static void conn_closed_by_peer(struct drbd_connection *connection)
+{
+	struct drbd_resource *resource = connection->resource;
+	unsigned long irq_flags;
+
+	/* lock_order_ok: no CS_SERIALIZE, state_sem is not taken */
+	begin_state_change(resource, &irq_flags, CS_HARD);
+	__change_cstate(connection, connection->cstate[NOW] == C_CONNECTING ?
+			C_TEAR_DOWN : C_BROKEN_PIPE);
+	end_state_change(resource, &irq_flags, NULL);
+}
+
 static int drbd_recv(struct drbd_connection *connection, void **buf, size_t size, int flags)
 {
 	struct drbd_transport_ops *tr_ops = &connection->transport.class->ops;
@@ -580,6 +595,8 @@ retry:
 				goto out;
 		}
 		drbd_info(connection, "sock was shut down by peer\n");
+		conn_closed_by_peer(connection);
+		goto out;
 	}
 
 	if (rv != size)
