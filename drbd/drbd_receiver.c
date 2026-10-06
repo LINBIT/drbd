@@ -1199,6 +1199,7 @@ start:
 	 * or the challenge response authentication could be garbled. */
 	mutex_lock(&connection->mutex[DATA_STREAM]);
 	have_mutex = true;
+	clear_bit(PING_TIMEOUT_ACTIVE, &connection->flags);
 	transport->class->ops.set_rcvtimeo(transport, DATA_STREAM, ping_timeo * 4 * HZ/10);
 	transport->class->ops.set_rcvtimeo(transport, CONTROL_STREAM, ping_int * HZ);
 
