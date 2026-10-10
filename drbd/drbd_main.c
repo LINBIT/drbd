@@ -3554,7 +3554,7 @@ static void do_retry(struct work_struct *ws)
 		struct bio *bio = req->master_bio;
 		unsigned long start_jif = req->start_jif;
 		bool expected;
-		ktime_get_accounting_assign(ktime_t start_kt, req->start_kt);
+		ktime_var_assign_for_accounting(start_kt, req->start_kt);
 
 
 		/* No locking when accessing local_rq_state & net_rq_state, since
