@@ -9382,6 +9382,7 @@ retry:
 		resource->twopc_prepare_reply_cmd = 0;
 		resource->twopc_parent_nodes = NODE_MASK(connection->peer_node_id);
 		clear_bit(TWOPC_EXECUTED, &resource->flags);
+		set_bit(TWOPC_PREPARING, &resource->flags);
 		idr_for_each_entry(&resource->devices, device, iterate_vnr)
 			clear_bit(OUTDATE_ON_2PC_COMMIT, &device->flags);
 	} else if (csc_rv == CSC_MATCH && !is_prepare(pi->cmd)) {
@@ -9425,6 +9426,7 @@ retry:
 		resource->twopc_parent_nodes = NODE_MASK(connection->peer_node_id);
 		resource->twopc_prepare_reply_cmd = 0;
 		clear_bit(TWOPC_EXECUTED, &resource->flags);
+		set_bit(TWOPC_PREPARING, &resource->flags);
 	} else if (pi->cmd == P_TWOPC_ABORT) {
 		/* crc_rc != CRC_MATCH */
 		write_unlock_irq(&resource->state_rwlock);
@@ -9666,7 +9668,10 @@ retry:
 		 * complete in the case of a twopc for transitioning to
 		 * C_CONNECTED. */
 		if (rv == SS_IN_TRANSIENT_STATE) {
+			write_lock_irq(&resource->state_rwlock);
+			clear_bit(TWOPC_PREPARING, &resource->flags);
 			resource->twopc_prepare_reply_cmd = P_TWOPC_RETRY;
+			write_unlock_irq(&resource->state_rwlock);
 			drbd_send_twopc_reply(connection, P_TWOPC_RETRY, reply);
 		} else {
 			resource->twopc_reply.state_change_failed = rv < SS_SUCCESS;
