@@ -930,6 +930,32 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, u64 sect_in,
 	return req_sect;
 }
 
+/* How many 4k blocks a pacing of rate_kib_s allows over duration_ns.
+ *
+ * The remainder is carried in rs_pacing_credit to maintain a stable
+ * rate whatever the actual round cadence is.
+ * duration_ns is clamped the way drbd_rs_controller() clamps it, so a
+ * round after a long pause grants at most ten intervals worth.
+ */
+static int rs_paced_number(struct drbd_peer_device *peer_device,
+			   unsigned int rate_kib_s, u64 duration_ns)
+{
+	const u64 per_block = (BM_BLOCK_SIZE_4k / 1024) * (u64)NSEC_PER_SEC;
+	u64 credit, blocks;
+
+	if (duration_ns > RS_MAKE_REQS_INTV_NS * 10)
+		duration_ns = RS_MAKE_REQS_INTV_NS * 10;
+
+	credit = peer_device->rs_pacing_credit + rate_kib_s * duration_ns;
+	blocks = credit;
+	do_div(blocks, per_block);
+	if (blocks > INT_MAX)
+		blocks = INT_MAX;
+	peer_device->rs_pacing_credit = credit - blocks * per_block;
+
+	return blocks;
+}
+
 /* Calculate how many 4k sized blocks we want to resync this time.
  * Because peer nodes may have different bitmap granularity, and won't
  * be able to clear "partial bits", make sure we try to request
@@ -964,8 +990,12 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 		number = drbd_rs_controller(peer_device, sect_in, ktime_to_ns(duration));
 		number = sect_to_bit(number, BM_BLOCK_SHIFT_4k);
 	} else {
-		number = RS_MAKE_REQS_INTV * rcu_dereference(peer_device->conf)->resync_rate
-			/ ((BM_BLOCK_SIZE_4k/1024) * HZ);
+		struct drbd_peer_device_conf *pdc = rcu_dereference(peer_device->conf);
+		unsigned int rate = pdc->resync_rate;
+
+		if (pdc->c_max_rate && pdc->c_max_rate < rate)
+			rate = pdc->c_max_rate;
+		number = rs_paced_number(peer_device, rate, ktime_to_ns(duration));
 	}
 	rcu_read_unlock();
 
@@ -3030,6 +3060,7 @@ void drbd_rs_controller_reset(struct drbd_peer_device *peer_device)
 	atomic_set(&peer_device->device->rs_sect_ev, 0);  /* FIXME: ??? */
 	peer_device->rs_last_mk_req_kt = ktime_get();
 	peer_device->rs_in_flight = 0;
+	peer_device->rs_pacing_credit = 0;
 	peer_device->rs_last_events = (int)part_stat_read_accum(disk->part0, sectors);
 
 	/* Updating the RCU protected object in place is necessary since
