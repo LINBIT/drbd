@@ -6342,27 +6342,6 @@ static bool io_drained(struct drbd_device *device)
 	return drained;
 }
 
-/* With protocols A and B a write is acked before it reaches the peer's stable
- * storage; the barrier ack of its epoch says that it did.
- */
-static bool writes_barrier_acked(struct drbd_resource *resource)
-{
-	struct drbd_connection *connection;
-	bool acked = true;
-
-	rcu_read_lock();
-	for_each_connection_rcu(connection, resource) {
-		if (connection->cstate[NOW] == C_CONNECTED &&
-		    READ_ONCE(connection->req_not_net_done)) {
-			acked = false;
-			break;
-		}
-	}
-	rcu_read_unlock();
-
-	return acked;
-}
-
 int drbd_adm_suspend_io(struct drbd_adm_ctx *adm_ctx)
 {
 	struct drbd_resource *resource;
@@ -6493,7 +6472,7 @@ static bool writes_drained(struct drbd_device *device)
 	}
 	rcu_read_unlock();
 
-	return drained && writes_barrier_acked(device->resource);
+	return drained;
 }
 
 static bool peer_writes_executing(struct drbd_device *device)
@@ -6538,8 +6517,8 @@ static bool resync_running(struct drbd_device *device)
 
 /* Write the bitmap and the superblock out, so that a snapshot taken while I/O
  * stays suspended contains every write up to now in the tracking slot. Issued
- * on every node with a disk after I/O is suspended on all nodes: the Primary
- * is drained then, so no write reaches a Secondary either.
+ * on every node with a disk after suspend-io succeeded on all nodes. After
+ * --flush-to-peers=no a write may still reach a Secondary; cbt-start sees it.
  */
 int drbd_adm_cbt_flush(struct drbd_adm_ctx *adm_ctx)
 {
