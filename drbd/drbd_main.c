@@ -4286,7 +4286,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_adm_ctx *adm_ctx, unsigned int
 	atomic_set(&device->wait_for_actlog, 0);
 	atomic_set(&device->wait_for_actlog_ecnt, 0);
 	atomic_set(&device->local_cnt, 0);
-	atomic_set(&device->rs_sect_ev, 0);
+	atomic_set(&device->rs_sect_done, 0);
 	atomic_set(&device->md_io.in_use, 0);
 
 #ifdef CONFIG_DRBD_TIMING_STATS
