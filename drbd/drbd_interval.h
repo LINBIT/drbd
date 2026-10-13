@@ -82,6 +82,11 @@ enum drbd_interval_flags {
 	 * atomic bit operations instead of taking rq_lock.
 	 */
 	INTERVAL_AL_EXTENT_LAST,
+
+	/* For resync requests: an application write waits for this one,
+	 * so the resync depth bound does not hold it back.
+	 */
+	INTERVAL_APP_WAITS,
 };
 
 /* Intervals used to manage conflicts between application requests and various
