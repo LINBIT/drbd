@@ -1570,17 +1570,30 @@ static bool ap_bio_drained(struct drbd_device *device, enum suspend_scope ss)
 	       (ss == READ_AND_WRITE ? atomic_read(&device->ap_bio_cnt[READ]) : 0) == 0;
 }
 
-void drbd_suspend_io(struct drbd_device *device, enum suspend_scope ss)
+void __drbd_suspend_io(struct drbd_device *device)
 {
 	atomic_inc(&device->suspend_cnt);
-	/* Order the suspend_cnt store before the ap_bio_cnt load in the wait
-	 * condition below. Pairs with the cmpxchg + suspend_cnt re-check in
-	 * inc_ap_bio_cond(): a submitter that increments ap_bio_cnt after we
-	 * raised suspend_cnt is guaranteed to observe suspend_cnt and roll
-	 * back, or we observe its increment and wait.
+	/* Order the suspend_cnt store before the ap_bio_cnt load in the
+	 * caller's wait condition. Pairs with the cmpxchg + suspend_cnt
+	 * re-check in inc_ap_bio_cond(): a submitter that increments
+	 * ap_bio_cnt after we raised suspend_cnt is guaranteed to observe
+	 * suspend_cnt and roll back, or we observe its increment and wait.
 	 */
 	smp_mb__after_atomic();
+}
+
+void drbd_suspend_io(struct drbd_device *device, enum suspend_scope ss)
+{
+	__drbd_suspend_io(device);
 	wait_event(device->misc_wait, ap_bio_drained(device, ss));
+}
+
+/* For a suspend taken with __drbd_suspend_io(); the caller still owns it
+ * when this returns, drained or not.
+ */
+bool drbd_wait_io_drained(struct drbd_device *device, enum suspend_scope ss, long timeout)
+{
+	return wait_event_timeout(device->misc_wait, ap_bio_drained(device, ss), timeout) > 0;
 }
 
 void drbd_resume_io(struct drbd_device *device)
@@ -1593,8 +1606,7 @@ int drbd_suspend_io_interruptible(struct drbd_device *device, enum suspend_scope
 {
 	int ret;
 
-	atomic_inc(&device->suspend_cnt);
-	smp_mb__after_atomic(); /* see drbd_suspend_io() */
+	__drbd_suspend_io(device);
 	ret = wait_event_interruptible(device->misc_wait, ap_bio_drained(device, ss));
 	if (ret)
 		drbd_resume_io(device);
