@@ -956,6 +956,34 @@ static int rs_paced_number(struct drbd_peer_device *peer_device,
 	return blocks;
 }
 
+/* Say so, once per resync and net configuration, when the in-flight window is
+ * what bounds this resync and not the configured rate: the max-buffers clamp
+ * keeps trimming the request while the data actually arriving stays well below
+ * c-max-rate. max-buffers pages over the round trip is then the ceiling, and no
+ * rate setting will lift it.
+ */
+static void rs_hint_mxb_limited(struct drbd_peer_device *peer_device, int mxb,
+				unsigned int c_max_rate, unsigned int sect_in,
+				u64 duration_ns)
+{
+	u64 kib_s;
+
+	if (++peer_device->rs_mxb_limited < RS_MXB_LIMITED_ROUNDS)
+		return;
+	if (!c_max_rate || !duration_ns)
+		return;
+
+	kib_s = (u64)sect_in * NSEC_PER_SEC / 2;
+	kib_s = div64_u64(kib_s, duration_ns);
+	if (kib_s * 4 >= (u64)c_max_rate * 3)
+		return;
+
+	if (!test_and_set_bit(RS_MXB_LIMITED_LOGGED, peer_device->flags))
+		drbd_info(peer_device,
+			  "resync bounded by max-buffers (%d), not by c-max-rate (%u KiB/s): %llu KiB/s arriving\n",
+			  mxb, c_max_rate, kib_s);
+}
+
 /* Calculate how many 4k sized blocks we want to resync this time.
  * Because peer nodes may have different bitmap granularity, and won't
  * be able to clear "partial bits", make sure we try to request
@@ -972,6 +1000,7 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 	struct drbd_net_conf *nc;
 	ktime_t duration, now;
 	unsigned int sect_in;  /* Number of sectors that came in since the last turn */
+	unsigned int c_max_rate;
 	int number, mxb;
 	int effective_resync_request_size;
 	struct drbd_bitmap *bm = peer_device->device->bitmap;
@@ -986,6 +1015,7 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 	rcu_read_lock();
 	nc = rcu_dereference(peer_device->connection->transport.net_conf);
 	mxb = nc ? nc->max_buffers : 0;
+	c_max_rate = rcu_dereference(peer_device->conf)->c_max_rate;
 	if (rcu_dereference(peer_device->rs_plan_s)->size) {
 		number = drbd_rs_controller(peer_device, sect_in, ktime_to_ns(duration));
 		number = sect_to_bit(number, BM_BLOCK_SHIFT_4k);
@@ -1016,6 +1046,10 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 		if (mxb_sect - peer_device->rs_in_flight < num_sect) {
 			num_sect = mxb_sect - peer_device->rs_in_flight;
 			number = sect_to_bit(num_sect, BM_BLOCK_SHIFT_4k);
+			rs_hint_mxb_limited(peer_device, mxb, c_max_rate, sect_in,
+					    ktime_to_ns(duration));
+		} else {
+			peer_device->rs_mxb_limited = 0;
 		}
 	}
 
@@ -3061,6 +3095,8 @@ void drbd_rs_controller_reset(struct drbd_peer_device *peer_device)
 	peer_device->rs_last_mk_req_kt = ktime_get();
 	peer_device->rs_in_flight = 0;
 	peer_device->rs_pacing_credit = 0;
+	peer_device->rs_mxb_limited = 0;
+	clear_bit(RS_MXB_LIMITED_LOGGED, peer_device->flags);
 	peer_device->rs_last_events = (int)part_stat_read_accum(disk->part0, sectors);
 
 	/* Updating the RCU protected object in place is necessary since

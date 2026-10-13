@@ -4282,9 +4282,10 @@ int drbd_adm_net_opts(struct drbd_adm_ctx *adm_ctx)
 {
 	enum drbd_ret_code retcode = NO_ERROR;
 	struct drbd_connection *connection;
+	struct drbd_peer_device *peer_device;
 	struct drbd_transport *transport;
 	struct drbd_net_conf *old_net_conf, *new_net_conf = NULL;
-	int err;
+	int err, vnr;
 	int ovr; /* online verify running */
 	int rsr; /* re-sync running */
 	struct crypto crypto = { };
@@ -4371,6 +4372,10 @@ int drbd_adm_net_opts(struct drbd_adm_ctx *adm_ctx)
 
 	rcu_assign_pointer(transport->net_conf, new_net_conf);
 	connection->fencing_policy = new_net_conf->fencing_policy;
+
+	/* max-buffers may have changed: let the hint be logged again */
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
+		clear_bit(RS_MXB_LIMITED_LOGGED, peer_device->flags);
 
 	if (!rsr) {
 		crypto_free_shash(connection->csums_tfm);
