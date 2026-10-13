@@ -4738,6 +4738,13 @@ void drbd_md_encode_9(struct drbd_device *device, struct meta_data_on_disk_9 *bu
 	buffer->al_stripes = cpu_to_be32(device->ldev->md.al_stripes);
 	buffer->al_stripe_size_4k = cpu_to_be32(device->ldev->md.al_stripe_size_4k);
 
+	buffer->cbt_bookmark.id = cpu_to_be64(device->ldev->md.cbt.id);
+	buffer->cbt_bookmark.bitmap_uuid = cpu_to_be64(device->ldev->md.cbt.bitmap_uuid);
+	buffer->cbt_bookmark.bitmap_dagtag = cpu_to_be64(device->ldev->md.cbt.bitmap_dagtag);
+	buffer->cbt_bookmark.since = cpu_to_be64(device->ldev->md.cbt.since);
+	buffer->cbt_bookmark.flags = cpu_to_be32(device->ldev->md.cbt.flags);
+	buffer->cbt_bookmark.bitmap_index = cpu_to_be32(device->ldev->md.cbt.bitmap_index);
+
 	if (device->bitmap == NULL)
 		for (i = 0; i < DRBD_PEERS_MAX; i++)
 			buffer->peers[i].flags |= cpu_to_be32(MDF_PEER_FULL_SYNC);

@@ -94,6 +94,7 @@ enum drbd_nl_attr_set {
 	DRBD_NL_SET_PATH_PARMS,
 	DRBD_NL_SET_RENAME_RESOURCE_PARMS,
 	DRBD_NL_SET_SUSPEND_IO_PARMS,
+	DRBD_NL_SET_CBT_START_PARMS,
 	__DRBD_NL_SET_MAX,
 };
 
@@ -123,6 +124,7 @@ struct drbd_nl_dialect {
 	bool (*attr_present)(struct drbd_adm_ctx *ctx, enum drbd_adm_field field);
 	/* Reply payloads */
 	int (*put_timeout_type)(struct drbd_adm_ctx *ctx, enum drbd_timeout_flag type);
+	int (*put_cbt_info)(struct drbd_adm_ctx *ctx, struct drbd_cbt_info *info);
 
 	/*
 	 * Dump emitters: append one message describing the object to the
@@ -276,6 +278,10 @@ static inline int drbd_adm_overlay_suspend_io_parms(struct drbd_adm_ctx *ctx,
 						    struct drbd_suspend_io_parms *c)
 { return ctx->d->overlay(ctx, DRBD_NL_SET_SUSPEND_IO_PARMS, c); }
 
+static inline int drbd_adm_overlay_cbt_start_parms(struct drbd_adm_ctx *ctx,
+						   struct drbd_cbt_start_parms *c)
+{ return ctx->d->overlay(ctx, DRBD_NL_SET_CBT_START_PARMS, c); }
+
 __printf(2, 3) void drbd_adm_msg(struct drbd_adm_ctx *ctx, const char *fmt, ...);
 
 /* Flags for drbd_adm_ctx_resolve() */
@@ -322,6 +328,10 @@ int drbd_adm_down(struct drbd_adm_ctx *ctx);
 int drbd_adm_del_resource(struct drbd_adm_ctx *ctx);
 int drbd_adm_forget_peer(struct drbd_adm_ctx *ctx);
 int drbd_adm_rename_resource(struct drbd_adm_ctx *ctx);
+int drbd_adm_cbt_flush(struct drbd_adm_ctx *ctx);
+int drbd_adm_cbt_start(struct drbd_adm_ctx *ctx);
+int drbd_adm_cbt_stop(struct drbd_adm_ctx *ctx);
+int drbd_adm_cbt_status(struct drbd_adm_ctx *ctx);
 
 /*
  * The dumps. The core walks the objects and keeps its cursor in

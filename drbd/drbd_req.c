@@ -1953,6 +1953,9 @@ drbd_submit_req_private_bio(struct drbd_request *req)
 	 * stable storage, and this is a WRITE, we may not even submit
 	 * this bio. */
 	if (get_ldev(device)) {
+		if (bio_op(bio) != REQ_OP_READ)
+			drbd_cbt_mark(device, req->i.sector, req->i.size >> SECTOR_SHIFT);
+
 		if (drbd_insert_fault(device, type)) {
 			bio->bi_status = BLK_STS_IOERR;
 			bio_endio(bio);

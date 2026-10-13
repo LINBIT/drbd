@@ -1107,6 +1107,10 @@ static const unsigned int drbd2_cmd_flags[] = {
 	[DRBD2_CMD_PEER_DEVICE_RESUME_SYNC]	= DRBD_ADM_NEED_PEER_DEVICE,
 	[DRBD2_CMD_PEER_DEVICE_START_OV]	= DRBD_ADM_NEED_PEER_DEVICE,
 	[DRBD2_CMD_TIMEOUT_TYPE_GET]		= DRBD_ADM_NEED_PEER_DEVICE,
+	[DRBD2_CMD_DEVICE_CBT_FLUSH]		= DRBD_ADM_NEED_MINOR,
+	[DRBD2_CMD_DEVICE_CBT_START]		= DRBD_ADM_NEED_MINOR,
+	[DRBD2_CMD_DEVICE_CBT_STOP]		= DRBD_ADM_NEED_MINOR,
+	[DRBD2_CMD_DEVICE_CBT_STATUS]		= DRBD_ADM_NEED_MINOR,
 };
 
 /* Fill in the identity of the object the request refers to. */
@@ -1266,6 +1270,7 @@ static bool drbd2_has_set(struct drbd_adm_ctx *ctx, enum drbd_nl_attr_set set)
 		[DRBD_NL_SET_CONNECT_PARMS]		= DRBD2_A_CONNECT_PARMS,
 		[DRBD_NL_SET_RENAME_RESOURCE_PARMS]	= DRBD2_A_RENAME_PARMS,
 		[DRBD_NL_SET_SUSPEND_IO_PARMS]		= DRBD2_A_SUSPEND_IO_PARMS,
+		[DRBD_NL_SET_CBT_START_PARMS]		= DRBD2_A_CBT_START_PARMS,
 		/* both are carried by the context nest of the request */
 		[DRBD_NL_SET_FORGET_PEER_PARMS]		= DRBD2_A_CONTEXT,
 		[DRBD_NL_SET_PATH_PARMS]		= DRBD2_A_CONTEXT,
@@ -1769,7 +1774,7 @@ static int drbd2_overlay_rename_resource_parms(struct drbd_adm_ctx *ctx,
 static int drbd2_overlay_suspend_io_parms(struct drbd_adm_ctx *ctx,
 					  struct drbd_suspend_io_parms *s)
 {
-	struct nlattr *tb[DRBD2_A_SUSPEND_IO_PARMS_BDEV_FREEZE + 1];
+	struct nlattr *tb[DRBD2_A_SUSPEND_IO_PARMS_FLUSH_TO_PEERS + 1];
 	int err;
 
 	err = DRBD2_PARSE_SET(ctx, suspend_io_parms, SUSPEND_IO_PARMS, tb);
@@ -1778,6 +1783,24 @@ static int drbd2_overlay_suspend_io_parms(struct drbd_adm_ctx *ctx,
 
 	if (tb[DRBD2_A_SUSPEND_IO_PARMS_BDEV_FREEZE])
 		s->bdev_freeze = nla_get_u8(tb[DRBD2_A_SUSPEND_IO_PARMS_BDEV_FREEZE]);
+	if (tb[DRBD2_A_SUSPEND_IO_PARMS_FLUSH_TO_PEERS])
+		s->flush_to_peers = nla_get_u8(tb[DRBD2_A_SUSPEND_IO_PARMS_FLUSH_TO_PEERS]);
+	return 0;
+}
+
+static int drbd2_overlay_cbt_start_parms(struct drbd_adm_ctx *ctx,
+					 struct drbd_cbt_start_parms *s)
+{
+	struct nlattr *tb[DRBD2_A_CBT_START_PARMS_BOOKMARK_ID + 1];
+	int err;
+
+	err = DRBD2_PARSE_SET(ctx, cbt_start_parms, CBT_START_PARMS, tb);
+	if (err)
+		return err;
+	if (!tb[DRBD2_A_CBT_START_PARMS_BOOKMARK_ID])
+		return -ENOMSG;
+
+	s->cbt_id = nla_get_u64(tb[DRBD2_A_CBT_START_PARMS_BOOKMARK_ID]);
 	return 0;
 }
 
@@ -1804,6 +1827,7 @@ static int drbd2_overlay(struct drbd_adm_ctx *ctx, enum drbd_nl_attr_set set, vo
 	case DRBD_NL_SET_RENAME_RESOURCE_PARMS:
 		return drbd2_overlay_rename_resource_parms(ctx, dst);
 	case DRBD_NL_SET_SUSPEND_IO_PARMS:	return drbd2_overlay_suspend_io_parms(ctx, dst);
+	case DRBD_NL_SET_CBT_START_PARMS:	return drbd2_overlay_cbt_start_parms(ctx, dst);
 	case __DRBD_NL_SET_MAX:
 		break;
 	}
@@ -1880,6 +1904,33 @@ static int drbd2_put_timeout_type(struct drbd_adm_ctx *ctx, enum drbd_timeout_fl
 	return NO_ERROR;
 }
 
+static int drbd2_put_cbt_info(struct drbd_adm_ctx *ctx, struct drbd_cbt_info *ci)
+{
+	struct drbd2_req *req = drbd2_req(ctx);
+	struct sk_buff *skb = req->reply_skb;
+	struct nlattr *nla = nla_nest_start(skb, DRBD2_A_CBT_INFO);
+
+	if (!nla)
+		goto fail;
+	if (nla_put_u8(skb, DRBD2_A_CBT_INFO_ACTIVE, ci->cbt_active))
+		goto fail;
+	if (ci->cbt_active &&
+	    (nla_put_u8(skb, DRBD2_A_CBT_INFO_VALID, ci->cbt_valid) ||
+	     drbd2_put_u64(skb, DRBD2_A_CBT_INFO_BOOKMARK_ID, ci->cbt_bookmark_id) ||
+	     drbd2_put_u64(skb, DRBD2_A_CBT_INFO_SINCE, ci->cbt_since) ||
+	     drbd2_put_u64(skb, DRBD2_A_CBT_INFO_BITMAP_UUID, ci->cbt_bitmap_uuid) ||
+	     drbd2_put_u64(skb, DRBD2_A_CBT_INFO_BITMAP_DAGTAG, ci->cbt_bitmap_dagtag)))
+		goto fail;
+	nla_nest_end(skb, nla);
+	req->payload_reply = true;
+	return NO_ERROR;
+
+fail:
+	nlmsg_free(req->reply_skb);
+	req->reply_skb = NULL;
+	return -EMSGSIZE;
+}
+
 /*
  * The generated entry points. Each runs the wire-format independent
  * command implementation in drbd_nl.c and turns an ERR_* outcome into the
@@ -1944,6 +1995,10 @@ DRBD2_DOIT(peer_device_pause_sync, drbd_adm_pause_sync)
 DRBD2_DOIT(peer_device_resume_sync, drbd_adm_resume_sync)
 DRBD2_DOIT(peer_device_start_ov, drbd_adm_start_ov)
 DRBD2_DOIT(timeout_type_get, drbd_adm_get_timeout_type)
+DRBD2_DOIT(device_cbt_flush, drbd_adm_cbt_flush)
+DRBD2_DOIT(device_cbt_start, drbd_adm_cbt_start)
+DRBD2_DOIT(device_cbt_stop, drbd_adm_cbt_stop)
+DRBD2_DOIT(device_cbt_status, drbd_adm_cbt_status)
 
 /*
  * Dumps.
@@ -2502,6 +2557,7 @@ static const struct drbd_nl_dialect drbd2_dialect = {
 	.overlay = drbd2_overlay,
 	.attr_present = drbd2_attr_present,
 	.put_timeout_type = drbd2_put_timeout_type,
+	.put_cbt_info = drbd2_put_cbt_info,
 	.emit_resource = drbd2_emit_resource,
 	.emit_device = drbd2_emit_device,
 	.emit_connection = drbd2_emit_connection,

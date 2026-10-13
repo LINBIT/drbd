@@ -3241,6 +3241,13 @@ skip_helper:
 		return;
 	}
 
+	/* Past the retries, so once per resync start, and before the state
+	 * change: the first resync write may follow that at once, no matter
+	 * which thread runs this.
+	 */
+	if (side == L_SYNC_TARGET)
+		drbd_cbt_merge_resync_bits(peer_device);
+
 	lock_all_resources();
 	clear_bit(B_RS_H_DONE, peer_device->flags);
 	if (connection->cstate[NOW] < C_CONNECTED ||

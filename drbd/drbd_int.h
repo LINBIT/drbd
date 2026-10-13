@@ -653,6 +653,7 @@ enum device_flag {
 	RESTORING_QUORUM,	/* sanitize_state() -> finish_state_change() */
 	LEGACY_84_MD,
 	BDEV_FROZEN,		/* called bdev_freeze(), needs bdev_thaw() on resume-io */
+	CBT_BITMAPS_FLUSHED,	/* cbt-flush wrote the bitmap during this suspend-io */
 };
 
 /* The data-generation obligation of one volume.  A divergence-start event
@@ -950,6 +951,18 @@ struct drbd_peer_md {
 	bool placeholder_src_complete;
 };
 
+/* Changed block tracking: a bitmap slot that no peer owns records every write
+ * to the backing device since the bookmark "id". flags are CBT_BOOKMARK_*.
+ */
+struct drbd_cbt_md {
+	u64 id;
+	u64 bitmap_uuid;
+	u64 bitmap_dagtag;
+	s64 since;
+	u32 flags;
+	s32 bitmap_index;
+};
+
 struct drbd_md {
 	u64 md_offset;		/* sector offset to 'super' block */
 
@@ -973,6 +986,7 @@ struct drbd_md {
 
 	struct drbd_peer_md peers[DRBD_NODE_ID_MAX];
 	u64 history_uuids[HISTORY_UUIDS];
+	struct drbd_cbt_md cbt;
 
 	/* cached value of bdev->disk_conf->meta_dev_idx */
 	s32 meta_dev_idx;
@@ -1909,6 +1923,11 @@ struct drbd_device {
 	unsigned int multi_bio_cnt; /* peer_reqs that needed multiple bios */
 	atomic_t ap_bio_cnt[2];	 /* Requests we need to complete. [READ] and [WRITE] */
 	atomic_t local_cnt;	 /* Waiting for local completion */
+	/* Writes to the backing device that changed block tracking has seen;
+	 * cbt_flush_writes is the count at the last cbt-flush.
+	 */
+	atomic_t cbt_writes;
+	int cbt_flush_writes;
 	atomic_t ap_actlog_cnt;  /* Requests waiting for activity log */
 	atomic_t wait_for_actlog; /* Peer requests waiting for activity log */
 	/* worst case extent count needed to satisfy both requests and peer requests
@@ -2485,6 +2504,8 @@ void drbd_bm_slot_lock(struct drbd_peer_device *peer_device, char *why,
 void drbd_bm_slot_unlock(struct drbd_peer_device *peer_device);
 void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_index,
 		       unsigned int to_index);
+void drbd_bm_or_slot(struct drbd_device *device, unsigned int from_index,
+		     unsigned int to_index);
 /* drbd_main.c */
 
 extern struct workqueue_struct *ping_ack_sender;
@@ -2869,6 +2890,22 @@ unsigned long drbd_set_all_out_of_sync(struct drbd_device *device, int src_node_
 			     sector_t sector, int size);
 unsigned long drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
 		  unsigned long bits, unsigned long mask);
+
+/* Lockless, drbd_cbt_mark() runs it for every write. cbt-start publishes
+ * bitmap_index with a release store of flags; cbt-stop leaves bitmap_index
+ * valid, so a stale IN_USE at worst sets a bit in the slot it just freed.
+ */
+static inline int drbd_cbt_bitmap_index(struct drbd_backing_dev *ldev)
+{
+	/* pairs with smp_store_release() in drbd_adm_cbt_start() */
+	u32 flags = smp_load_acquire(&ldev->md.cbt.flags);
+
+	return flags & CBT_BOOKMARK_IN_USE ? READ_ONCE(ldev->md.cbt.bitmap_index) : -1;
+}
+
+void drbd_cbt_mark(struct drbd_device *device, sector_t sector, sector_t nr_sectors);
+void drbd_cbt_merge_resync_bits(struct drbd_peer_device *peer_device);
+void drbd_cbt_clear_flushed(struct drbd_device *device);
 enum update_sync_bits_mode { RECORD_RS_FAILED, SET_OUT_OF_SYNC, SET_IN_SYNC };
 int __drbd_change_sync(struct drbd_peer_device *peer_device, sector_t sector,
 		       int size, enum update_sync_bits_mode mode);

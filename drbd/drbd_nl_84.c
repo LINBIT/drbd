@@ -1114,6 +1114,7 @@ static int compat84_overlay(struct drbd_adm_ctx *ctx, enum drbd_nl_attr_set set,
 	case DRBD_NL_SET_FORGET_PEER_PARMS:
 	case DRBD_NL_SET_RENAME_RESOURCE_PARMS:
 	case DRBD_NL_SET_SUSPEND_IO_PARMS:
+	case DRBD_NL_SET_CBT_START_PARMS:
 		/* No v1 counterpart: report a missing required attribute
 		 * rather than silently proceeding with defaults.
 		 */

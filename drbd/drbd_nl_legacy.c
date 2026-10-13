@@ -444,6 +444,7 @@ static int legacy_overlay(struct drbd_adm_ctx *ctx, enum drbd_nl_attr_set set, v
 	case DRBD_NL_SET_PATH_PARMS:		return path_parms_from_attrs(dst, info);
 	case DRBD_NL_SET_RENAME_RESOURCE_PARMS:	return rename_resource_parms_from_attrs(dst, info);
 	case DRBD_NL_SET_SUSPEND_IO_PARMS:	return suspend_io_parms_from_attrs(dst, info);
+	case DRBD_NL_SET_CBT_START_PARMS:	/* not in this family */
 	case __DRBD_NL_SET_MAX:
 		break;
 	}

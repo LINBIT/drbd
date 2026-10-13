@@ -2129,6 +2129,12 @@ int drbd_submit_peer_request(struct drbd_peer_request *peer_req)
 		drbd_set_out_of_sync(peer_req->peer_device,
 				sector, peer_req->i.size);
 
+	if (peer_req->flags & (EE_TRIM|EE_ZEROOUT) ||
+	    bio_op(bio_list_peek(&peer_req->bios)) == REQ_OP_WRITE) {
+		/* ldev_safe: the caller passes its ldev reference to this function */
+		drbd_cbt_mark(device, sector, peer_req->i.size >> SECTOR_SHIFT);
+	}
+
 	/* TRIM/DISCARD: for now, always use the helper function
 	 * blkdev_issue_zeroout(..., discard=true).
 	 * It's synchronous, but it does the right thing wrt. bio splitting.
@@ -6268,29 +6274,32 @@ static int bitmap_mod_after_handshake(struct drbd_peer_device *peer_device, enum
 	struct drbd_device *device = peer_device->device;
 
 	if (strategy == SYNC_SOURCE_COPY_BITMAP) {
-		int from = device->ldev->md.peers[peer_node_id].bitmap_index;
-
-		if (from == -1)
-			from = drbd_unallocated_index(device->ldev);
+		int from;
 
 		if (peer_device->bitmap_index == -1)
 			return 0;
 
+		drbd_suspend_io(device, WRITE_ONLY);
+		drbd_bm_slot_lock(peer_device, "copy_slot/set_many sync_handshake", BM_LOCK_BULK);
+		/* Pick the day-0 slot under the bitmap lock: cbt-start claims and
+		 * clears a vacant slot under the same lock, so a slot found here
+		 * keeps its day-0 bits until the copy is done.
+		 */
+		from = device->ldev->md.peers[peer_node_id].bitmap_index;
 		if (from == -1)
+			from = drbd_unallocated_index(device->ldev);
+
+		if (from == -1) {
 			drbd_info(peer_device,
 				  "Setting all bitmap bits, day0 bm not available node_id=%d\n",
 				  peer_node_id);
-		else
+			drbd_bm_set_many_bits(peer_device, 0, -1UL);
+		} else {
 			drbd_info(peer_device,
 				  "Copying bitmap of peer node_id=%d (bitmap_index=%d)\n",
 				  peer_node_id, from);
-
-		drbd_suspend_io(device, WRITE_ONLY);
-		drbd_bm_slot_lock(peer_device, "copy_slot/set_many sync_handshake", BM_LOCK_BULK);
-		if (from == -1)
-			drbd_bm_set_many_bits(peer_device, 0, -1UL);
-		else
 			drbd_bm_copy_slot(device, from, peer_device->bitmap_index);
+		}
 		drbd_bm_write(device, NULL);
 		drbd_bm_slot_unlock(peer_device);
 		drbd_resume_io(device);
@@ -8442,7 +8451,9 @@ __change_connection_state(struct drbd_connection *connection,
 	}
 	if (mask.susp) {
 		mask.susp ^= -1;
-		__change_io_susp_user(resource, val.susp);
+		/* Only resume-io lifts a suspend-io. */
+		if (val.susp)
+			__change_io_susp_user(resource, true);
 	}
 	if (mask.susp_nod) {
 		mask.susp_nod ^= -1;
@@ -10252,13 +10263,14 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		 */
 		drbd_err(peer_device, "Aborting Connect, can not thaw IO with an only Consistent peer\n");
 		/* gen-rotate reason: DEGRADE (abort connect; only-Consistent peer,
-		 * cannot thaw).  The connection is torn down below and IO resumes
-		 * either way, which finalizes the writes held towards this peer.
+		 * cannot thaw).  The connection is torn down below; the writes
+		 * held towards this peer are stranded either way, so mint before
+		 * any resume.  A suspend-io stays in place until resume-io lifts
+		 * it.
 		 */
 		drbd_gen_obligation_mint_before_resume(device, NODE_MASK(peer_device->node_id));
 		begin_state_change(resource, &irq_flags, CS_HARD);
 		__change_cstate(connection, C_PROTOCOL_ERROR);
-		__change_io_susp_user(resource, false);
 		end_state_change(resource, &irq_flags, "abort-connect");
 		return -EIO;
 	}

@@ -18,6 +18,7 @@
 #include <linux/random.h>
 #include "drbd_int.h"
 #include "drbd_protocol.h"
+#include "drbd_req.h"
 #include "drbd_state_change.h"
 #include "drbd_debugfs.h"
 #include "drbd_transport.h"
@@ -1572,11 +1573,24 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 
 	if (get_capacity(device->vdisk) != size ||
 	    (device->bitmap && drbd_bm_capacity(device) != size)) {
+		sector_t bm_capacity = device->bitmap ? drbd_bm_capacity(device) : 0;
 		int err = 0;
 
 		if (device->bitmap)
 			err = drbd_bm_resize(device, device->bitmap, size,
 					     !(flags & DDSF_NO_RESYNC));
+		/* Without DDSF_NO_RESYNC the resize has set the new area in
+		 * every slot. Otherwise the new area is unknown data to a
+		 * backup made before.
+		 */
+		if (!err && device->bitmap && size > bm_capacity && (flags & DDSF_NO_RESYNC)) {
+			struct drbd_bitmap *bm = device->bitmap;
+			int cbt_index = drbd_cbt_bitmap_index(device->ldev);
+
+			if (cbt_index != -1)
+				_drbd_bm_set_many_bits(device, cbt_index,
+						       bm_sect_to_bit(bm, bm_capacity), -1UL);
+		}
 		if (unlikely(err)) {
 			/* currently there is only one error: ENOMEM! */
 			size = drbd_bm_capacity(device);
@@ -2550,6 +2564,8 @@ static int used_bitmap_slots(struct drbd_backing_dev *bdev)
 		if (test_bit(__MDF_HAVE_BITMAP, &peer_md->flags))
 			used++;
 	}
+	if (drbd_cbt_bitmap_index(bdev) != -1)
+		used++;
 
 	return used;
 }
@@ -2557,6 +2573,9 @@ static int used_bitmap_slots(struct drbd_backing_dev *bdev)
 static bool bitmap_index_vacant(struct drbd_backing_dev *bdev, int bitmap_index)
 {
 	int node_id;
+
+	if (drbd_cbt_bitmap_index(bdev) == bitmap_index)
+		return false;
 
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
 		struct drbd_peer_md *peer_md = &bdev->md.peers[node_id];
@@ -3038,6 +3057,18 @@ static void decode_md_9(struct meta_data_on_disk_9 *on_disk, struct drbd_md *md)
 		md->history_uuids[i] = be64_to_cpu(on_disk->history_uuids[i]);
 
 	BUILD_BUG_ON(ARRAY_SIZE(md->history_uuids) != ARRAY_SIZE(on_disk->history_uuids));
+
+	memset(&md->cbt, 0, sizeof(md->cbt));
+	md->cbt.bitmap_index = -1;
+	if (md->prev_features & DRBD_MDFF_CBT) {
+		md->cbt.id = be64_to_cpu(on_disk->cbt_bookmark.id);
+		md->cbt.bitmap_uuid = be64_to_cpu(on_disk->cbt_bookmark.bitmap_uuid);
+		md->cbt.bitmap_dagtag = be64_to_cpu(on_disk->cbt_bookmark.bitmap_dagtag);
+		md->cbt.since = be64_to_cpu(on_disk->cbt_bookmark.since);
+		/* only true while I/O stays suspended after the flush */
+		md->cbt.flags = be32_to_cpu(on_disk->cbt_bookmark.flags) & ~CBT_BOOKMARK_FLUSHED;
+		md->cbt.bitmap_index = be32_to_cpu(on_disk->cbt_bookmark.bitmap_index);
+	}
 }
 
 /* Drop the peer flags which the DRBD that last wrote this meta data did not
@@ -3189,6 +3220,20 @@ int drbd_md_decode(struct drbd_adm_ctx *adm_ctx,
 		}
 		/* maybe: for each bitmap_index != -1, create a connection object
 		 * with peer_node_id = i, unless already present. */
+	}
+
+	if (bdev->md.cbt.flags & CBT_BOOKMARK_IN_USE) {
+		int cbt_index = bdev->md.cbt.bitmap_index;
+		bool taken = cbt_index < 0 || cbt_index >= bdev->md.max_peers;
+
+		for (i = 0; i < DRBD_NODE_ID_MAX && !taken; i++)
+			taken = bdev->md.peers[i].bitmap_index == cbt_index;
+		if (taken) {
+			drbd_err_and_skb_info(adm_ctx,
+				"changed block tracking: bitmap index (%d) is invalid or owned by a peer\n",
+				cbt_index);
+			goto err;
+		}
 	}
 
 	rv = NO_ERROR;
@@ -3414,6 +3459,9 @@ int drbd_adm_attach(struct drbd_adm_ctx *adm_ctx)
 			retcode = ERR_INVALID_REQUEST;
 			goto fail;
 		}
+		/* Without a bitmap no write gets tracked. */
+		if (nbc->md.cbt.flags & CBT_BOOKMARK_IN_USE)
+			nbc->md.cbt.flags |= CBT_BOOKMARK_INVALID;
 	}
 	device->last_bm_block_shift = nbc->md.bm_block_shift;
 
@@ -3587,6 +3635,8 @@ int drbd_adm_attach(struct drbd_adm_ctx *adm_ctx)
 	D_ASSERT(device, device->ldev == NULL);
 	device->ldev = nbc;
 	nbc = NULL;
+	/* A cbt-flush of the previous disk says nothing about this one. */
+	clear_bit(CBT_BITMAPS_FLUSHED, &device->flags);
 	new_disk_conf = NULL;
 	drbd_resource_update_rx_alignment(device->resource);
 
@@ -6249,13 +6299,36 @@ static bool io_drained(struct drbd_device *device)
 	return drained;
 }
 
+/* With protocols A and B a write is acked before it reaches the peer's stable
+ * storage; the barrier ack of its epoch says that it did.
+ */
+static bool writes_barrier_acked(struct drbd_resource *resource)
+{
+	struct drbd_connection *connection;
+	bool acked = true;
+
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		if (connection->cstate[NOW] == C_CONNECTED &&
+		    READ_ONCE(connection->req_not_net_done)) {
+			acked = false;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return acked;
+}
+
 int drbd_adm_suspend_io(struct drbd_adm_ctx *adm_ctx)
 {
 	struct drbd_resource *resource;
 	struct drbd_device *device;
 	int retcode = NO_ERROR, vnr, err = 0;
+	long t;
 	struct drbd_suspend_io_parms params = {
 		.bdev_freeze = true,
+		.flush_to_peers = true,
 	};
 
 	resource = adm_ctx->device->resource;
@@ -6274,6 +6347,9 @@ int drbd_adm_suspend_io(struct drbd_adm_ctx *adm_ctx)
 	}
 
 	idr_for_each_entry(&resource->devices, device, vnr)
+		clear_bit(CBT_BITMAPS_FLUSHED, &device->flags);
+
+	idr_for_each_entry(&resource->devices, device, vnr)
 		if (params.bdev_freeze && !test_bit(BDEV_FROZEN, &device->flags)) {
 			err = bdev_freeze(device->vdisk->part0);
 			if (err)
@@ -6288,8 +6364,27 @@ int drbd_adm_suspend_io(struct drbd_adm_ctx *adm_ctx)
 	if (retcode < SS_SUCCESS)
 		goto out;
 
-	idr_for_each_entry(&resource->devices, device, vnr)
-		wait_event_interruptible(device->misc_wait, io_drained(device));
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		if (wait_event_interruptible(device->misc_wait, io_drained(device))) {
+			retcode = ERR_INTR;
+			goto out;
+		}
+	}
+
+	if (!params.flush_to_peers)
+		goto out;
+
+	/* Close the last epoch, so that its barrier goes out. A write that
+	 * only announces out-of-sync blocks becomes done without a barrier ack
+	 * and without a wake-up; recheck now and then for it.
+	 */
+	start_new_tl_epoch(resource);
+	do {
+		t = wait_event_interruptible_timeout(resource->barrier_wait,
+						     writes_barrier_acked(resource), HZ / 10);
+	} while (t == 0);
+	if (t < 0)
+		retcode = ERR_INTR;
 out:
 	adm_ctx->result = retcode;
 	return 0;
@@ -6324,6 +6419,8 @@ int drbd_adm_resume_io(struct drbd_adm_ctx *adm_ctx)
 	 */
 	idr_for_each_entry(&resource->devices, d, vnr)
 		drbd_gen_obligation_mint_before_resume(d, 0);
+	idr_for_each_entry(&resource->devices, d, vnr)
+		drbd_cbt_clear_flushed(d);
 	drbd_suspend_io(device, READ_AND_WRITE);
 	begin_state_change(resource, &irq_flags, CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
 	__change_io_susp_user(resource, false);
@@ -6342,6 +6439,358 @@ int drbd_adm_resume_io(struct drbd_adm_ctx *adm_ctx)
 	mutex_unlock(&adm_ctx->resource->adm_mutex);
  out:
 	adm_ctx->result = retcode;
+	return 0;
+}
+
+/* Like io_drained(), but for a caller that holds an ldev reference itself */
+static bool writes_drained(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+	bool drained = true;
+
+	if (atomic_read(&device->ap_bio_cnt[WRITE]))
+		return false;
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		if (atomic_read(&peer_device->ap_pending_cnt)) {
+			drained = false;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return drained && writes_barrier_acked(device->resource);
+}
+
+static bool peer_writes_executing(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+	bool executing = false;
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		struct drbd_connection *connection = peer_device->connection;
+
+		if (atomic_read(&connection->active_ee_cnt) ||
+		    atomic_read(&connection->backing_ee_cnt)) {
+			executing = true;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return executing;
+}
+
+static bool resync_running(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+	bool running = false;
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
+
+		if ((repl_state >= L_STARTING_SYNC_S && repl_state <= L_WF_SYNC_UUID) ||
+		    repl_is_sync(repl_state)) {
+			running = true;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return running;
+}
+
+/* Write the bitmap and the superblock out, so that a snapshot taken while I/O
+ * stays suspended contains every write up to now in the tracking slot. Issued
+ * on every node with a disk after I/O is suspended on all nodes: the Primary
+ * is drained then, so no write reaches a Secondary either.
+ * Setting the flag before reading the count makes drbd_cbt_mark() count every
+ * write from here on, also when tracking has not started yet.
+ */
+int drbd_adm_cbt_flush(struct drbd_adm_ctx *adm_ctx)
+{
+	struct drbd_device *device = adm_ctx->device;
+	struct drbd_resource *resource = device->resource;
+	enum drbd_ret_code retcode = NO_ERROR;
+	int err;
+
+	if (mutex_lock_interruptible(&resource->adm_mutex)) {
+		retcode = ERR_INTR;
+		goto out;
+	}
+	if (!get_ldev(device)) {
+		retcode = ERR_NO_DISK;
+		goto out_unlock;
+	}
+
+	retcode = ERR_INVALID_REQUEST;
+	if (test_bit(LEGACY_84_MD, &device->flags) || !device->bitmap) {
+		drbd_adm_msg(adm_ctx, "changed block tracking needs v09 meta data and a bitmap");
+		goto out_put;
+	}
+	if (!resource->susp_user[NOW] || !writes_drained(device)) {
+		drbd_adm_msg(adm_ctx, "I/O is not suspended and drained by suspend-io");
+		goto out_put;
+	}
+	if (peer_writes_executing(device)) {
+		drbd_adm_msg(adm_ctx, "peer writes are still executing on this node");
+		goto out_put;
+	}
+	if (resync_running(device)) {
+		drbd_adm_msg(adm_ctx, "a resync is running");
+		goto out_put;
+	}
+	if (device->disk_state[NOW] < D_OUTDATED) {
+		drbd_adm_msg(adm_ctx, "the local disk is %s",
+			     drbd_disk_str(device->disk_state[NOW]));
+		goto out_put;
+	}
+
+	set_bit(CBT_BITMAPS_FLUSHED, &device->flags);
+	/* flag before count; pairs with smp_mb__before_atomic() in drbd_cbt_mark() */
+	smp_mb__after_atomic();
+	device->cbt_flush_writes = atomic_read(&device->cbt_writes);
+
+	err = drbd_bitmap_io(device, &drbd_bm_write, "cbt-flush", BM_LOCK_BULK, NULL);
+	if (!err) {
+		/* Tell a reader of a snapshot of the meta data that its bitmap
+		 * is complete although the activity log is not clean.
+		 */
+		if (drbd_cbt_bitmap_index(device->ldev) != -1)
+			WRITE_ONCE(device->ldev->md.cbt.flags,
+				   device->ldev->md.cbt.flags | CBT_BOOKMARK_FLUSHED);
+		drbd_md_mark_dirty(device);
+		err = drbd_md_sync_if_dirty(device);
+	}
+	if (err)
+		clear_bit(CBT_BITMAPS_FLUSHED, &device->flags);
+	retcode = err ? ERR_IO_MD_DISK : NO_ERROR;
+out_put:
+	put_ldev(device);
+out_unlock:
+	mutex_unlock(&resource->adm_mutex);
+out:
+	adm_ctx->result = retcode;
+	return 0;
+}
+
+/* On a Secondary the position in the write stream is the Primary's dagtag
+ * as last received from it, not the dagtag of this node.
+ */
+static u64 cbt_bookmark_dagtag(struct drbd_resource *resource)
+{
+	struct drbd_connection *connection;
+	u64 dagtag = resource->dagtag_sector;
+
+	if (resource->role[NOW] == R_PRIMARY)
+		return dagtag;
+
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		if (connection->peer_role[NOW] == R_PRIMARY) {
+			dagtag = atomic64_read(&connection->last_dagtag_sector);
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return dagtag;
+}
+
+/* Start a new changed block tracking interval at the bookmark of the snapshot
+ * that was just taken. The snapshot holds the previous interval: the slot was
+ * written out by cbt-flush, and nothing was written since.
+ */
+int drbd_adm_cbt_start(struct drbd_adm_ctx *adm_ctx)
+{
+	struct drbd_device *device = adm_ctx->device;
+	struct drbd_cbt_start_parms parms = { };
+	enum drbd_ret_code retcode = NO_ERROR;
+	struct drbd_md *md;
+	int err, cbt_index;
+
+	err = drbd_adm_overlay_cbt_start_parms(adm_ctx, &parms);
+	if (err) {
+		drbd_adm_msg_overlay_error(adm_ctx, err);
+		return err;
+	}
+
+	if (mutex_lock_interruptible(&adm_ctx->resource->adm_mutex)) {
+		retcode = ERR_INTR;
+		goto out;
+	}
+	if (!get_ldev(device)) {
+		retcode = ERR_NO_DISK;
+		goto out_unlock;
+	}
+	md = &device->ldev->md;
+
+	retcode = ERR_INVALID_REQUEST;
+	if (test_bit(LEGACY_84_MD, &device->flags) || !device->bitmap) {
+		drbd_adm_msg(adm_ctx, "changed block tracking needs v09 meta data and a bitmap");
+		goto out_put;
+	}
+	if (device->disk_state[NOW] < D_OUTDATED) {
+		drbd_adm_msg(adm_ctx, "the local disk is %s",
+			     drbd_disk_str(device->disk_state[NOW]));
+		goto out_put;
+	}
+	if (!device->resource->susp_user[NOW] || !test_bit(CBT_BITMAPS_FLUSHED, &device->flags)) {
+		drbd_adm_msg(adm_ctx, "no cbt-flush since suspend-io");
+		goto out_put;
+	}
+	/* A resync that started since cbt-flush merged the peer's slot into
+	 * ours and wrote it out as its crash safety; clearing the slot now
+	 * would drop that.
+	 */
+	if (resync_running(device)) {
+		drbd_adm_msg(adm_ctx, "a resync is running");
+		goto out_put;
+	}
+	if (atomic_read(&device->cbt_writes) != device->cbt_flush_writes) {
+		drbd_adm_msg(adm_ctx, "the backing device was written to after the bitmap flush");
+		goto out_put;
+	}
+	cbt_index = drbd_cbt_bitmap_index(device->ldev);
+	if (cbt_index == -1)
+		cbt_index = drbd_unallocated_index(device->ldev);
+	if (cbt_index == -1) {
+		drbd_adm_msg(adm_ctx, "no free bitmap slot");
+		goto out_put;
+	}
+
+	drbd_bm_lock(device, "cbt-start", BM_LOCK_BULK);
+	/* Claim the slot before clearing it. A handshake looks for a vacant
+	 * slot without adm_mutex and copies it as the peer's day-0 bitmap;
+	 * an empty slot would declare the peer in sync.
+	 */
+	WRITE_ONCE(md->cbt.bitmap_index, cbt_index);
+	/* publishes bitmap_index; pairs with the acquire in drbd_cbt_bitmap_index() */
+	smp_store_release(&md->cbt.flags, CBT_BOOKMARK_IN_USE);
+	_drbd_bm_clear_many_bits(device, cbt_index, 0, -1UL);
+	md->cbt.id = parms.cbt_id;
+	md->cbt.bitmap_uuid = drbd_current_uuid(device);
+	md->cbt.bitmap_dagtag = cbt_bookmark_dagtag(device->resource);
+	md->cbt.since = ktime_divns(ktime_get_real(), NSEC_PER_SEC);
+	WRITE_ONCE(md->cbt.flags, CBT_BOOKMARK_IN_USE | CBT_BOOKMARK_FLUSHED);
+	/* A write between the check above and the clear lost its bits. */
+	smp_mb();
+	if (atomic_read(&device->cbt_writes) != device->cbt_flush_writes) {
+		WRITE_ONCE(md->cbt.flags, md->cbt.flags | CBT_BOOKMARK_INVALID);
+		drbd_warn(device, "changed block tracking: the backing device was written to during cbt-start\n");
+	}
+	err = drbd_bm_write(device, NULL);
+	drbd_bm_unlock(device);
+	drbd_md_mark_dirty(device);
+	if (!err)
+		err = drbd_md_sync_if_dirty(device);
+	retcode = err ? ERR_IO_MD_DISK : NO_ERROR;
+	if (!err)
+		drbd_info(device, "changed block tracking started at bookmark %016llX (bitmap slot %d)\n",
+			  (unsigned long long)parms.cbt_id, cbt_index);
+out_put:
+	put_ldev(device);
+out_unlock:
+	mutex_unlock(&adm_ctx->resource->adm_mutex);
+out:
+	adm_ctx->result = retcode;
+	return 0;
+}
+
+int drbd_adm_cbt_stop(struct drbd_adm_ctx *adm_ctx)
+{
+	struct drbd_device *device = adm_ctx->device;
+	enum drbd_ret_code retcode = NO_ERROR;
+	int err, cbt_index, from_index;
+	struct drbd_md *md;
+
+	if (mutex_lock_interruptible(&adm_ctx->resource->adm_mutex)) {
+		retcode = ERR_INTR;
+		goto out;
+	}
+	if (!get_ldev(device)) {
+		retcode = ERR_NO_DISK;
+		goto out_unlock;
+	}
+	md = &device->ldev->md;
+	cbt_index = drbd_cbt_bitmap_index(device->ldev);
+	if (cbt_index == -1)
+		goto out_put;
+
+	drbd_suspend_io(device, WRITE_ONLY);
+	if (device->bitmap) {
+		drbd_bm_lock(device, "cbt-stop", BM_LOCK_BULK);
+		/* An unallocated slot tracks writes since day 0, as
+		 * clear_peer_slot() leaves a freed peer slot. Look for one
+		 * while ours is still taken.
+		 */
+		from_index = drbd_unallocated_index(device->ldev);
+		WRITE_ONCE(md->cbt.flags, 0);
+		if (from_index != -1)
+			drbd_bm_copy_slot(device, from_index, cbt_index);
+		else
+			_drbd_bm_set_many_bits(device, cbt_index, 0, -1UL);
+		err = drbd_bm_write(device, NULL);
+		drbd_bm_unlock(device);
+	} else {
+		/* attached without a bitmap: nothing was tracked, no slot to free */
+		WRITE_ONCE(md->cbt.flags, 0);
+		err = 0;
+	}
+	/* bitmap_index stays: a writer that saw IN_USE before the store above
+	 * reads it afterwards. The slot is a day-0 slot now, a bit more in it
+	 * does no harm.
+	 */
+	md->cbt.id = 0;
+	md->cbt.bitmap_uuid = 0;
+	md->cbt.bitmap_dagtag = 0;
+	md->cbt.since = 0;
+	drbd_resume_io(device);
+	drbd_md_mark_dirty(device);
+	if (!err)
+		err = drbd_md_sync_if_dirty(device);
+	retcode = err ? ERR_IO_MD_DISK : NO_ERROR;
+	if (!err)
+		drbd_info(device, "changed block tracking stopped, freed bitmap slot %d\n",
+			  cbt_index);
+out_put:
+	put_ldev(device);
+out_unlock:
+	mutex_unlock(&adm_ctx->resource->adm_mutex);
+out:
+	adm_ctx->result = retcode;
+	return 0;
+}
+
+int drbd_adm_cbt_status(struct drbd_adm_ctx *adm_ctx)
+{
+	struct drbd_device *device = adm_ctx->device;
+	struct drbd_cbt_info info = { };
+	struct drbd_cbt_md *cbt;
+
+	if (!adm_ctx->d->put_cbt_info) {
+		adm_ctx->result = ERR_INVALID_REQUEST;
+		return 0;
+	}
+	if (!get_ldev(device)) {
+		adm_ctx->result = ERR_NO_DISK;
+		return 0;
+	}
+	cbt = &device->ldev->md.cbt;
+	if (cbt->flags & CBT_BOOKMARK_IN_USE) {
+		info.cbt_active = 1;
+		info.cbt_valid = !(cbt->flags & CBT_BOOKMARK_INVALID);
+		info.cbt_bookmark_id = cbt->id;
+		info.cbt_since = cbt->since;
+		info.cbt_bitmap_uuid = cbt->bitmap_uuid;
+		info.cbt_bitmap_dagtag = cbt->bitmap_dagtag;
+	}
+	put_ldev(device);
+
+	adm_ctx->result = adm_ctx->d->put_cbt_info(adm_ctx, &info);
 	return 0;
 }
 
