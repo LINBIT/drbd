@@ -965,10 +965,7 @@ unsigned long drbd_set_sync(struct drbd_device *device, sector_t sector, int siz
 }
 
 /* Record a write to the backing device in the changed block tracking slot.
- * The bits are set before the write is counted: cbt-flush reads the count
- * before it writes the bitmap out, so a write it counted has its bits in that
- * write-out, and a write it did not count makes cbt-start refuse. Called
- * before the write is submitted, with an ldev reference held.
+ * Called before the write is submitted, with an ldev reference held.
  */
 void drbd_cbt_mark(struct drbd_device *device, sector_t sector, sector_t nr_sectors)
 {
@@ -978,12 +975,6 @@ void drbd_cbt_mark(struct drbd_device *device, sector_t sector, sector_t nr_sect
 	if (cbt_index != -1 && bm && nr_sectors)
 		drbd_bm_set_bits(device, cbt_index, bm_sect_to_bit(bm, sector),
 				 bm_sect_to_bit(bm, sector + nr_sectors - 1));
-
-	if (cbt_index != -1 || test_bit(CBT_BITMAPS_FLUSHED, &device->flags)) {
-		/* bits before count; pairs with smp_mb__after_atomic() in drbd_adm_cbt_flush() */
-		smp_mb__before_atomic();
-		atomic_inc(&device->cbt_writes);
-	}
 }
 
 /* A resync rewrites the blocks set in the peer's slot, outside the activity

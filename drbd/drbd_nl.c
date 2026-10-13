@@ -6540,8 +6540,6 @@ static bool resync_running(struct drbd_device *device)
  * stays suspended contains every write up to now in the tracking slot. Issued
  * on every node with a disk after I/O is suspended on all nodes: the Primary
  * is drained then, so no write reaches a Secondary either.
- * Setting the flag before reading the count makes drbd_cbt_mark() count every
- * write from here on, also when tracking has not started yet.
  */
 int drbd_adm_cbt_flush(struct drbd_adm_ctx *adm_ctx)
 {
@@ -6583,9 +6581,7 @@ int drbd_adm_cbt_flush(struct drbd_adm_ctx *adm_ctx)
 	}
 
 	set_bit(CBT_BITMAPS_FLUSHED, &device->flags);
-	/* flag before count; pairs with smp_mb__before_atomic() in drbd_cbt_mark() */
-	smp_mb__after_atomic();
-	device->cbt_flush_writes = atomic_read(&device->cbt_writes);
+	device->cbt_flush_writ_cnt = READ_ONCE(device->writ_cnt);
 
 	err = drbd_bitmap_io(device, &drbd_bm_write, "cbt-flush", BM_LOCK_BULK, NULL);
 	if (!err) {
@@ -6631,6 +6627,18 @@ static u64 cbt_bookmark_dagtag(struct drbd_resource *resource)
 	rcu_read_unlock();
 
 	return dagtag;
+}
+
+/* A write is in ap_bio_cnt or in the peer request counts until it completes,
+ * and in writ_cnt after. Read them in that order, so that one of them has it.
+ */
+static bool written_since_cbt_flush(struct drbd_device *device)
+{
+	if (atomic_read(&device->ap_bio_cnt[WRITE]) || peer_writes_executing(device))
+		return true;
+	/* pairs with the ordered decrement of those counts after writ_cnt += */
+	smp_rmb();
+	return READ_ONCE(device->writ_cnt) != device->cbt_flush_writ_cnt;
 }
 
 /* Start a new changed block tracking interval at the bookmark of the snapshot
@@ -6683,7 +6691,7 @@ int drbd_adm_cbt_start(struct drbd_adm_ctx *adm_ctx)
 		drbd_adm_msg(adm_ctx, "a resync is running");
 		goto out_put;
 	}
-	if (atomic_read(&device->cbt_writes) != device->cbt_flush_writes) {
+	if (written_since_cbt_flush(device)) {
 		drbd_adm_msg(adm_ctx, "the backing device was written to after the bitmap flush");
 		goto out_put;
 	}
@@ -6711,7 +6719,7 @@ int drbd_adm_cbt_start(struct drbd_adm_ctx *adm_ctx)
 	WRITE_ONCE(md->cbt.flags, CBT_BOOKMARK_IN_USE | CBT_BOOKMARK_FLUSHED);
 	/* A write between the check above and the clear lost its bits. */
 	smp_mb();
-	if (atomic_read(&device->cbt_writes) != device->cbt_flush_writes) {
+	if (written_since_cbt_flush(device)) {
 		WRITE_ONCE(md->cbt.flags, md->cbt.flags | CBT_BOOKMARK_INVALID);
 		drbd_warn(device, "changed block tracking: the backing device was written to during cbt-start\n");
 	}

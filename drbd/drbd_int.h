@@ -1956,11 +1956,7 @@ struct drbd_device {
 	unsigned int multi_bio_cnt; /* peer_reqs that needed multiple bios */
 	atomic_t ap_bio_cnt[2];	 /* Requests we need to complete. [READ] and [WRITE] */
 	atomic_t local_cnt;	 /* Waiting for local completion */
-	/* Writes to the backing device that changed block tracking has seen;
-	 * cbt_flush_writes is the count at the last cbt-flush.
-	 */
-	atomic_t cbt_writes;
-	int cbt_flush_writes;
+	unsigned int cbt_flush_writ_cnt; /* writ_cnt at the last cbt-flush */
 	atomic_t ap_actlog_cnt;  /* Requests waiting for activity log */
 	atomic_t wait_for_actlog; /* Peer requests waiting for activity log */
 	/* worst case extent count needed to satisfy both requests and peer requests
