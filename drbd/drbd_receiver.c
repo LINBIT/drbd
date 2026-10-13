@@ -1449,6 +1449,7 @@ retry:
 		mutex_unlock(&connection->mutex[DATA_STREAM]);
 	conn_disconnect(connection);
 	schedule_timeout_interruptible(HZ);
+	drbd_thread_consume_restart(&connection->receiver);
 	goto start;
 
 abort:
