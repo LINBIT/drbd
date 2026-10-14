@@ -478,8 +478,8 @@ int tl_release(struct drbd_connection *connection,
 	/* urgently flush out peer acks for P_CONFIRM_STABLE */
 	if (req_y) {
 		drbd_flush_peer_acks(resource);
-	} else if (barrier_nr == connection->send.last_sent_epoch_nr) {
-		clear_bit(BARRIER_ACK_PENDING, &connection->flags);
+	} else {
+		WRITE_ONCE(connection->last_acked_epoch_nr, barrier_nr);
 		wake_up(&resource->barrier_wait);
 	}
 

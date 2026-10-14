@@ -12328,7 +12328,8 @@ static void conn_disconnect(struct drbd_connection *connection)
 	clear_bit(RECEIVED_DAGTAG, &connection->flags);
 
 	/* Release any threads waiting for a barrier to be acked. */
-	clear_bit(BARRIER_ACK_PENDING, &connection->flags);
+	WRITE_ONCE(connection->last_acked_epoch_nr,
+		   READ_ONCE(connection->send.last_sent_epoch_nr));
 	wake_up(&resource->barrier_wait);
 
 	drbd_info(connection, "Connection closed\n");

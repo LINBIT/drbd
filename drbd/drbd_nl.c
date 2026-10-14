@@ -924,7 +924,8 @@ bool barrier_pending(struct drbd_resource *resource)
 
 	rcu_read_lock();
 	for_each_connection_rcu(connection, resource) {
-		if (test_bit(BARRIER_ACK_PENDING, &connection->flags)) {
+		if (READ_ONCE(connection->last_acked_epoch_nr) !=
+		    READ_ONCE(connection->send.last_sent_epoch_nr)) {
 			rv = true;
 			break;
 		}
