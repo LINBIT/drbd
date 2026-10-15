@@ -2788,7 +2788,7 @@ static int try_to_promote(struct drbd_device *device, long timeout, bool ndelay)
 		long t;
 
 		snprintf_current_comm_pid_tag(&tag, "auto-promote");
-		rv = drbd_set_role(resource, R_PRIMARY, false, tag.buf, NULL);
+		rv = drbd_set_role(resource, R_PRIMARY, 0, tag.buf, NULL);
 		timeout -= jiffies - start;
 
 		if (ndelay || rv >= SS_SUCCESS || timeout <= 0) {
@@ -3197,7 +3197,7 @@ static void drbd_release(struct gendisk *gd)
 		sigfillset(&mask);
 		sigprocmask(SIG_BLOCK, &mask, &oldmask);
 
-		rv = drbd_set_role(resource, R_SECONDARY, false, tag.buf, NULL);
+		rv = drbd_set_role(resource, R_SECONDARY, 0, tag.buf, NULL);
 		if (rv < SS_SUCCESS)
 			drbd_warn(resource, "Auto-demote failed: %s (%d)\n",
 					drbd_set_st_err_str(rv), rv);

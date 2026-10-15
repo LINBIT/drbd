@@ -848,8 +848,8 @@ static bool wait_up_to_date(struct drbd_resource *resource)
 }
 
 enum drbd_state_rv
-drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force, const char *tag,
-		struct drbd_adm_ctx *ctx)
+drbd_set_role(struct drbd_resource *resource, enum drbd_role role,
+	      enum chg_state_flags flags, const char *tag, struct drbd_adm_ctx *ctx)
 {
 	struct drbd_device *device;
 	int vnr, try = 0;
@@ -857,8 +857,10 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force, c
 	enum drbd_state_rv rv = SS_UNKNOWN_ERROR;
 	bool retried_ss_two_primaries = false, retried_ss_primary_nop = false;
 	const char *err_str = NULL;
-	enum chg_state_flags flags = CS_ALREADY_SERIALIZED | CS_DONT_RETRY | CS_WAIT_COMPLETE;
+	bool force = flags & CS_FORCE_ROLE;
 	bool fenced_peers = false;
+
+	flags |= CS_ALREADY_SERIALIZED | CS_DONT_RETRY | CS_WAIT_COMPLETE;
 
 retry:
 
@@ -1232,7 +1234,7 @@ static int drbd_adm_set_role(struct drbd_adm_ctx *adm_ctx, enum drbd_role new_ro
 
 	rv = drbd_set_role(resource,
 				new_role,
-				parms.force,
+				parms.force ? CS_FORCE_ROLE : 0,
 				new_role == R_PRIMARY ? "primary" : "secondary",
 				adm_ctx);
 
@@ -8069,7 +8071,7 @@ int drbd_adm_down(struct drbd_adm_ctx *adm_ctx)
 	}
 	set_bit(DOWN_IN_PROGRESS, &resource->flags);
 	/* demote */
-	retcode = drbd_set_role(resource, R_SECONDARY, false, "down", adm_ctx);
+	retcode = drbd_set_role(resource, R_SECONDARY, 0, "down", adm_ctx);
 	if (retcode < SS_SUCCESS) {
 		drbd_adm_msg(adm_ctx, "%s", "failed to demote");
 		goto out;

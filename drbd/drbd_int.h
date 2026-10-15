@@ -2714,8 +2714,8 @@ void drbd_reconsider_queue_parameters(struct drbd_device *device,
 				      struct drbd_backing_dev *bdev);
 bool barrier_pending(struct drbd_resource *resource);
 enum drbd_state_rv
-drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force,
-	      const char *tag, struct drbd_adm_ctx *ctx);
+drbd_set_role(struct drbd_resource *resource, enum drbd_role role,
+	      enum chg_state_flags flags, const char *tag, struct drbd_adm_ctx *ctx);
 void conn_try_outdate_peer_async(struct drbd_connection *connection);
 int drbd_maybe_khelper(struct drbd_device *device,
 		       struct drbd_connection *connection, char *cmd);
