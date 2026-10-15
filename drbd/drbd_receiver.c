@@ -7900,6 +7900,26 @@ static bool drbd_other_peer_smaller(struct drbd_peer_device *reference_peer_devi
 	return smaller;
 }
 
+static bool other_peer_has_usable_data(struct drbd_peer_device *reference_peer_device)
+{
+	struct drbd_device *device = reference_peer_device->device;
+	struct drbd_peer_device *peer_device;
+	bool usable = false;
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		if (peer_device == reference_peer_device)
+			continue;
+
+		if (peer_device->repl_state[NOW] >= L_ESTABLISHED &&
+		    peer_device->disk_state[NOW] >= D_OUTDATED)
+			usable = true;
+	}
+	rcu_read_unlock();
+
+	return usable;
+}
+
 /* Maximum bio size that a protocol version supports. */
 static unsigned int conn_max_bio_size(struct drbd_connection *connection)
 {
@@ -8099,10 +8119,12 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		new_size = drbd_new_dev_size(device, 0, p_usize, ddsf);
 
 		/* Never shrink a device with usable data during connect,
-		 * or "attach" on the peer.
+		 * or "attach" on the peer. That includes usable data on
+		 * another connected peer, our current size comes from it.
 		 * But allow online shrinking if we are connected. */
 		if (new_size < cur_size &&
-		    device->disk_state[NOW] >= D_OUTDATED &&
+		    (device->disk_state[NOW] >= D_OUTDATED ||
+		     other_peer_has_usable_data(peer_device)) &&
 		    (peer_device->repl_state[NOW] < L_ESTABLISHED || peer_device->disk_state[NOW] == D_DISKLESS)) {
 			drbd_err(peer_device, "The peer's disk size is too small! (%llu < %llu sectors)\n",
 					(unsigned long long)new_size, (unsigned long long)cur_size);
