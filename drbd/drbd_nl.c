@@ -847,6 +847,12 @@ static bool wait_up_to_date(struct drbd_resource *resource)
 	return up_to_date > initial_up_to_date;
 }
 
+static void set_role_backoff(enum chg_state_flags flags, long timeout)
+{
+	__set_current_state(flags & CS_NO_SIGNALS ? TASK_UNINTERRUPTIBLE : TASK_INTERRUPTIBLE);
+	schedule_timeout(timeout);
+}
+
 enum drbd_state_rv
 drbd_set_role(struct drbd_resource *resource, enum drbd_role role,
 	      enum chg_state_flags flags, const char *tag, struct drbd_adm_ctx *ctx)
@@ -876,8 +882,12 @@ retry:
 
 		kfree(err_str);
 		err_str = NULL;
-		rv = stable_state_change(resource,
-			change_role(resource, role, flags, tag, &err_str));
+		if (flags & CS_NO_SIGNALS)
+			rv = stable_state_change_no_signals(resource,
+				change_role(resource, role, flags, tag, &err_str));
+		else
+			rv = stable_state_change(resource,
+				change_role(resource, role, flags, tag, &err_str));
 
 		if (rv == SS_TIMEOUT || rv == SS_CONCURRENT_ST_CHG) {
 			long timeout = twopc_retry_timeout(resource, try);
@@ -885,7 +895,7 @@ retry:
 			   sleeps on state_sem. Give it up, and retry in a short
 			   while */
 			up(&resource->state_sem);
-			schedule_timeout_interruptible(timeout);
+			set_role_backoff(flags, timeout);
 			goto retry;
 		}
 		/* in case we first succeeded to outdate,
@@ -1011,7 +1021,7 @@ retry:
 				timeout = 1;
 
 			up(&resource->state_sem);
-			schedule_timeout_interruptible(timeout);
+			set_role_backoff(flags, timeout);
 			goto retry;
 		}
 

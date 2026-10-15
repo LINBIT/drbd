@@ -46,6 +46,7 @@ enum chg_state_flags {
 	CS_FP_OUTDATE_PEERS = 1 << 16, /* force promotion by marking unknown peers as outdated */
 	CS_FS_IGN_OPENERS = 1 << 17, /* force demote, ignore openers */
 	CS_FORCE_ROLE    = 1 << 18, /* drbd_set_role(): the user forces the role change */
+	CS_NO_SIGNALS    = 1 << 19, /* implicit change: ignore the caller's signals */
 };
 
 void drbd_resume_al(struct drbd_device *device);
@@ -93,17 +94,14 @@ union drbd_state drbd_get_peer_device_state(struct drbd_peer_device *peer_device
  * that matter hold resource->state_sem across this, so waiting with no bound at
  * all also blocks this node's own connect attempts.
  */
-#define stable_state_change(resource, change_state) ({				\
+#define __stable_state_change(resource, change_state, wait_timeout) ({		\
 	struct drbd_resource *__resource = (resource);				\
 	enum drbd_state_rv __rv;						\
-	unsigned int __seq;							\
-	long __t;								\
 										\
 	for (;;) {								\
 		long __to = 2 * twopc_timeout(__resource);			\
-										\
-		__seq = READ_ONCE(__resource->state_change_seq);		\
-		__t = wait_event_interruptible_timeout(__resource->state_wait,	\
+		unsigned int __seq = READ_ONCE(__resource->state_change_seq);	\
+		long __t = wait_timeout(__resource->state_wait,			\
 			(__rv = (change_state)) != SS_IN_TRANSIENT_STATE, __to); \
 		if (__t < 0) {							\
 			__rv = -SS_UNKNOWN_ERROR;				\
@@ -121,6 +119,13 @@ union drbd_state drbd_get_peer_device_state(struct drbd_peer_device *peer_device
 	}									\
 	(int)__rv;								\
 })
+
+#define stable_state_change(resource, change_state) \
+	__stable_state_change(resource, change_state, wait_event_interruptible_timeout)
+
+/* For a change made with CS_NO_SIGNALS. */
+#define stable_state_change_no_signals(resource, change_state) \
+	__stable_state_change(resource, change_state, wait_event_timeout)
 
 void nested_twopc_work(struct work_struct *work);
 void drbd_maybe_cluster_wide_reply(struct drbd_resource *resource);
