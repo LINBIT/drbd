@@ -9890,6 +9890,7 @@ match:
 		struct drbd_device *device;
 
 		device = (peer_device ?: conn_peer_device(connection, pi->vnr))->device;
+		twopc_suspend_io(device);
 		if (get_ldev(device)) {
 			if (resource->role[NOW] == R_PRIMARY)
 				reply->diskful_primary_nodes = NODE_MASK(resource->res_opts.node_id);
@@ -9969,8 +9970,21 @@ match:
 			rv = far_away_change(connection, &request, reply, flags);
 		break;
 	case TWOPC_RESIZE:
-		if (flags & CS_PREPARE)
+		if (flags & CS_PREPARE) {
 			rv = drbd_support_2pc_resize(resource);
+			/* The YES must mean "nothing in flight from here", see
+			 * twopc_suspend_io(). Writes only: a read this node has
+			 * outstanding on this connection completes through this
+			 * receiver thread, while write acks arrive on the
+			 * ack receiver.
+			 */
+			if (rv >= SS_SUCCESS) {
+				struct drbd_peer_device *pd;
+
+				pd = peer_device ?: conn_peer_device(connection, pi->vnr);
+				twopc_drain_io(pd->device, WRITE_ONLY);
+			}
+		}
 		break;
 	}
 
