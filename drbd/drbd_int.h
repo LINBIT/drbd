@@ -2200,6 +2200,7 @@ void drbd_thread_current_set_cpu(struct drbd_thread *thi);
 int tl_release(struct drbd_connection *connection, uint64_t o_block_id,
 	       uint64_t y_block_id, unsigned int barrier_nr,
 	       unsigned int set_size);
+int wait_for_barrier_acks_interruptible(struct drbd_resource *resource);
 
 int __drbd_send_protocol(struct drbd_connection *connection,
 			 enum drbd_packet cmd);

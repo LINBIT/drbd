@@ -6356,7 +6356,6 @@ int drbd_adm_suspend_io(struct drbd_adm_ctx *adm_ctx)
 	struct drbd_resource *resource;
 	struct drbd_device *device;
 	int retcode = NO_ERROR, vnr, err = 0;
-	long t;
 	struct drbd_suspend_io_parms params = {
 		.bdev_freeze = true,
 		.flush_to_peers = true,
@@ -6405,16 +6404,7 @@ int drbd_adm_suspend_io(struct drbd_adm_ctx *adm_ctx)
 	if (!params.flush_to_peers)
 		goto out;
 
-	/* Close the last epoch, so that its barrier goes out. A write that
-	 * only announces out-of-sync blocks becomes done without a barrier ack
-	 * and without a wake-up; recheck now and then for it.
-	 */
-	start_new_tl_epoch(resource);
-	do {
-		t = wait_event_interruptible_timeout(resource->barrier_wait,
-						     writes_barrier_acked(resource), HZ / 10);
-	} while (t == 0);
-	if (t < 0)
+	if (wait_for_barrier_acks_interruptible(resource))
 		retcode = ERR_INTR;
 out:
 	adm_ctx->result = retcode;

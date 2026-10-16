@@ -3165,6 +3165,18 @@ static void wait_for_barrier_acks(struct drbd_resource *resource)
 	wait_event(resource->barrier_wait, barriers_acked(resource, epoch, &done));
 }
 
+/* Like wait_for_barrier_acks(); returns -ERESTARTSYS when interrupted */
+int wait_for_barrier_acks_interruptible(struct drbd_resource *resource)
+{
+	unsigned int epoch;
+	u64 done = 0;
+
+	start_new_tl_epoch(resource);
+	epoch = atomic_read(&resource->current_tle_nr);
+	return wait_event_interruptible(resource->barrier_wait,
+					barriers_acked(resource, epoch, &done));
+}
+
 static void drbd_fsync_device(struct drbd_device *device)
 {
 	struct drbd_resource *resource = device->resource;
