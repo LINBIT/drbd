@@ -3938,13 +3938,14 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 static void re_init_if_first_write(struct drbd_connection *connection, unsigned int epoch)
 {
 	if (!connection->send.seen_any_write_yet) {
-		connection->send.seen_any_write_yet = true;
 		connection->send.current_epoch_nr = epoch;
 		connection->send.current_epoch_writes = 0;
 		connection->send.last_sent_barrier_jif = jiffies;
 		/* no barrier is pending; the first one of this connection is @epoch */
 		WRITE_ONCE(connection->send.last_sent_epoch_nr, epoch - 1);
 		WRITE_ONCE(connection->last_acked_epoch_nr, epoch - 1);
+		/* pairs with smp_load_acquire() in barriers_acked() */
+		smp_store_release(&connection->send.seen_any_write_yet, true);
 	}
 }
 
@@ -3971,7 +3972,10 @@ static void maybe_send_barrier(struct drbd_connection *connection, unsigned int 
 
 	if (connection->send.current_epoch_writes)
 		drbd_send_barrier(connection);
-	connection->send.current_epoch_nr = epoch;
+	/* after last_sent_epoch_nr; pairs with smp_load_acquire() in barriers_acked() */
+	smp_store_release(&connection->send.current_epoch_nr, epoch);
+	if (wq_has_sleeper(&connection->resource->barrier_wait))
+		wake_up(&connection->resource->barrier_wait);
 }
 
 /* The reconcile peer we asserted UpToDate on its predecessor generation has

@@ -3110,6 +3110,61 @@ restart:
 	rcu_read_unlock();
 }
 
+/* Barrier numbers are epoch numbers, with gaps. Once the sender is past @epoch,
+ * the barriers of earlier epochs are acked if all are, or if one >= @epoch - 1 is.
+ */
+static bool barriers_acked(struct drbd_resource *resource, unsigned int epoch, u64 *done)
+{
+	struct drbd_connection *connection;
+	bool acked = true;
+
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		u64 mask = NODE_MASK(connection->peer_node_id);
+		bool seen;
+		int epoch_nr, sent, ack;
+
+		if (*done & mask)
+			continue;
+		/* without the connection, the peer gets the writes by resync */
+		if (connection->cstate[NOW] != C_CONNECTED) {
+			*done |= mask;
+			continue;
+		}
+		/* pairs with smp_store_release() in re_init_if_first_write() */
+		seen = smp_load_acquire(&connection->send.seen_any_write_yet);
+		/* pairs with smp_store_release() in maybe_send_barrier() */
+		epoch_nr = smp_load_acquire(&connection->send.current_epoch_nr);
+		if (seen && (int)(epoch_nr - epoch) < 0) {
+			acked = false;
+			break;
+		}
+		sent = READ_ONCE(connection->send.last_sent_epoch_nr);
+		ack = READ_ONCE(connection->last_acked_epoch_nr);
+		if (ack != sent && (int)(ack - (epoch - 1)) < 0) {
+			acked = false;
+			break;
+		}
+		*done |= mask;
+	}
+	rcu_read_unlock();
+
+	return acked;
+}
+
+/* Close the epoch, wait for each connected peer's barrier acks of the writes
+ * in earlier epochs. A later write delays it by at most one barrier ack.
+ */
+static void wait_for_barrier_acks(struct drbd_resource *resource)
+{
+	unsigned int epoch;
+	u64 done = 0;
+
+	start_new_tl_epoch(resource);
+	epoch = atomic_read(&resource->current_tle_nr);
+	wait_event(resource->barrier_wait, barriers_acked(resource, epoch, &done));
+}
+
 static void drbd_fsync_device(struct drbd_device *device)
 {
 	struct drbd_resource *resource = device->resource;
@@ -3122,14 +3177,7 @@ static void drbd_fsync_device(struct drbd_device *device)
 	 * immediately after a write. */
 	wait_event(device->misc_wait, !atomic_read(&device->ap_bio_cnt[WRITE]));
 
-	if (start_new_tl_epoch(resource)) {
-		struct drbd_connection *connection;
-		u64 im;
-
-		for_each_connection_ref(connection, im, resource)
-			drbd_flush_workqueue(&connection->sender_work);
-	}
-	wait_event(resource->barrier_wait, !barrier_pending(resource));
+	wait_for_barrier_acks(resource);
 	/* After waiting for pending barriers, we got any possible NEG_ACKs,
 	   and see them in wait_for_peer_disk_updates() */
 	wait_for_peer_disk_updates(resource);
