@@ -3682,6 +3682,35 @@ static bool check_sender_todo(struct drbd_connection *connection)
 		|| !list_empty(&connection->todo.work_list);
 }
 
+/* A request can leave the transfer log before this sender walked it, for
+ * example a write not sent to this peer, and attach can raise the dagtag
+ * without a request. Then seen_dagtag_sector stays behind until the next
+ * request. With tl_update_lock held no request is between its dagtag update
+ * and its insertion into the transfer log; if this sender has seen the last
+ * request in it, it has seen all requests.
+ */
+static bool seen_all_requests(struct drbd_connection *connection)
+{
+	struct drbd_resource *resource = connection->resource;
+	struct drbd_request *last;
+	bool seen;
+
+	if (dagtag_newer_eq(connection->send.seen_dagtag_sector,
+			    READ_ONCE(resource->dagtag_sector)))
+		return true;
+
+	spin_lock_irq(&resource->tl_update_lock);
+	last = list_empty(&resource->transfer_log) ? NULL :
+		list_last_entry(&resource->transfer_log, struct drbd_request, tl_requests);
+	seen = !last || dagtag_newer_eq(connection->send.seen_dagtag_sector,
+					last->dagtag_sector);
+	if (seen)
+		connection->send.seen_dagtag_sector = resource->dagtag_sector;
+	spin_unlock_irq(&resource->tl_update_lock);
+
+	return seen;
+}
+
 static void wait_for_sender_todo(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
@@ -3740,7 +3769,7 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 			 * to ensure that we do not send a barrier early in
 			 * this case. If there is such a request then this
 			 * sender will be woken, so it is OK to schedule(). */
-			if (dagtag_newer_eq(connection->send.seen_dagtag_sector, READ_ONCE(resource->dagtag_sector))) {
+			if (seen_all_requests(connection)) {
 				finish_wait(&connection->sender_work.q_wait, &wait);
 				maybe_send_barrier(connection,
 						connection->send.current_epoch_nr + 1);
