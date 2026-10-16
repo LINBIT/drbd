@@ -1104,6 +1104,7 @@ enum resource_flag {
 	TWOPC_WORK_PENDING,     /* Set while work for sending reply is scheduled */
 	TWOPC_EXECUTED,         /* Commited or aborted */
 	TWOPC_STATE_CHANGE_PENDING, /* set between sending commit and changing local state */
+	TWOPC_PREPARING,	/* participant, prepare not yet forwarded: no reply may go out */
 
 	TRY_BECOME_UP_TO_DATE_PENDING,
 

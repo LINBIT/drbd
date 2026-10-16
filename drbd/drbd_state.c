@@ -1139,6 +1139,7 @@ void __clear_remote_state_change(struct drbd_resource *resource)
 	 * when_done_lock() until the work runs.
 	 */
 	clear_bit(TWOPC_WORK_PENDING, &resource->flags);
+	clear_bit(TWOPC_PREPARING, &resource->flags);
 	drbd_clear_twopc_replies(resource);
 
 	if (is_connect && resource->twopc_prepare_reply_cmd == 0) {
@@ -6665,7 +6666,13 @@ void drbd_maybe_cluster_wide_reply(struct drbd_resource *resource)
 {
 	lockdep_assert_held(&resource->state_rwlock);
 
-	if (!resource->remote_state_change || !cluster_wide_reply_ready(resource))
+	/* Until this node forwarded the prepare, none of its children is
+	 * prepared, and cluster_wide_reply_ready() would vacuously answer YES
+	 * for a transaction this node has not even evaluated yet.
+	 * nested_twopc_request() re-derives the reply once it is clear.
+	 */
+	if (!resource->remote_state_change || test_bit(TWOPC_PREPARING, &resource->flags) ||
+	    !cluster_wide_reply_ready(resource))
 		return;
 
 	if (resource->twopc_reply.initiator_node_id == resource->res_opts.node_id) {
@@ -6707,6 +6714,12 @@ nested_twopc_request(struct drbd_resource *resource, struct twopc_request *reque
 	rv = __cluster_wide_request(resource, request, reach_immediately);
 	have_peers = rv == SS_CW_SUCCESS;
 	if (cmd == P_TWOPC_PREPARE || cmd == P_TWOPC_PREP_RSZ) {
+		write_lock_irq(&resource->state_rwlock);
+		/* The flag may belong to a later transaction already */
+		if (resource->twopc_reply.tid == request->tid)
+			clear_bit(TWOPC_PREPARING, &resource->flags);
+		write_unlock_irq(&resource->state_rwlock);
+
 		if (rv < SS_SUCCESS) {
 			twopc_end_nested(resource, request->tid, P_TWOPC_NO, false);
 		} else if (!have_peers && cluster_wide_reply_ready(resource)) {
