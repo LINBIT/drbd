@@ -661,6 +661,7 @@ enum device_flag {
 	BDEV_FROZEN,		/* called bdev_freeze(), needs bdev_thaw() on resume-io */
 	CBT_BITMAPS_FLUSHED,	/* cbt-flush wrote the bitmap during this suspend-io */
 	RS_DEPTH_WAITERS,	/* a peer device has RS_DEPTH_DEFERRED set */
+	TWOPC_IO_SUSPENDED,	/* application I/O suspended until the running 2PC ends */
 };
 
 /* The data-generation obligation of one volume.  A divergence-start event
@@ -2689,7 +2690,12 @@ enum suspend_scope {
 	READ_AND_WRITE,
 	WRITE_ONLY
 };
+void __drbd_suspend_io(struct drbd_device *device);
 void drbd_suspend_io(struct drbd_device *device, enum suspend_scope ss);
+bool drbd_wait_io_drained(struct drbd_device *device, enum suspend_scope ss, long timeout);
+/* in drbd_state.c */
+void twopc_suspend_io(struct drbd_device *device);
+void twopc_drain_io(struct drbd_device *device, enum suspend_scope ss);
 int drbd_suspend_io_interruptible(struct drbd_device *device, enum suspend_scope ss);
 void drbd_resume_io(struct drbd_device *device);
 char *ppsize(char *buf, unsigned long long size);

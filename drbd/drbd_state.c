@@ -1080,13 +1080,56 @@ static void drbd_clear_twopc_replies(struct drbd_resource *resource)
 	rcu_read_unlock();
 }
 
+/* A participant of a resize keeps its application I/O suspended until the
+ * transaction ends here, so that no write is in flight on any link when the
+ * COMMIT arrives and every node writes its bitmap in parallel. A participant
+ * takes it in the state_rwlock section that makes it one, the initiator once
+ * it knows that it commits; either way under the lock that orders it against
+ * the end of the transaction.
+ */
+void twopc_suspend_io(struct drbd_device *device)
+{
+	lockdep_assert_held(&device->resource->state_rwlock);
+
+	if (!test_and_set_bit(TWOPC_IO_SUSPENDED, &device->flags))
+		__drbd_suspend_io(device);
+}
+
+/* The peers' 2PC timers start when they receive the prepare. The initiator's
+ * drain before the COMMIT adds to a peer's drain before its reply, and
+ * forwarded prepares chain the drains, so their sum has to stay well below
+ * the 2PC timeout. A drain that does not finish in time falls back to
+ * serialized bitmap writes; a 2PC timeout on a peer would leave the cluster
+ * with diverging sizes.
+ */
+static long twopc_drain_timeout(struct drbd_resource *resource)
+{
+	return twopc_timeout(resource) / 8;
+}
+
+void twopc_drain_io(struct drbd_device *device, enum suspend_scope ss)
+{
+	long timeout = twopc_drain_timeout(device->resource);
+
+	if (!drbd_wait_io_drained(device, ss, timeout))
+		drbd_info(device, "Application I/O did not drain within %ums, continuing size change\n",
+			  jiffies_to_msecs(timeout));
+}
+
 void __clear_remote_state_change(struct drbd_resource *resource)
 {
 	bool is_connect = resource->twopc_reply.is_connect;
 	int initiator_node_id = resource->twopc_reply.initiator_node_id;
 	struct drbd_connection *connection;
+	struct drbd_device *device;
+	int vnr;
 
 	lockdep_assert_held(&resource->state_rwlock);
+
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		if (test_and_clear_bit(TWOPC_IO_SUSPENDED, &device->flags))
+			drbd_resume_io(device);
+	}
 
 	resource->remote_state_change = false;
 	resource->twopc_reply.initiator_node_id = -1;
@@ -6505,8 +6548,25 @@ retry:
 	}
 
 	request.cmd = commit_it ? P_TWOPC_COMMIT : P_TWOPC_ABORT;
-	if (have_peers)
+	if (have_peers) {
+		/* A write queued behind the COMMIT on the data socket reaches
+		 * the peer only after its bitmap write, and our own drain in
+		 * drbd_determine_dev_size() would wait for that. Reads too:
+		 * this is not a receiver, and a read in flight to a peer is
+		 * answered only after the peer's bitmap write as well.
+		 * Not earlier: a request sent during the prepare phase sits
+		 * behind the prepare on the peer's data socket and is answered
+		 * once that receiver has replied, so this drain covers it, and
+		 * a transaction that does not commit freezes nothing.
+		 */
+		if (commit_it) {
+			write_lock_irq(&resource->state_rwlock);
+			twopc_suspend_io(device);
+			write_unlock_irq(&resource->state_rwlock);
+			twopc_drain_io(device, READ_AND_WRITE);
+		}
 		twopc_phase2(resource, &request, reach_immediately);
+	}
 
 	if (commit_it) {
 		struct twopc_resize *tr = &resource->twopc.resize;
