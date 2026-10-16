@@ -2691,7 +2691,6 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 static int drbd_send_barrier(struct drbd_connection *connection)
 {
 	struct p_barrier *p;
-	int err;
 
 	p = conn_prepare_command(connection, sizeof(*p), DATA_STREAM);
 	if (!p)
@@ -2699,17 +2698,11 @@ static int drbd_send_barrier(struct drbd_connection *connection)
 
 	p->barrier = connection->send.current_epoch_nr;
 	p->pad = 0;
-	connection->send.last_sent_epoch_nr = connection->send.current_epoch_nr;
+	WRITE_ONCE(connection->send.last_sent_epoch_nr, connection->send.current_epoch_nr);
 	connection->send.current_epoch_writes = 0;
 	connection->send.last_sent_barrier_jif = jiffies;
 
-	set_bit(BARRIER_ACK_PENDING, &connection->flags);
-	err = send_command(connection, -1, P_BARRIER, DATA_STREAM);
-	if (err) {
-		clear_bit(BARRIER_ACK_PENDING, &connection->flags);
-		wake_up(&connection->resource->barrier_wait);
-	}
-	return err;
+	return send_command(connection, -1, P_BARRIER, DATA_STREAM);
 }
 
 static bool need_unplug(struct drbd_connection *connection)
@@ -3949,6 +3942,9 @@ static void re_init_if_first_write(struct drbd_connection *connection, unsigned 
 		connection->send.current_epoch_nr = epoch;
 		connection->send.current_epoch_writes = 0;
 		connection->send.last_sent_barrier_jif = jiffies;
+		/* no barrier is pending; the first one of this connection is @epoch */
+		WRITE_ONCE(connection->send.last_sent_epoch_nr, epoch - 1);
+		WRITE_ONCE(connection->last_acked_epoch_nr, epoch - 1);
 	}
 }
 

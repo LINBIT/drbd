@@ -936,7 +936,6 @@ static int connection_debug_show(struct seq_file *m, void *ignored)
 	pretty_print_bit(TWOPC_RETRY);
 	pretty_print_bit(CONN_DRY_RUN);
 	pretty_print_bit(DISCONNECT_EXPECTED);
-	pretty_print_bit(BARRIER_ACK_PENDING);
 	pretty_print_bit(DATA_CORKED);
 	pretty_print_bit(CONTROL_CORKED);
 	pretty_print_bit(C_UNREGISTERED);
@@ -956,6 +955,9 @@ static int connection_debug_show(struct seq_file *m, void *ignored)
 	u2 = connection->send.current_epoch_nr;
 	seq_printf(m, "resource->current_tle_nr: %u\n", u1);
 	seq_printf(m, "   send.current_epoch_nr: %u (%d)\n", u2, (int)(u2 - u1));
+	seq_printf(m, "   last barrier sent, acked: %u, %u\n",
+		   READ_ONCE(connection->send.last_sent_epoch_nr),
+		   READ_ONCE(connection->last_acked_epoch_nr));
 
 	ull1 = resource->dagtag_sector;
 	ull2 = resource->last_peer_acked_dagtag;

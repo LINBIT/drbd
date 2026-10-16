@@ -1069,7 +1069,6 @@ enum connection_flag {
 	TWOPC_RETRY,
 	CONN_DRY_RUN,		/* Expect disconnect after resync handshake. */
 	DISCONNECT_EXPECTED,
-	BARRIER_ACK_PENDING,
 	CORKED,
 	DATA_CORKED = CORKED,	/* used as computed value CORKED + DATA_STREAM */
 	CONTROL_CORKED,		/* used as computed value CORKED + CONTROL_STREAM */
@@ -1400,6 +1399,7 @@ struct drbd_connection {
 	u32 agreed_features;
 	atomic_t ap_in_flight; /* App sectors in flight (waiting for ack) */
 	atomic_t rs_in_flight; /* Resync sectors in flight */
+	int last_acked_epoch_nr; /* of the last P_BARRIER_ACK, set in tl_release() */
 
 	struct drbd_work connect_timer_work;
 	struct timer_list connect_timer;
