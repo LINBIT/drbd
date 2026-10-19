@@ -143,7 +143,8 @@ static void print_one_age_or_dash(struct seq_file *m, struct drbd_request *req,
 		unsigned int s = req->net_rq_state[peer_device->node_id];
 
 		if (s & set_mask && !(s & clear_mask)) {
-			ktime_t ktime = ktime_sub(now, memberat(req, ktime_t, offset));
+			ktime_t ktime = ktime_sub(now, memberat(req, ktime_t,
+					offset + peer_device->node_id * sizeof(ktime_t)));
 
 			seq_printf(m, "\t[%d]%d", peer_device->node_id, (int)ktime_to_ms(ktime));
 			return;
