@@ -143,6 +143,31 @@ static void print_one_age_or_dash(struct seq_file *m, struct drbd_request *req,
 	}
 	seq_puts(m, "\t-");
 }
+#else
+static void seq_print_jif_age_or_dash(struct seq_file *m, bool valid, unsigned long dt)
+{
+	if (valid)
+		seq_printf(m, "\t%d", (int)jiffies_to_msecs(dt));
+	else
+		seq_puts(m, "\t-");
+}
+
+static void print_sent_age_or_dash(struct seq_file *m, struct drbd_request *req, unsigned long jif)
+{
+	struct drbd_device *device = req->device;
+	struct drbd_peer_device *peer_device;
+
+	for_each_peer_device(peer_device, device) {
+		int node_id = peer_device->node_id;
+
+		if (req->net_rq_state[node_id] & RQ_NET_SENT) {
+			seq_printf(m, "\t[%d]%d", node_id,
+				   (int)jiffies_to_msecs(jif - req->pre_send_jif[node_id]));
+			return;
+		}
+	}
+	seq_puts(m, "\t-");
+}
 #endif
 
 static void seq_print_one_request(struct seq_file *m, struct drbd_request *req, ktime_t now, unsigned long jif)
@@ -169,9 +194,12 @@ static void seq_print_one_request(struct seq_file *m, struct drbd_request *req, 
 	print_one_age_or_dash(m, req, RQ_NET_SENT, RQ_NET_PENDING, now, offsetof(typeof(*req), acked_kt));
 	print_one_age_or_dash(m, req, RQ_NET_DONE, 0, now, offsetof(typeof(*req), net_done_kt));
 #else
-#define RQ_HDR_2 "\tstart"
-#define RQ_HDR_3 ""
+#define RQ_HDR_2 "\tstart\tsubmit"
 	seq_printf(m, "\t%d", (int)jiffies_to_msecs(jif - req->start_jif));
+	seq_print_jif_age_or_dash(m, s & RQ_LOCAL_PENDING, jif - req->pre_submit_jif);
+
+#define RQ_HDR_3 "\tsent"
+	print_sent_age_or_dash(m, req, jif);
 #endif
 #define RQ_HDR_4 "\tstate\n"
 	seq_print_request_state(m, req);
@@ -525,7 +553,7 @@ static int resource_in_flight_summary_show(struct seq_file *m, void *pos)
 	unsigned long jif = jiffies;
 
 	/* BUMP me if you change the file format/content/presentation */
-	seq_printf(m, "v: %u\n\n", 1);
+	seq_printf(m, "v: %u\n\n", 2);
 
 	seq_puts(m, "oldest bitmap IO\n");
 	seq_print_resource_pending_bitmap_io(m, resource, jif);
@@ -848,7 +876,7 @@ static int connection_oldest_requests_show(struct seq_file *m, void *ignored)
 	struct drbd_request *r1, *r2;
 
 	/* BUMP me if you change the file format/content/presentation */
-	seq_printf(m, "v: %u\n\n", 0);
+	seq_printf(m, "v: %u\n\n", 1);
 
 	rcu_read_lock();
 	r1 = READ_ONCE(connection->todo.req_next);
@@ -1153,7 +1181,7 @@ static int device_oldest_requests_show(struct seq_file *m, void *ignored)
 	int i;
 
 	/* BUMP me if you change the file format/content/presentation */
-	seq_printf(m, "v: %u\n\n", 0);
+	seq_printf(m, "v: %u\n\n", 1);
 
 	seq_puts(m, RQ_HDR);
 	spin_lock_irq(&device->pending_completion_lock);
