@@ -2670,7 +2670,8 @@ static void update_resource_dagtag(struct drbd_resource *resource, struct drbd_b
 
 	spin_lock_irq(&resource->tl_update_lock);
 	if (dagtag > resource->dagtag_sector) {
-		resource->dagtag_before_attach = resource->dagtag_sector;
+		if (resource->dagtag_sector != resource->dagtag_from_backing_dev)
+			resource->dagtag_before_attach = resource->dagtag_sector;
 		resource->dagtag_from_backing_dev = dagtag;
 		WRITE_ONCE(resource->dagtag_sector, dagtag);
 	}
