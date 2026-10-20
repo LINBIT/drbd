@@ -1409,7 +1409,7 @@ static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags
 	peer_device->comm_bm_set = drbd_bm_total_weight(peer_device);
 	p->dirty_bits = cpu_to_be64(peer_device->comm_bm_set);
 
-	if (test_bit(DISCARD_MY_DATA, &peer_device->flags))
+	if (test_bit(DISCARD_MY_DATA, peer_device->flags))
 		uuid_flags |= UUID_FLAG_DISCARD_MY_DATA;
 	if (test_bit(CRASHED_PRIMARY, &device->flags))
 		uuid_flags |= UUID_FLAG_CRASHED_PRIMARY;
@@ -1470,7 +1470,7 @@ u64 drbd_collect_local_uuid_flags(struct drbd_peer_device *peer_device, u64 *aut
 	struct drbd_device *device = peer_device->device;
 	u64 uuid_flags = 0;
 
-	if (test_bit(DISCARD_MY_DATA, &peer_device->flags))
+	if (test_bit(DISCARD_MY_DATA, peer_device->flags))
 		uuid_flags |= UUID_FLAG_DISCARD_MY_DATA;
 	if (test_bit(CRASHED_PRIMARY, &device->flags))
 		uuid_flags |= UUID_FLAG_CRASHED_PRIMARY;
@@ -3068,8 +3068,8 @@ restart:
 	rcu_read_lock();
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		for_each_peer_device_rcu(peer_device, device) {
-			if (test_bit(GOT_NEG_ACK, &peer_device->flags)) {
-				clear_bit(GOT_NEG_ACK, &peer_device->flags);
+			if (test_bit(GOT_NEG_ACK, peer_device->flags)) {
+				clear_bit(GOT_NEG_ACK, peer_device->flags);
 				rcu_read_unlock();
 				wait_event(resource->state_wait, peer_device->disk_state[NOW] < D_UP_TO_DATE);
 				goto restart;
@@ -3441,7 +3441,7 @@ Enomem:
 
 static void free_peer_device(struct drbd_peer_device *peer_device)
 {
-	if (test_and_clear_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags))
+	if (test_and_clear_bit(HOLDING_UUID_READ_LOCK, peer_device->flags))
 		up_read_non_owner(&peer_device->device->uuid_sem);
 
 	kfree(peer_device->rs_plan_s);
@@ -5558,7 +5558,7 @@ enum drbd_mint_outcome drbd_uuid_new_current(struct drbd_device *device, bool fo
 		 */
 		for_each_peer_device(peer_device, device) {
 			if (peer_device->repl_state[NOW] >= L_ESTABLISHED)
-				set_bit(CURRENT_UUID_UNCONFIRMED, &peer_device->flags);
+				set_bit(CURRENT_UUID_UNCONFIRMED, peer_device->flags);
 		}
 		smp_wmb(); /* marks before gate; paired with smp_rmb() in releaser */
 		/* Entered from MINTING by the mint executor, from NONE or ARMED by a
@@ -5863,7 +5863,7 @@ void drbd_uuid_resync_starting(struct drbd_peer_device *peer_device)
 	unsigned long flags;
 
 	if (peer_device->uuid_flags & UUID_FLAG_CRASHED_PRIMARY)
-		set_bit(SYNC_SRC_CRASHED_PRI, &peer_device->flags);
+		set_bit(SYNC_SRC_CRASHED_PRI, peer_device->flags);
 
 	spin_lock_irqsave(&device->ldev->md.uuid_lock, flags);
 	peer_device->rs_start_uuid = drbd_current_uuid(device);
@@ -6169,10 +6169,10 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device)
 			if (peer_device->comm_bm_set == 0 && peer_device->dirty_bits == 0) {
 				drbd_info(peer_device, "Peer missed end of resync, 0 to sync\n");
 				if (peer_device->connection->agreed_pro_version < 124)
-					set_bit(RS_PEER_MISSED_END, &peer_device->flags);
+					set_bit(RS_PEER_MISSED_END, peer_device->flags);
 			} else {
 				drbd_info(peer_device, "Peer missed end of resync\n");
-				set_bit(RS_PEER_MISSED_END, &peer_device->flags);
+				set_bit(RS_PEER_MISSED_END, peer_device->flags);
 			}
 		}
 		if (bm_towards_me == 0 && bm_to_peer != 0 &&
@@ -6188,10 +6188,10 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device)
 				peer_device->comm_bitmap_uuid = 0;
 				drbd_md_mark_dirty(device);
 				if (peer_device->connection->agreed_pro_version < 124)
-					set_bit(RS_SOURCE_MISSED_END, &peer_device->flags);
+					set_bit(RS_SOURCE_MISSED_END, peer_device->flags);
 			} else {
 				drbd_info(peer_device, "Missed end of resync as sync-source\n");
-				set_bit(RS_SOURCE_MISSED_END, &peer_device->flags);
+				set_bit(RS_SOURCE_MISSED_END, peer_device->flags);
 			}
 		}
 		spin_unlock_irq(&device->ldev->md.uuid_lock);
@@ -6712,7 +6712,7 @@ sector_t drbd_partition_data_capacity(struct drbd_device *device)
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
-		if (test_bit(HAVE_SIZES, &peer_device->flags)) {
+		if (test_bit(HAVE_SIZES, peer_device->flags)) {
 			dynamic_drbd_dbg(peer_device, "d_size: %llus\n",
 					(unsigned long long)peer_device->d_size);
 			capacity = min_not_zero(capacity, peer_device->d_size);

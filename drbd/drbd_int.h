@@ -748,6 +748,13 @@ enum peer_device_flag {
 	B_RS_H_DONE,		/* Before resync handler done (already executed) */
 	DISCARD_MY_DATA,	/* discard_my_data flag per volume */
 	USE_DEGR_WFC_T,		/* degr-wfc-timeout instead of wfc-timeout. */
+	SEND_RECONCILE_UUID,	/* worker: the reconcile peer has settled UpToDate;
+				 * send it our current UUID (the relabel), ordered
+				 * by the sender after the replayed transfer log.
+				 * Worker-dispatched (see DRBD_PEER_DEVICE_WORK_MASK);
+				 * must stay below 32 so get_work_bits() finds it in
+				 * flags[0] on 32-bit kernels.
+				 */
 	INITIAL_STATE_SENT,
 	INITIAL_STATE_RECEIVED,
 	RECONCILIATION_RESYNC,
@@ -789,16 +796,13 @@ enum peer_device_flag {
 				    * relabel it forward to our current generation.
 				    * See diskless_with_peers_different_current_uuids().
 				    */
-	SEND_RECONCILE_UUID,	/* worker: the reconcile peer has settled UpToDate;
-				 * send it our current UUID (the relabel), ordered
-				 * by the sender after the replayed transfer log.
-				 */
 	RS_MXB_LIMITED_LOGGED,	/* the max-buffers hint has been logged for this
 				 * resync and this net configuration.
 				 */
 	RS_DEPTH_DEFERRED,	/* a checksum resync round stopped at the resync
 				 * depth bound; restart it when there is room
 				 */
+	PEER_DEVICE_FLAG_COUNT,	/* keep last: sizes peer_device->flags[] */
 };
 
 /* We could make these currently hardcoded constants configurable
@@ -1599,7 +1603,7 @@ struct drbd_peer_device {
 
 	struct ratelimit_state ratelimit[1];
 
-	unsigned long flags;
+	unsigned long flags[BITS_TO_LONGS(PEER_DEVICE_FLAG_COUNT)];
 
 	enum drbd_repl_state start_resync_side;
 	enum drbd_repl_state last_repl_state; /* What we received from the peer */
@@ -2994,7 +2998,7 @@ drbd_device_post_work(struct drbd_device *device, int work_bit)
 static inline void
 drbd_peer_device_post_work(struct drbd_peer_device *peer_device, int work_bit)
 {
-	if (!test_and_set_bit(work_bit, &peer_device->flags)) {
+	if (!test_and_set_bit(work_bit, peer_device->flags)) {
 		struct drbd_resource *resource = peer_device->device->resource;
 		struct drbd_work_queue *q = &resource->work;
 		if (!test_and_set_bit(PEER_DEVICE_WORK_PENDING, &resource->flags))
