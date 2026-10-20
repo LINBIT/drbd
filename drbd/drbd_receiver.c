@@ -9033,8 +9033,8 @@ retry:
 	rv = end_state_change(resource, &irq_flags, "remote");
 out:
 
-	if ((rv == SS_NO_UP_TO_DATE_DISK && resource->role[NOW] != R_PRIMARY) ||
-	    rv == SS_PRIMARY_READER) {
+	if (((rv == SS_NO_UP_TO_DATE_DISK && resource->role[NOW] != R_PRIMARY) ||
+	     rv == SS_PRIMARY_READER) && drbd_open_ro_count(resource)) {
 		/* Most probably udev opened it read-only. That might happen
 		   if it was demoted very recently. Wait up to one second. */
 		t = wait_event_interruptible_timeout(resource->state_wait,
