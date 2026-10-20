@@ -9840,7 +9840,7 @@ static bool peer_data_is_successor_of_mine(struct drbd_peer_device *peer_device)
 	return uuid_in_peer_history(peer_device, exposed);
 }
 
-static bool peer_data_is_ancestor_of_mine(struct drbd_peer_device *peer_device)
+bool peer_data_is_ancestor_of_mine(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
 	u64 peer_uuid = peer_device->current_uuid;
