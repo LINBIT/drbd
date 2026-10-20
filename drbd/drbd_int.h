@@ -2936,6 +2936,7 @@ drbd_commit_size_change(struct drbd_device *device, struct drbd_resize_parms *rs
 void drbd_try_get_resynced_work_fn(struct work_struct *ws);
 bool diskless_primary_can_replay_to(struct drbd_peer_device *peer_device);
 u64 diskless_primary_present_current_uuid(struct drbd_peer_device *peer_device);
+bool peer_data_is_ancestor_of_mine(struct drbd_peer_device *peer_device);
 void drbd_process_rs_discards(struct drbd_peer_device *peer_device,
 			      bool submit_all);
 void drbd_last_resync_request(struct drbd_peer_device *peer_device,

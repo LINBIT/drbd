@@ -2165,6 +2165,22 @@ static __printf(2, 3) void drbd_state_err(struct drbd_resource *resource, const 
 		kfree(err_str);
 }
 
+/* Without a disk of our own, we know the data generation we expose. A peer
+ * that holds an ancestor of it lacks writes that reached other peers only.
+ * It must not become Primary: the downgrade in
+ * diskless_with_peers_different_current_uuids() changes only our view of it.
+ */
+static bool peer_behind_exposed_data(struct drbd_peer_device *peer_device)
+{
+	struct drbd_device *device = peer_device->device;
+	u64 exposed = device->exposed_data_uuid & ~UUID_PRIMARY;
+
+	return device->disk_state[NEW] == D_DISKLESS && exposed &&
+		peer_device->disk_state[NEW] > D_INCONSISTENT &&
+		(peer_device->current_uuid & ~UUID_PRIMARY) != exposed &&
+		peer_data_is_ancestor_of_mine(peer_device);
+}
+
 static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resource)
 {
 	enum drbd_role *role = resource->role;
@@ -2210,6 +2226,7 @@ handshake_found:
 	for_each_connection_rcu(connection, resource) {
 		enum drbd_conn_state *cstate = connection->cstate;
 		enum drbd_role *peer_role = connection->peer_role;
+		struct drbd_peer_device *peer_device;
 		struct drbd_net_conf *nc;
 		bool two_primaries;
 
@@ -2239,6 +2256,19 @@ handshake_found:
 					 * causes confusion for the caller, if that then waits
 					 * for the read-only openers to go away.
 					 */
+				}
+			}
+		}
+
+		if (peer_role[OLD] == R_SECONDARY && peer_role[NEW] == R_PRIMARY) {
+			idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+				if (peer_behind_exposed_data(peer_device)) {
+					u64 exposed = peer_device->device->exposed_data_uuid;
+
+					drbd_warn(peer_device,
+						  "Refusing promotion, peer's data is older than %016llX\n",
+						  (unsigned long long)exposed);
+					return SS_NO_UP_TO_DATE_DISK;
 				}
 			}
 		}
