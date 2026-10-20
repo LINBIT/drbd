@@ -16,8 +16,8 @@ Two invariants are checked, both assuming 32-bit unsigned long:
 
   1. Storage fit.  For scalar 'unsigned long flags;' the highest flag value
      must be < 32.  For a self-sizing 'unsigned long flags[BITS_TO_LONGS(S)]'
-     the sentinel S must be the enum's last/largest enumerator so the array
-     grows with the enum automatically.
+     or 'DECLARE_BITMAP(flags, S)' the sentinel S must be the enum's
+     last/largest enumerator so the array grows with the enum automatically.
 
   2. Word-0 work flags.  get_work_bits() does a cmpxchg() on a single unsigned
      long (flags[0]), so every flag listed in a *_WORK_MASK must have a value
@@ -55,6 +55,9 @@ WORK_MASK_ENUM = {
     "DRBD_DEVICE_WORK_MASK": "device_flag",
     "DRBD_PEER_DEVICE_WORK_MASK": "peer_device_flag",
 }
+
+# tree-sitter cannot make sense of this macro; match the field's text instead
+DECLARE_BITMAP_RE = re.compile(r"DECLARE_BITMAP\s*\(\s*flags\s*,\s*(.+?)\s*\)")
 
 # A trailing enumerator used only to size an array / count members, not a bit.
 SENTINEL_RE = re.compile(r"(_COUNT|_LAST|^NR_|^__)", re.IGNORECASE)
@@ -208,6 +211,10 @@ def _parse_struct(node, struct_flags):
         return
     for field in body.named_children:
         if field.type != "field_declaration":
+            continue
+        m = DECLARE_BITMAP_RE.search(txt(field))
+        if m:
+            struct_flags[sname] = ("array", m.group(1))
             continue
         decl = field.child_by_field_name("declarator")
         if decl is None:

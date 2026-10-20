@@ -1678,7 +1678,7 @@ struct drbd_peer_device {
 
 	struct ratelimit_state ratelimit[1];
 
-	unsigned long flags[BITS_TO_LONGS(PEER_DEVICE_FLAG_COUNT)];
+	DECLARE_BITMAP(flags, PEER_DEVICE_FLAG_COUNT);
 
 	enum drbd_repl_state start_resync_side;
 	enum drbd_repl_state last_repl_state; /* What we received from the peer */
