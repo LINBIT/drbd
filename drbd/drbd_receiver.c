@@ -10157,7 +10157,7 @@ static bool peer_data_is_successor_of_mine(struct drbd_peer_device *peer_device)
 bool peer_data_is_ancestor_of_mine(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
-	u64 peer_uuid = peer_device->current_uuid;
+	u64 peer_uuid = peer_device->current_uuid & ~UUID_PRIMARY;
 	struct drbd_peer_device *p2;
 	bool rv = false;
 	int i;
@@ -10167,7 +10167,7 @@ bool peer_data_is_ancestor_of_mine(struct drbd_peer_device *peer_device)
 		if (peer_device == p2)
 			continue;
 		i = drbd_find_peer_bitmap_by_uuid(p2, peer_uuid);
-		if (i != -1 || uuid_in_peer_history(peer_device, peer_uuid)) {
+		if (i != -1 || uuid_in_peer_history(p2, peer_uuid)) {
 			rv = true;
 			break;
 		}
