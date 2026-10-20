@@ -2487,9 +2487,13 @@ static void __update_mdf_al_disabled(struct drbd_device *device, bool al_updates
 	if (al_updates)
 		peer = the_only_peer_with_disk(device, which);
 
+	/* With CRASHED_PRIMARY set, the next attach after a crash reads a
+	 * disabled AL as "crashed as Primary without AL" and sets all bits.
+	 */
 	if (al_updates && device->bitmap->bm_max_peers == 1 &&
 	    peer && peer->peer_role[which] == R_PRIMARY &&
-	    device->resource->role[which] == R_SECONDARY) {
+	    device->resource->role[which] == R_SECONDARY &&
+	    !test_bit(CRASHED_PRIMARY, &device->flags)) {
 		al_updates = false;
 		optimized = true;
 	}
@@ -2516,6 +2520,7 @@ static void __update_mdf_al_disabled(struct drbd_device *device, bool al_updates
  * This function also optimizes performance by turning off al-updates when:
  * - the cluster has only two nodes with backing disk
  * - the other node with a backing disk is the primary
+ * - this node is not a crashed primary
  */
 void drbd_update_mdf_al_disabled(struct drbd_device *device, enum which_state which)
 {
