@@ -3536,6 +3536,11 @@ static void __do_unqueued_peer_device_work(struct drbd_connection *connection)
 	struct drbd_peer_device *peer_device;
 	int vnr;
 
+	/* get_work_bits() sees only the first word of peer_device->flags,
+	 * which has 32 bits on 32-bit kernels
+	 */
+	BUILD_BUG_ON((u64)DRBD_PEER_DEVICE_WORK_MASK >> 32);
+
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
