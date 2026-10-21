@@ -5115,8 +5115,14 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 		if (slot_nr == -1) {
 			slot_nr = find_first_zero_bit((unsigned long *)&slot_mask, sizeof(slot_mask) * BITS_PER_BYTE);
 			__set_bit(slot_nr, (unsigned long *)&slot_mask);
+			/* A slot without a bitmap needs no divergence flag, and a
+			 * day0 slot must keep flags == 0.
+			 */
+			peer_md[node_id].bitmap_uuid = prev_c_uuid;
+			peer_md[node_id].bitmap_dagtag = dagtag;
+		} else {
+			drbd_set_peer_bitmap_uuid(&peer_md[node_id], prev_c_uuid, dagtag);
 		}
-		drbd_set_peer_bitmap_uuid(&peer_md[node_id], prev_c_uuid, dagtag);
 		drbd_md_mark_dirty(device);
 		/* count, but only if that bitmap index exists. */
 		if (slot_nr < device->bitmap->bm_max_peers)
