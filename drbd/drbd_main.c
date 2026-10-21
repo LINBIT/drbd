@@ -1518,11 +1518,9 @@ u64 drbd_resolved_uuid(struct drbd_peer_device *peer_device_base, u64 *uuid_flag
 static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 node_mask)
 {
 	struct drbd_device *device = peer_device->device;
-	const int my_node_id = device->resource->res_opts.node_id;
 	struct drbd_peer_md *peer_md;
 	struct p_uuids110 *p;
-	bool sent_one_unallocated;
-	int i, pos = 0;
+	int i, pos = 0, day0 = -1;
 	u64 local_uuid_flags = 0, authoritative_mask, bitmap_uuids_mask = 0;
 	int p_size = sizeof(*p);
 
@@ -1544,17 +1542,18 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 	peer_device->comm_current_uuid = drbd_resolved_uuid(peer_device, &local_uuid_flags);
 	p->current_uuid = cpu_to_be64(peer_device->comm_current_uuid);
 
-	/* advertise an unallocated day0 bitmap slot only if we actually have one */
-	sent_one_unallocated = peer_device->connection->agreed_pro_version < 116 ||
-		drbd_unallocated_index(device->ldev, device->bitmap->bm_max_peers) == -1;
+	/* Advertise an unallocated day0 bitmap slot only if we actually have
+	 * one, and always the one drbd_find_bitmap_by_uuid() considers.
+	 */
+	if (peer_device->connection->agreed_pro_version >= 116 &&
+	    drbd_unallocated_index(device->ldev, device->bitmap->bm_max_peers) != -1)
+		day0 = drbd_day0_node_id(&device->ldev->md, peer_device->node_id);
 	for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
 		u64 val = __bitmap_uuid(device, i);
 		bool send_this = test_bit(__MDF_HAVE_BITMAP, &peer_md[i].flags) ||
 			test_bit(__MDF_NODE_EXISTS, &peer_md[i].flags);
-		if (!send_this && !sent_one_unallocated &&
-		    i != my_node_id && i != peer_device->node_id && val) {
+		if (i == day0 && val) {
 			send_this = true;
-			sent_one_unallocated = true;
 			uuid_flags |= (u64)i << UUID_FLAG_UNALLOC_SHIFT;
 			uuid_flags |= UUID_FLAG_HAS_UNALLOC;
 		}
@@ -4962,6 +4961,54 @@ void drbd_set_peer_bitmap_uuid(struct drbd_peer_md *peer_md, u64 bitmap_uuid, u6
 		set_bit(__MDF_PEER_DIVERGENCE_BITMAP, &peer_md->flags);
 	else if (!bitmap_uuid)
 		clear_bit(__MDF_PEER_DIVERGENCE_BITMAP, &peer_md->flags);
+}
+
+/**
+ * drbd_day0_node_id() - Pick the day0 slot that stands for all of them
+ * @md: the meta data
+ * @exclude: a node id not to pick, or -1
+ *
+ * All day0 slots should hold the same UUID, but meta data can hold day0 slots
+ * that disagree. The sender of our UUIDs advertises only one of them, so the
+ * search for a bitmap to copy and forget-peer must use that same one, or the
+ * two ends of a handshake decide differently.
+ *
+ * When they disagree, take the UUID most of them hold: disagreeing slots belong
+ * to the few node ids that were used and forgotten, while the node ids never
+ * used keep the day0 UUID. Between UUIDs held by equally many slots, take the
+ * one set at the lower dagtag, the older one.
+ *
+ * Returns the node id of a day0 slot holding that UUID, else of one with
+ * bitmap UUID 0, else -1.
+ */
+int drbd_day0_node_id(struct drbd_md *md, int exclude)
+{
+	int node_id, other, best = -1, best_count = 0, unset = -1;
+
+	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+		u64 uuid = md->peers[node_id].bitmap_uuid & ~UUID_PRIMARY;
+		int count = 0;
+
+		if (node_id == exclude || !drbd_is_day0_slot(md, node_id))
+			continue;
+		if (!uuid) {
+			if (unset == -1)
+				unset = node_id;
+			continue;
+		}
+		for (other = 0; other < DRBD_NODE_ID_MAX; other++) {
+			if (drbd_is_day0_slot(md, other) &&
+			    (md->peers[other].bitmap_uuid & ~UUID_PRIMARY) == uuid)
+				count++;
+		}
+		if (best == -1 || count > best_count ||
+		    (count == best_count &&
+		     md->peers[node_id].bitmap_dagtag < md->peers[best].bitmap_dagtag)) {
+			best = node_id;
+			best_count = count;
+		}
+	}
+	return best != -1 ? best : unset;
 }
 
 void __drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val)

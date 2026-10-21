@@ -5856,12 +5856,18 @@ static int drbd_find_peer_bitmap_by_uuid(struct drbd_peer_device *peer_device, u
  * that callers can still tell "UUID unknown" (-1) from "UUID known but only as
  * a convergence bitmap"; callers that must copy re-check is_divergence_bitmap()
  * on the result.
+ *
+ * Of the slots without a bitmap and without a known node, consider only the
+ * day0 slot _drbd_send_uuids110() advertises to this peer. The peer sees only
+ * that one, so a match on another one would be a decision it does not share.
  */
 static int drbd_find_bitmap_by_uuid(struct drbd_peer_device *peer_device, u64 uuid)
 {
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
-	struct drbd_peer_md *peer_md = device->ldev->md.peers;
+	struct drbd_md *md = &device->ldev->md;
+	struct drbd_peer_md *peer_md = md->peers;
+	int day0 = drbd_day0_node_id(md, peer_device->node_id);
 	int i, any = -1;
 
 	for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
@@ -5869,6 +5875,10 @@ static int drbd_find_bitmap_by_uuid(struct drbd_peer_device *peer_device, u64 uu
 			continue;
 		if (connection->agreed_pro_version < 116 &&
 		    peer_md[i].bitmap_index == -1)
+			continue;
+		if (i != day0 && i != peer_device->node_id &&
+		    !test_bit(__MDF_HAVE_BITMAP, &peer_md[i].flags) &&
+		    !test_bit(__MDF_NODE_EXISTS, &peer_md[i].flags))
 			continue;
 		if ((peer_md[i].bitmap_uuid & ~UUID_PRIMARY) != uuid)
 			continue;
