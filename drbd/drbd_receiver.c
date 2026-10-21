@@ -13743,7 +13743,7 @@ int drbd_send_out_of_sync_wf(struct drbd_work *w, int cancel)
 	unsigned long send_oos_from_mask = READ_ONCE(oos_connection->send_oos_from_mask);
 	int peer_ack_node_id;
 
-	for_each_set_bit(peer_ack_node_id, &send_oos_from_mask, sizeof(unsigned long)) {
+	for_each_set_bit(peer_ack_node_id, &send_oos_from_mask, DRBD_NODE_ID_MAX) {
 		clear_bit(peer_ack_node_id, &oos_connection->send_oos_from_mask);
 		drbd_send_oos_from(oos_connection, peer_ack_node_id);
 	}
