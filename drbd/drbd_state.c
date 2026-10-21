@@ -3484,10 +3484,13 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			    peer_disk_state[OLD] == D_INCONSISTENT && peer_disk_state[NEW] == D_UP_TO_DATE)
 				send_state_others = peer_device;
 
-			/* connect without resync or remote attach without resync */
-			if (disk_state[NOW] >= D_OUTDATED && repl_state[NEW] == L_ESTABLISHED &&
-			    ((repl_state[OLD] == L_OFF && peer_disk_state[NEW] >= D_OUTDATED) ||
-			     (peer_disk_state[OLD] == D_DISKLESS && peer_disk_state[NEW] >= D_OUTDATED))) {
+			/* connect, remote attach or local attach without resync */
+			if (repl_state[NEW] == L_ESTABLISHED &&
+			    ((disk_state[NOW] >= D_OUTDATED &&
+			      ((repl_state[OLD] == L_OFF && peer_disk_state[NEW] >= D_OUTDATED) ||
+			       (peer_disk_state[OLD] == D_DISKLESS && peer_disk_state[NEW] >= D_OUTDATED))) ||
+			     (disk_state[OLD] == D_NEGOTIATING && disk_state[NEW] >= D_OUTDATED &&
+			      peer_disk_state[NEW] >= D_OUTDATED))) {
 				u64 peer_current_uuid = peer_device->current_uuid & ~UUID_PRIMARY;
 				u64 my_current_uuid = drbd_current_uuid(device) & ~UUID_PRIMARY;
 
