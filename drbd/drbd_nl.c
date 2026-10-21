@@ -1763,7 +1763,8 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
  * Check if all peer devices that have bitmap slots assigned in the metadata
  * are connected.
  */
-static bool get_max_agreeable_size(struct drbd_device *device, uint64_t *max) __must_hold(local)
+static bool get_max_agreeable_size(struct drbd_device *device, uint64_t *max,
+		uint64_t reachable_nodes) __must_hold(local)
 {
 	int node_id;
 	bool all_known;
@@ -1780,6 +1781,9 @@ static bool get_max_agreeable_size(struct drbd_device *device, uint64_t *max) __
 		}
 		/* Have we met this peer node id before? */
 		if (!(peer_md->flags & MDF_HAVE_BITMAP))
+			continue;
+		/* Will take part in the resize two-phase commit */
+		if (reachable_nodes & NODE_MASK(node_id))
 			continue;
 		peer_device = peer_device_by_node_id(device, node_id);
 		if (peer_device) {
@@ -1845,7 +1849,7 @@ drbd_new_dev_size(struct drbd_device *device,
 		return resource->twopc_resize.new_size;
 
 	m_size = drbd_get_max_capacity(device, device->ldev, false);
-	all_known_connected = get_max_agreeable_size(device, &p_size);
+	all_known_connected = get_max_agreeable_size(device, &p_size, 0);
 
 	if (all_known_connected) {
 		/* If we currently can see all peer devices,
@@ -5014,6 +5018,16 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 
 	ddsf = (rs.resize_force ? DDSF_ASSUME_UNCONNECTED_PEER_HAS_SPACE : 0)
 		| (rs.no_resync ? DDSF_NO_RESYNC : 0);
+
+	if (!rs.resize_force) {
+		u64 reachable = directly_connected_nodes(device->resource, NOW);
+		uint64_t p_size = 0;
+
+		/* Do not grow beyond what unreachable peers last agreed on */
+		if (!get_max_agreeable_size(device, &p_size, reachable))
+			p_size = min_not_zero(p_size, device->ldev->md.effective_size);
+		local_max_size = min_not_zero(local_max_size, (sector_t)p_size);
+	}
 
 	dd = change_cluster_wide_device_size(device, local_max_size, rs.resize_size, ddsf,
 					     change_al_layout ? &rs : NULL);
