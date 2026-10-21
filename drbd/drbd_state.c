@@ -1110,11 +1110,25 @@ void __clear_remote_state_change(struct drbd_resource *resource)
 {
 	bool is_connect = resource->twopc_reply.is_connect;
 	int initiator_node_id = resource->twopc_reply.initiator_node_id;
-	struct drbd_connection *connection;
+	struct drbd_connection *connection, *connect_connection = NULL;
 	struct drbd_device *device;
+	bool flush_restart_dropped;
 	int vnr;
 
 	lockdep_assert_held(&resource->state_rwlock);
+
+	if (is_connect) {
+		rcu_read_lock();
+		for_each_connection_rcu(connection, resource) {
+			if (drbd_twopc_between_peer_and_me(connection))
+				connect_connection = connection;
+		}
+		rcu_read_unlock();
+	}
+	spin_lock(&resource->initiator_flush_lock);
+	flush_restart_dropped = drbd_flush_connect_needs_restart(resource);
+	resource->flush_connect_nodes = 0;
+	spin_unlock(&resource->initiator_flush_lock);
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		if (test_and_clear_bit(TWOPC_IO_SUSPENDED, &device->flags))
@@ -1139,6 +1153,14 @@ void __clear_remote_state_change(struct drbd_resource *resource)
 			abort_connect(connection);
 		rcu_read_unlock();
 	}
+
+	/* A connect that did not happen: answer what we held back for it */
+	if (connect_connection && connect_connection->cstate[NOW] != C_CONNECTED)
+		drbd_flush_ack_for_lost_peer(connect_connection);
+
+	/* The connect that held back the end of the resync did not commit */
+	if (flush_restart_dropped)
+		drbd_check_all_resync_done(resource);
 
 	wake_up_all(&resource->twopc_wait);
 
@@ -3137,13 +3159,14 @@ static void update_members(struct drbd_resource *resource)
 	}
 }
 
-static bool drbd_any_peer_device_up_to_date(struct drbd_connection *connection)
+static bool drbd_any_peer_device_up_to_date(struct drbd_connection *connection,
+					     enum which_state which)
 {
 	int vnr;
 	struct drbd_peer_device *peer_device;
 
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-		if (peer_device->disk_state[NEW] == D_UP_TO_DATE)
+		if (peer_device->disk_state[which] == D_UP_TO_DATE)
 			return true;
 	}
 
@@ -3163,6 +3186,55 @@ void drbd_check_all_resync_done(struct drbd_resource *resource)
 			drbd_check_resync_done(peer_device);
 	}
 	rcu_read_unlock();
+}
+
+/* Mark which acks the current flush round waits for. */
+static void arm_flush_masks(struct drbd_resource *resource, enum which_state which)
+{
+	struct drbd_connection *flush_connection;
+	struct drbd_connection *up_to_date_connection;
+
+	for_each_connection(flush_connection, resource) {
+		flush_connection->pending_flush_mask = 0;
+
+		if (flush_connection->cstate[which] != C_CONNECTED)
+			continue;
+
+		if (flush_connection->agreed_pro_version < 123)
+			continue;
+
+		/*
+		 * A Secondary owes only its own answer. It shows that the
+		 * peer processed what we sent it ahead of the flush on the
+		 * same stream, so it knows we are a sync target and a later
+		 * promotion replicates to us. Its other peers may not be
+		 * connected to it, so their answers may never come.
+		 */
+		if (flush_connection->peer_role[which] != R_PRIMARY) {
+			flush_connection->pending_flush_mask =
+				NODE_MASK(flush_connection->peer_node_id);
+			continue;
+		}
+
+		/*
+		 * A Primary's own answer, diskless or not, shows it processed
+		 * our state: none of its later writes misses us.
+		 */
+		flush_connection->pending_flush_mask =
+			NODE_MASK(flush_connection->peer_node_id);
+
+		for_each_connection(up_to_date_connection, resource) {
+			u64 up_to_date_mask = NODE_MASK(up_to_date_connection->peer_node_id);
+
+			if (!drbd_any_peer_device_up_to_date(up_to_date_connection, which))
+				continue;
+
+			if (up_to_date_connection->agreed_pro_version < 123)
+				continue;
+
+			flush_connection->pending_flush_mask |= up_to_date_mask;
+		}
+	}
 }
 
 static void drbd_determine_flush_pending(struct drbd_resource *resource)
@@ -3200,7 +3272,7 @@ static void drbd_determine_flush_pending(struct drbd_resource *resource)
 			u64 up_to_date_mask = NODE_MASK(up_to_date_connection->peer_node_id);
 
 			if (up_to_date_connection == flush_connection ||
-			    drbd_any_peer_device_up_to_date(up_to_date_connection))
+			    drbd_any_peer_device_up_to_date(up_to_date_connection, NEW))
 				continue;
 
 			if (*pending_flush_mask & up_to_date_mask) {
@@ -3232,42 +3304,93 @@ static void drbd_determine_flush_pending(struct drbd_resource *resource)
 	/* We need a new flush. Mark which acks we are waiting for. */
 	spin_lock(&resource->initiator_flush_lock);
 	resource->current_flush_sequence++;
-
-	for_each_connection(flush_connection, resource) {
-		flush_connection->pending_flush_mask = 0;
-
-		if (flush_connection->cstate[NEW] != C_CONNECTED)
-			continue;
-
-		if (flush_connection->agreed_pro_version < 123)
-			continue;
-
-		/*
-		 * A Secondary owes only its own answer. It shows that the
-		 * peer processed what we sent it ahead of the flush on the
-		 * same stream, so it knows we are a sync target and a later
-		 * promotion replicates to us. Its other peers may not be
-		 * connected to it, so their answers may never come.
-		 */
-		if (flush_connection->peer_role[NEW] != R_PRIMARY) {
-			flush_connection->pending_flush_mask =
-				NODE_MASK(flush_connection->peer_node_id);
-			continue;
-		}
-
-		for_each_connection(up_to_date_connection, resource) {
-			u64 up_to_date_mask = NODE_MASK(up_to_date_connection->peer_node_id);
-
-			if (!drbd_any_peer_device_up_to_date(up_to_date_connection))
-				continue;
-
-			if (up_to_date_connection->agreed_pro_version < 123)
-				continue;
-
-			flush_connection->pending_flush_mask |= up_to_date_mask;
-		}
-	}
+	arm_flush_masks(resource, NEW);
 	spin_unlock(&resource->initiator_flush_lock);
+}
+
+/*
+ * A connect between a Primary and another peer committed before that
+ * Primary answered our flush round for itself. Writes it sent the peer on
+ * the new connection may predate its flush point, and an answer the peer
+ * gave on its behalf does not cover them: start a new round.
+ */
+static void drbd_restart_flush_round(struct drbd_resource *resource)
+{
+	struct drbd_connection *connection;
+	struct drbd_device *device;
+	bool sync_target = false;
+	u64 flush_sequence, im;
+	int vnr;
+
+	rcu_read_lock();
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		struct drbd_peer_device *peer_device;
+
+		for_each_peer_device_rcu(peer_device, device)
+			sync_target |= is_sync_target_state(peer_device, NOW);
+	}
+	rcu_read_unlock();
+	if (!sync_target)
+		return;
+
+	read_lock_irq(&resource->state_rwlock);
+	spin_lock(&resource->initiator_flush_lock);
+	flush_sequence = ++resource->current_flush_sequence;
+	arm_flush_masks(resource, NOW);
+	spin_unlock(&resource->initiator_flush_lock);
+	read_unlock_irq(&resource->state_rwlock);
+
+	drbd_info(resource, "Restarting flush round %llu after a connect of a Primary\n",
+		  (unsigned long long)flush_sequence);
+	for_each_connection_ref(connection, im, resource) {
+		if (connection->cstate[NOW] == C_CONNECTED &&
+		    connection->agreed_pro_version >= 123)
+			drbd_send_flush_requests(connection, flush_sequence);
+	}
+}
+
+void drbd_flush_connect_prepared(struct drbd_resource *resource, int node_a, int node_b)
+{
+	int node_ids[] = { node_a, node_b };
+	int i;
+
+	spin_lock_irq(&resource->initiator_flush_lock);
+	resource->flush_connect_nodes = 0;
+	resource->flush_connect_sequence = resource->current_flush_sequence;
+	resource->flush_connect_own_missing = false;
+	rcu_read_lock();
+	for (i = 0; i < ARRAY_SIZE(node_ids); i++) {
+		struct drbd_connection *connection;
+
+		connection = drbd_connection_by_node_id(resource, node_ids[i]);
+		if (!connection || connection->agreed_pro_version < 123 ||
+		    connection->peer_role[NOW] != R_PRIMARY)
+			continue;
+		resource->flush_connect_nodes |= NODE_MASK(node_ids[i]);
+		if (connection->pending_flush_mask & NODE_MASK(node_ids[i]))
+			resource->flush_connect_own_missing = true;
+	}
+	rcu_read_unlock();
+	spin_unlock_irq(&resource->initiator_flush_lock);
+}
+
+static bool flush_connect_clear(struct drbd_resource *resource)
+{
+	bool needs_restart;
+
+	spin_lock_irq(&resource->initiator_flush_lock);
+	needs_restart = drbd_flush_connect_needs_restart(resource);
+	resource->flush_connect_nodes = 0;
+	spin_unlock_irq(&resource->initiator_flush_lock);
+
+	return needs_restart;
+}
+
+void drbd_flush_connect_committed(struct drbd_resource *resource)
+{
+	if (flush_connect_clear(resource))
+		drbd_restart_flush_round(resource);
+	drbd_check_all_resync_done(resource);
 }
 
 static void set_ov_position(struct drbd_peer_device *peer_device,
@@ -5279,6 +5402,17 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			spin_unlock_irq(&resource->initiator_flush_lock);
 
 			drbd_send_flush_requests(connection, current_flush_sequence);
+		}
+
+		/*
+		 * A flush round that reached us before this connect committed
+		 * was not forwarded on it. Forward it now, nothing else may.
+		 */
+		if (cstate[OLD] != C_CONNECTED && cstate[NEW] == C_CONNECTED) {
+			read_lock_irq(&resource->state_rwlock);
+			if (connection->cstate[NOW] == C_CONNECTED)
+				queue_work(connection->ack_sender, &connection->peer_ack_work);
+			read_unlock_irq(&resource->state_rwlock);
 		}
 
 		/* Upon network configuration, we need to start the receiver */
