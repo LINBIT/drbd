@@ -4817,8 +4817,17 @@ retry:
 	}
 
 	if (rv >= SS_SUCCESS) {
+		bool md_offset_stale = false;
+
 		new_size = min_not_zero(reply->max_possible_size, new_user_size);
-		commit_it = new_size != get_capacity(device->vdisk);
+
+		/* force a commit if md.md_offset is out of sync with the backing device, even if the exposed size is unchanged */
+		if (get_ldev_if_state(device, D_NEGOTIATING)) {
+			md_offset_stale = drbd_md_ss(device->ldev) != device->ldev->md.md_offset;
+			put_ldev(device);
+		}
+
+		commit_it = new_size != get_capacity(device->vdisk) || md_offset_stale;
 
 		if (commit_it) {
 			request.exposed_size = cpu_to_be64(new_size);
