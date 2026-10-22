@@ -2729,6 +2729,7 @@ int drbd_receiver(struct drbd_thread *thi);
 void drbd_unsuccessful_resync_request(struct drbd_peer_request *peer_req,
 				      bool failed);
 int drbd_send_out_of_sync_wf(struct drbd_work *w, int cancel);
+void drbd_free_send_oos_leftovers(struct drbd_resource *resource);
 int drbd_flush_ack_wf(struct drbd_work *w, int unused);
 void drbd_send_ping_wf(struct work_struct *ws);
 void drbd_queue_ping(struct drbd_connection *connection);

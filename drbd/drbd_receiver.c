@@ -13816,7 +13816,9 @@ static void drbd_queue_send_out_of_sync(struct drbd_connection *peer_ack_connect
 {
 	struct drbd_resource *resource = peer_ack_connection->resource;
 	struct drbd_connection *oos_connection;
-	struct drbd_peer_request *peer_req;
+	struct drbd_peer_request *peer_req, *tmp;
+	u64 queue_mask = 0;
+	LIST_HEAD(free_list);
 
 	if (!any_send_oos_pending)
 		return;
@@ -13826,21 +13828,69 @@ static void drbd_queue_send_out_of_sync(struct drbd_connection *peer_ack_connect
 		kref_debug_get(&peer_ack_connection->kref_debug, 18);
 	}
 
-	spin_lock_irq(&resource->send_oos_lock);
-	list_splice_tail(send_oos_peer_req_list, &resource->send_oos);
-	spin_unlock_irq(&resource->send_oos_lock);
-
-	/* Take state_rwlock to ensure work is queued on sender that is still running */
+	/*
+	 * Hold state_rwlock from choosing the peers until their work is queued,
+	 * so that each of them is still connected and its sender still runs.
+	 */
 	read_lock_irq(&resource->state_rwlock);
 	for_each_connection(oos_connection, resource) {
-		if (!(NODE_MASK(oos_connection->peer_node_id) & any_send_oos_pending) ||
-				oos_connection->cstate[NOW] < C_CONNECTED)
-			continue;
+		u64 m = NODE_MASK(oos_connection->peer_node_id);
 
-		drbd_queue_work_if_unqueued(&oos_connection->sender_work,
-				&oos_connection->send_oos_work);
+		if (m & any_send_oos_pending && oos_connection->cstate[NOW] >= C_CONNECTED)
+			queue_mask |= m;
+	}
+
+	/*
+	 * A peer that lost its connection since drbd_calculate_send_oos_pending()
+	 * gets no P_OUT_OF_SYNC. Our bitmap bits for it cover these writes.
+	 */
+	if (any_send_oos_pending & ~queue_mask) {
+		list_for_each_entry_safe(peer_req, tmp, send_oos_peer_req_list, recv_order) {
+			peer_req->send_oos_pending &= queue_mask;
+			if (!peer_req->send_oos_pending)
+				list_move_tail(&peer_req->recv_order, &free_list);
+		}
+	}
+
+	spin_lock(&resource->send_oos_lock);
+	list_splice_tail(send_oos_peer_req_list, &resource->send_oos);
+	spin_unlock(&resource->send_oos_lock);
+
+	for_each_connection(oos_connection, resource) {
+		if (NODE_MASK(oos_connection->peer_node_id) & queue_mask)
+			drbd_queue_work_if_unqueued(&oos_connection->sender_work,
+					&oos_connection->send_oos_work);
 	}
 	read_unlock_irq(&resource->state_rwlock);
+
+	/* Not the last krefs: the caller runs on peer_ack_connection */
+	list_for_each_entry_safe(peer_req, tmp, &free_list, recv_order) {
+		list_del(&peer_req->recv_order);
+		free_send_oos_peer_req(peer_req);
+	}
+}
+
+/*
+ * All senders have stopped, and each ran its work. Anything left on the
+ * send_oos list has bits that no work clears.
+ */
+void drbd_free_send_oos_leftovers(struct drbd_resource *resource)
+{
+	struct drbd_peer_request *peer_req, *tmp;
+	LIST_HEAD(free_list);
+
+	spin_lock_irq(&resource->send_oos_lock);
+	list_splice_init(&resource->send_oos, &free_list);
+	spin_unlock_irq(&resource->send_oos_lock);
+
+	if (list_empty(&free_list))
+		return;
+
+	drbd_err(resource, "peer requests left on send_oos list\n");
+	list_for_each_entry_safe(peer_req, tmp, &free_list, recv_order) {
+		list_del(&peer_req->recv_order);
+		free_send_oos_peer_req(peer_req);
+	}
 }
 
 /* A block just marked out of sync may sit behind a sync target's resync
