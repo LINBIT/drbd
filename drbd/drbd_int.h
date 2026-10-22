@@ -543,7 +543,7 @@ enum {
 	/* This peer_req->recv_order is on some list protected by peer_reqs_lock */
 	__EE_ON_RECV_ORDER,
 
-	/* This peer_req->recv_order is on connection->send_oos protocted by send_oos_lock */
+	/* This peer_req->recv_order is on resource->send_oos protected by send_oos_lock */
 	__EE_ON_SEND_OOS,
 
 	/* A write on a sync target, not acknowledged until the sync source
@@ -1206,6 +1206,15 @@ struct drbd_resource {
 	u64 last_peer_acked_dagtag;  /* dagtag of last PEER_ACK'ed request */
 	struct drbd_request *peer_ack_req;  /* last request not yet PEER_ACK'ed */
 
+	spinlock_t send_oos_lock; /* Protects send_oos list */
+	/*
+	 * Peer writes for which we need to send some P_OUT_OF_SYNC, linked via
+	 * drbd_peer_request.recv_order. The sender of each peer in
+	 * send_oos_pending sends them. Each entry holds a kref on the
+	 * connection it was received on, which keeps its peer_device alive.
+	 */
+	struct list_head send_oos;
+
 	/* Protects current_flush_sequence and pending_flush_mask (connection) */
 	spinlock_t initiator_flush_lock;
 	u64 current_flush_sequence;
@@ -1368,13 +1377,8 @@ struct drbd_connection {
 	struct workqueue_struct *ack_sender;
 	struct work_struct peer_ack_work;
 
-	/* Work for sending P_OUT_OF_SYNC due to P_PEER_ACK */
+	/* Work for sending P_OUT_OF_SYNC for the writes on resource->send_oos */
 	struct drbd_work send_oos_work;
-	/*
-	 * These peers have sent us a P_PEER_ACK for which we need to send
-	 * P_OUT_OF_SYNC on this connection.
-	 */
-	unsigned long send_oos_from_mask;
 
 	atomic64_t last_dagtag_sector;
 	/* Record of last peer ack to determine whether we can ack flush */
@@ -1400,18 +1404,10 @@ struct drbd_connection {
 	atomic_t backing_ee_cnt; /* Other peer requests waiting for conflicts or backing disk. */
 	atomic_t done_ee_cnt;
 	spinlock_t peer_reqs_lock;
-	spinlock_t send_oos_lock; /* Protects send_oos list */
 
 	/* Lists using drbd_peer_request.recv_order (see also drbd_peer_device.resync_requests) */
 	struct list_head peer_requests; /* All peer writes in the order we received them */
 	struct list_head peer_reads; /* All reads in the order we received them */
-	/*
-	 * Peer writes for which we need to send some P_OUT_OF_SYNC. These peer
-	 * writes continue to be stored on the connection over which the writes
-	 * and the P_PEER_ACK are received. They are accessed by the sender for
-	 * each relevant peer. Protected by send_oos_lock on this connection.
-	 */
-	struct list_head send_oos;
 
 	/* Lists using drbd_peer_request.w.list */
 	struct list_head done_ee;   /* Need to send P_WRITE_ACK/P_RS_WRITE_ACK */

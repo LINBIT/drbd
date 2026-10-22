@@ -3911,6 +3911,8 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	INIT_LIST_HEAD(&resource->peer_ack_req_list);
 	INIT_LIST_HEAD(&resource->peer_ack_list);
 	INIT_LIST_HEAD(&resource->peer_ack_work.list);
+	spin_lock_init(&resource->send_oos_lock);
+	INIT_LIST_HEAD(&resource->send_oos);
 	resource->peer_ack_work.cb = w_queue_peer_ack;
 	timer_setup(&resource->peer_ack_timer, peer_ack_timer_fn, 0);
 	spin_lock_init(&resource->initiator_flush_lock);
@@ -4016,10 +4018,8 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	spin_lock_init(&connection->primary_flush_lock);
 	spin_lock_init(&connection->flush_ack_lock);
 	spin_lock_init(&connection->peer_reqs_lock);
-	spin_lock_init(&connection->send_oos_lock);
 	INIT_LIST_HEAD(&connection->peer_requests);
 	INIT_LIST_HEAD(&connection->peer_reads);
-	INIT_LIST_HEAD(&connection->send_oos);
 	INIT_LIST_HEAD(&connection->connections);
 	INIT_LIST_HEAD(&connection->done_ee);
 	INIT_LIST_HEAD(&connection->dagtag_wait_ee);
