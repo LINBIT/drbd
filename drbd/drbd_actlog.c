@@ -57,8 +57,8 @@ void drbd_md_put_buffer(struct drbd_device *device)
 		wake_up(&device->misc_wait);
 }
 
-void wait_until_done_or_force_detached(struct drbd_device *device, struct drbd_backing_dev *bdev,
-				       unsigned int *done)
+/* disk-timeout in jiffies, MAX_SCHEDULE_TIMEOUT if it is not set */
+long drbd_disk_timeout(struct drbd_backing_dev *bdev)
 {
 	long dt;
 
@@ -68,6 +68,14 @@ void wait_until_done_or_force_detached(struct drbd_device *device, struct drbd_b
 	dt = dt * HZ / 10;
 	if (dt == 0)
 		dt = MAX_SCHEDULE_TIMEOUT;
+
+	return dt;
+}
+
+void wait_until_done_or_force_detached(struct drbd_device *device, struct drbd_backing_dev *bdev,
+				       unsigned int *done)
+{
+	long dt = drbd_disk_timeout(bdev);
 
 	dt = wait_event_timeout(device->misc_wait,
 			*done ||

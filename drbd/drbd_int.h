@@ -2753,6 +2753,7 @@ bool drbd_al_active(struct drbd_device *device, sector_t sector,
 		    unsigned int size);
 void drbd_ov_out_of_sync_found(struct drbd_peer_device *peer_device,
 			       sector_t sector, int size);
+long drbd_disk_timeout(struct drbd_backing_dev *bdev);
 void wait_until_done_or_force_detached(struct drbd_device *device,
 				       struct drbd_backing_dev *bdev,
 				       unsigned int *done);

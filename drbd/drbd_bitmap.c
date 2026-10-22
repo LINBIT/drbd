@@ -1294,11 +1294,11 @@ static void drbd_bm_endio(struct bio *bio)
 	struct drbd_device *device = ctx->device;
 	struct drbd_bitmap *b = device->bitmap;
 	unsigned int idx = bm_page_to_idx(bio->bi_io_vec[0].bv_page);
+	const bool copy_pages = ctx->flags & BM_AIO_COPY_PAGES;
 
 	blk_status_t status = bio->bi_status;
 
-	if ((ctx->flags & BM_AIO_COPY_PAGES) == 0 &&
-	    !bm_test_page_unchanged(b->bm_pages[idx]))
+	if (!copy_pages && !bm_test_page_unchanged(b->bm_pages[idx]))
 		drbd_warn(device, "bitmap page idx %u changed during IO!\n", idx);
 
 	if (status) {
@@ -1326,7 +1326,7 @@ static void drbd_bm_endio(struct bio *bio)
 	if (device->ldev->md_bdev->bd_disk == device->ldev->backing_bdev->bd_disk)
 		atomic_add(bio->bi_io_vec[0].bv_len >> 9, &device->rs_sect_done);
 
-	if (ctx->flags & BM_AIO_COPY_PAGES)
+	if (copy_pages)
 		mempool_free(bio->bi_io_vec[0].bv_page, &drbd_md_io_page_pool);
 
 	bio_put(bio);
@@ -1335,6 +1335,9 @@ static void drbd_bm_endio(struct bio *bio)
 		ctx->done = 1;
 		wake_up(&device->misc_wait);
 		kref_put(&ctx->kref, &drbd_bm_aio_ctx_destroy);
+	} else if (copy_pages) {
+		/* a submitter may be parked on the in-flight bound */
+		wake_up(&device->misc_wait);
 	}
 }
 
@@ -1421,6 +1424,45 @@ static void bm_page_io_async(struct drbd_bm_aio_ctx *ctx, int page_nr)
 		if (op == REQ_OP_WRITE)
 			device->bm_writ_cnt++;
 	}
+}
+
+/* A copying write-out allocates one page per page in flight, and the
+ * submitter fills the plug far faster than the backend drains it.  Bound what
+ * one write-out may hold at once; the whole bitmap is gigabytes on a large
+ * volume with several bitmap slots.
+ */
+#define BM_AIO_COPY_PAGES_MAX_IN_FLIGHT 1024
+
+/* Wait until a copying write-out is back under its in-flight bound.  Going to
+ * sleep flushes the plug, so what is queued reaches the backend.
+ * The disk-timeout applies as in wait_until_done_or_force_detached(): if no
+ * page completes within it, force-detach.
+ * Returns false if the local disk gave up and submitting more is pointless.
+ */
+static bool bm_wait_for_copy_page(struct drbd_device *device, struct drbd_bm_aio_ctx *ctx)
+{
+	long dt;
+
+	if (!(ctx->flags & BM_AIO_COPY_PAGES))
+		return true;
+
+	/* ldev_safe: get_ldev_if_state() in bm_rw_range(), put_ldev in drbd_bm_aio_ctx_destroy() */
+	dt = drbd_disk_timeout(device->ldev);
+
+	/* in_flight carries the submitter's own reference as well */
+	dt = wait_event_timeout(device->misc_wait,
+		   atomic_read(&ctx->in_flight) <= BM_AIO_COPY_PAGES_MAX_IN_FLIGHT ||
+		   test_bit(FORCE_DETACH, &device->flags) ||
+		   test_bit(ABORT_MDIO, &device->flags),
+		   dt);
+
+	if (dt == 0) {
+		drbd_err(device, "meta-data IO operation timed out\n");
+		drbd_handle_io_error(device, DRBD_FORCE_DETACH);
+		return false;
+	}
+
+	return atomic_read(&ctx->in_flight) <= BM_AIO_COPY_PAGES_MAX_IN_FLIGHT;
 }
 
 /**
@@ -1527,6 +1569,8 @@ static int bm_rw_range(struct drbd_device *device, unsigned int start_page, unsi
 			/* Has it even changed? */
 			if (bm_test_page_unchanged(b->bm_pages[i]))
 				continue;
+			if (!bm_wait_for_copy_page(device, ctx))
+				break;
 			atomic_inc(&ctx->in_flight);
 			bm_page_io_async(ctx, i);
 			++count;
@@ -1547,6 +1591,8 @@ static int bm_rw_range(struct drbd_device *device, unsigned int start_page, unsi
 				dynamic_drbd_dbg(device, "skipped bm lazy write for idx %u\n", i);
 				continue;
 			}
+			if (!bm_wait_for_copy_page(device, ctx))
+				break;
 			atomic_inc(&ctx->in_flight);
 			bm_page_io_async(ctx, i);
 			++count;
