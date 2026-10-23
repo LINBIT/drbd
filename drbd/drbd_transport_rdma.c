@@ -1279,11 +1279,11 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 
 		connecting = test_and_clear_bit(DSB_CONNECTING, &cm->state) ||
 			test_and_clear_bit(DSB_CONNECT_REQ, &cm->state);
+		if (!connecting)
+			return 0; /* __dtr_disconnect_path() won and dropped the ref */
+
 		kref_get(&cm->kref); /* for the work */
 		schedule_work(&cm->establish_work);
-
-		if (!connecting)
-			return 0; /* keep ref; __dtr_disconnect_path() won */
 		break;
 
 	case RDMA_CM_EVENT_ADDR_ERROR:
