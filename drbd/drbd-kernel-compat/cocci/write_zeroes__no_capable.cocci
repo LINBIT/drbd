@@ -11,6 +11,13 @@ identifier device, q;
 @@
 -fixup_write_zeroes(device, q);
 
+// The peer may still send P_ZEROES. receive_Data() marks it EE_ZEROOUT,
+// which submits it as a zero-out without REQ_OP_WRITE_ZEROES.
+@@
+expression pd, e;
+@@
+-D_ASSERT(pd, e == REQ_OP_WRITE_ZEROES);
+
 @@
 expression _op;
 @@
@@ -27,7 +34,6 @@ expression e;
 @@
 -if (e)
 -	return REQ_OP_WRITE_ZEROES;
-+WARN_ON_ONCE(e); /* WRITE_ZEROES not supported on this kernel */
 
 @@
 struct queue_limits lim;
