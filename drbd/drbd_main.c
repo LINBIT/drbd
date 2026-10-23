@@ -963,6 +963,7 @@ static void cancel_send_buffer(struct drbd_connection *connection,
 		enum drbd_stream drbd_stream)
 {
 	connection->send_buffer[drbd_stream].allocated_size = 0;
+	connection->send_buffer[drbd_stream].additional_size = 0;
 }
 
 /* Only used the shrink the previously allocated size. */
@@ -1126,8 +1127,10 @@ int __send_command(struct drbd_connection *connection, int vnr,
 	bool flush = stream_and_flags & SFLAG_FLUSH;
 	int err;
 
-	if (connection->cstate[NOW] < C_CONNECTING)
+	if (connection->cstate[NOW] < C_CONNECTING) {
+		cancel_send_buffer(connection, drbd_stream);
 		return -EIO;
+	}
 	prepare_header(connection, vnr, sbuf->pos, cmd,
 		       sbuf->allocated_size + sbuf->additional_size);
 
@@ -4084,6 +4087,12 @@ void drbd_transport_shutdown(struct drbd_connection *connection, enum drbd_tr_fr
 
 	mutex_lock(&connection->mutex[DATA_STREAM]);
 	mutex_lock(&connection->mutex[CONTROL_STREAM]);
+
+	/* With both stream mutexes held, a prepared packet was abandoned:
+	 * its header was never written, so it must not reach the wire.
+	 */
+	cancel_send_buffer(connection, DATA_STREAM);
+	cancel_send_buffer(connection, CONTROL_STREAM);
 
 	/* Ignore send errors, if any: we are shutting down. */
 	flush_send_buffer(connection, DATA_STREAM);
