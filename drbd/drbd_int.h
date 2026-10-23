@@ -1516,6 +1516,7 @@ struct meta_data_on_disk_9;
 
 extern int  drbd_thread_start(struct drbd_thread *thi);
 extern void _drbd_thread_stop(struct drbd_thread *thi, int restart, int wait);
+extern void drbd_thread_consume_restart(struct drbd_thread *thi);
 #ifdef CONFIG_SMP
 extern void drbd_thread_current_set_cpu(struct drbd_thread *thi);
 #else
