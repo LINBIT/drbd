@@ -1312,10 +1312,12 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		return 0; /* do not touch kref of the new connection */
 
 	case RDMA_CM_EVENT_CONNECT_RESPONSE:
-		// pr_info("%s: RDMA_CM_EVENT_CONNECT_RESPONSE\n", cm->name);
-		/*cm->path->cm = cm;
-		  dtr_path_established(cm->path); */
-		break;
+		/*
+		 * The QP exists before rdma_connect(), so rdma_cm reports this
+		 * instead of ESTABLISHED only after __dtr_destroy_cm() destroyed
+		 * the QP. The cm is going away; this event holds no ref.
+		 */
+		return 0;
 
 	case RDMA_CM_EVENT_ESTABLISHED:
 		// pr_info("%s: RDMA_CM_EVENT_ESTABLISHED\n", cm->name);
