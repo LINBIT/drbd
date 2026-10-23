@@ -1718,6 +1718,54 @@ abort:
 	tasklet_schedule(&rdma_transport->control_tasklet);
 }
 
+static void dtr_rx_desc_error(struct dtr_cm *cm, struct dtr_rx_desc *rx_desc)
+{
+	unsigned long irq_flags;
+
+	/* dtr_free_rx_desc() will call drbd_free_page(), and that function
+	 * should not be called from softirq context.
+	 */
+	spin_lock_irqsave(&cm->error_rx_descs_lock, irq_flags);
+	list_add_tail(&rx_desc->list, &cm->error_rx_descs);
+	spin_unlock_irqrestore(&cm->error_rx_descs_lock, irq_flags);
+	dtr_dec_rx_descs(cm);
+	set_bit(DSB_ERROR, &cm->state);
+
+	kref_get(&cm->kref);
+	if (!schedule_work(&cm->end_rx_work))
+		kref_put(&cm->kref, dtr_destroy_cm);
+}
+
+/* The peer sent something this transport never sends. Most likely it runs a
+ * different RDMA transport that accepted our connection on the same address
+ * and port. Do not interpret the message; drop the connection as if the peer
+ * had disconnected.
+ */
+static void dtr_rx_protocol_error(struct dtr_cm *cm, struct dtr_rx_desc *rx_desc,
+				  struct ib_wc *wc)
+{
+	struct dtr_transport *rdma_transport = cm->rdma_transport;
+
+	if (__ratelimit(&rdma_transport->rate_limit))
+		tr_err(&rdma_transport->transport,
+		       "Unexpected message from peer (opcode %d, len %u, imm 0x%x), different transport on peer? Dropping connection\n",
+		       wc->opcode, wc->byte_len, be32_to_cpu(wc->ex.imm_data));
+
+	dtr_rx_desc_error(cm, rx_desc);
+
+	/* The reference held for DSB_CONNECTED goes to the work */
+	if (test_and_clear_bit(DSB_CONNECTED, &cm->state) &&
+	    !schedule_work(&cm->disconnect_work))
+		kref_put(&cm->kref, dtr_destroy_cm);
+}
+
+static bool dtr_flow_control_msg_ok(struct dtr_flow_control *msg, u32 len)
+{
+	return len == sizeof(*msg) &&
+		be32_to_cpu(msg->magic) == DTR_MAGIC &&
+		be32_to_cpu(msg->send_from_stream) <= CONTROL_STREAM;
+}
+
 static void dtr_rx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 {
 	struct dtr_rx_desc *rx_desc = container_of(wc->wr_cqe, struct dtr_rx_desc, cqe);
@@ -1730,7 +1778,6 @@ static void dtr_rx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 
 	if (wc->status != IB_WC_SUCCESS || !(wc->opcode & IB_WC_RECV)) {
 		struct drbd_transport *transport = &rdma_transport->transport;
-		unsigned long irq_flags;
 
 		switch (wc->status) {
 		case IB_WC_WR_FLUSH_ERR:
@@ -1755,30 +1802,29 @@ static void dtr_rx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 			}
 		}
 
-		/* dtr_free_rx_desc() will call drbd_free_page(), and that function
-		 * should not be called from softirq context.
-		 */
-		spin_lock_irqsave(&cm->error_rx_descs_lock, irq_flags);
-		list_add_tail(&rx_desc->list, &cm->error_rx_descs);
-		spin_unlock_irqrestore(&cm->error_rx_descs_lock, irq_flags);
-		dtr_dec_rx_descs(cm);
-		set_bit(DSB_ERROR, &cm->state);
-
-		kref_get(&cm->kref);
-		if (!schedule_work(&cm->end_rx_work))
-			kref_put(&cm->kref, dtr_destroy_cm);
-
+		dtr_rx_desc_error(cm, rx_desc);
 		return;
 	}
 
 	rx_desc->size = wc->byte_len;
 	immediate = be32_to_cpu(wc->ex.imm_data);
+	if (wc->opcode != IB_WC_RECV || !(wc->wc_flags & IB_WC_WITH_IMM) ||
+	    dtr_imm_stream(immediate) > ST_FLOW_CTRL) {
+		dtr_rx_protocol_error(cm, rx_desc, wc);
+		return;
+	}
+
 	if (dtr_imm_stream(immediate) == ST_FLOW_CTRL) {
+		struct dtr_flow_control *msg = page_address(rx_desc->page);
 		int send_from_stream;
 
 		ib_dma_sync_single_for_cpu(cm->id->device, rx_desc->sge.addr,
 					   rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
-		send_from_stream = dtr_got_flow_control_msg(path, page_address(rx_desc->page));
+		if (!dtr_flow_control_msg_ok(msg, wc->byte_len)) {
+			dtr_rx_protocol_error(cm, rx_desc, wc);
+			return;
+		}
+		send_from_stream = dtr_got_flow_control_msg(path, msg);
 		err = dtr_repost_rx_desc(cm, rx_desc);
 		if (err)
 			tr_err(&rdma_transport->transport, "dtr_repost_rx_desc() failed %d", err);
