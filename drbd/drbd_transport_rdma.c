@@ -211,6 +211,7 @@ struct dtr_connect_state {
 	struct delayed_work retry_connect_work;
 	atomic_t active_state; /* trying to establish a connection*/
 	atomic_t passive_state; /* listening for a connection */
+	struct mutex mutex; /* state check + dtr_path_prepare() vs. abort */
 	wait_queue_head_t wq;
 	bool active; /* active = established by connect ; !active = established by accept */
 };
@@ -1026,13 +1027,20 @@ static int dtr_cma_accept(struct dtr_listener *listener, struct rdma_cm_id *new_
 
 	path = container_of(drbd_path, struct dtr_path, path);
 	cs = &path->cs;
-	if (atomic_read(&cs->passive_state) < PCS_CONNECTING)
+	/*
+	 * Do not block the rdma_cm event handler. A busy mutex means our
+	 * connect work is installing its cm, or teardown is running; either
+	 * way this request would fail. The peer retries.
+	 */
+	if (!mutex_trylock(&cs->mutex))
 		goto reject;
+	if (atomic_read(&cs->passive_state) < PCS_CONNECTING)
+		goto reject_unlock;
 
 	cm = dtr_alloc_cm(path);
 	if (!cm) {
 		pr_err("rejecting connecting since -ENOMEM for cm\n");
-		goto reject;
+		goto reject_unlock;
 	}
 
 	cm->state = DSM_CONNECT_REQ;
@@ -1051,8 +1059,9 @@ static int dtr_cma_accept(struct dtr_listener *listener, struct rdma_cm_id *new_
 	err = dtr_path_prepare(path, cm, false);
 	if (err) {
 		/* Returning the cm via ret_cm and an error causes the caller to put one ref */
-		goto reject;
+		goto reject_unlock;
 	}
+	mutex_unlock(&cs->mutex);
 	kref_put(&drbd_path->kref, drbd_destroy_path);
 
 	err = rdma_accept(new_cm_id, &dtr_conn_param);
@@ -1061,6 +1070,8 @@ static int dtr_cma_accept(struct dtr_listener *listener, struct rdma_cm_id *new_
 
 	return err;
 
+reject_unlock:
+	mutex_unlock(&cs->mutex);
 reject:
 	rdma_reject(new_cm_id, NULL, 0, IB_CM_REJ_CONSUMER_DEFINED);
 	kref_put(&drbd_path->kref, drbd_destroy_path);
@@ -1169,8 +1180,10 @@ static void dtr_cma_connect_work_fn(struct work_struct *work)
 	enum connect_state_enum p;
 	int err;
 
+	mutex_lock(&path->cs.mutex);
 	p = atomic_cmpxchg(&path->cs.active_state, PCS_REQUEST_ABORT, PCS_INACTIVE);
 	if (p != PCS_CONNECTING) {
+		mutex_unlock(&path->cs.mutex);
 		wake_up(&path->cs.wq);
 		kref_put(&cm->kref, dtr_destroy_cm); /* for work */
 		return;
@@ -1180,11 +1193,16 @@ static void dtr_cma_connect_work_fn(struct work_struct *work)
 	err = dtr_path_prepare(path, cm, true);
 	if (err) {
 		tr_err(transport, "dtr_path_prepare() = %d\n", err);
-		goto out;
+		goto out_unlock;
 	}
+
+	/* Teardown requested an abort while we prepared */
+	if (atomic_read(&path->cs.active_state) != PCS_CONNECTING)
+		goto out_unlock;
 
 	kref_get(&cm->kref); /* Expecting RDMA_CM_EVENT_ESTABLISHED */
 	set_bit(DSB_CONNECTING, &cm->state);
+	mutex_unlock(&path->cs.mutex);
 	err = rdma_connect(cm->id, &dtr_conn_param);
 	if (err) {
 		if (test_and_clear_bit(DSB_CONNECTING, &cm->state))
@@ -1195,6 +1213,8 @@ static void dtr_cma_connect_work_fn(struct work_struct *work)
 
 	kref_put(&cm->kref, dtr_destroy_cm); /* for work */
 	return;
+out_unlock:
+	mutex_unlock(&path->cs.mutex);
 out:
 	kref_put(&cm->kref, dtr_destroy_cm); /* for work */
 	dtr_cma_retry_connect(path, cm);
@@ -2741,6 +2761,9 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 
 	a = atomic_cmpxchg(&path->cs.active_state, PCS_CONNECTING, PCS_REQUEST_ABORT);
 	p = atomic_cmpxchg(&path->cs.passive_state, PCS_CONNECTING, PCS_INACTIVE);
+	/* Wait for a dtr_path_prepare() in progress */
+	mutex_lock(&path->cs.mutex);
+	mutex_unlock(&path->cs.mutex);
 
 	switch (p) {
 	case PCS_CONNECTING:
@@ -3478,6 +3501,7 @@ static int dtr_add_path(struct drbd_path *add_path)
 	/* initialize private parts of path */
 	atomic_set(&path->cs.passive_state, PCS_INACTIVE);
 	atomic_set(&path->cs.active_state, PCS_INACTIVE);
+	mutex_init(&path->cs.mutex);
 	spin_lock_init(&path->send_flow_control_lock);
 	tasklet_setup(&path->flow_control_tasklet, dtr_flow_control_tasklet_fn);
 	INIT_WORK(&path->refill_rx_descs_work, dtr_refill_rx_descs_work_fn);
