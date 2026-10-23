@@ -398,8 +398,6 @@ struct dtr_flow {
 
 enum connect_state_enum {
 	PCS_INACTIVE,
-	PCS_REQUEST_ABORT,
-	PCS_FINISHING = PCS_REQUEST_ABORT,
 	PCS_CONNECTING,
 };
 
@@ -407,8 +405,7 @@ struct dtr_connect_state {
 	struct delayed_work retry_connect_work;
 	atomic_t active_state; /* trying to establish a connection*/
 	atomic_t passive_state; /* listening for a connection */
-	struct mutex mutex; /* state check + dtr_path_prepare() vs. abort */
-	wait_queue_head_t wq;
+	struct mutex mutex; /* state check + dtr_path_prepare()/establishing vs. abort */
 	bool active; /* active = established by connect ; !active = established by accept */
 };
 
@@ -863,6 +860,18 @@ static int dtr_init(struct drbd_transport *transport)
 	return 0;
 }
 
+/* Before waiting for any path's prepare, so that no other path starts rdma_connect() */
+static void dtr_stop_connect_works(struct drbd_transport *transport)
+{
+	struct drbd_path *drbd_path;
+
+	list_for_each_entry(drbd_path, &transport->paths, list) {
+		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
+
+		atomic_set(&path->cs.active_state, PCS_INACTIVE);
+	}
+}
+
 static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free_op)
 {
 	struct dtr_transport *rdma_transport =
@@ -900,6 +909,7 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		atomic_set(&rdma_transport->resend_pending[CONTROL_STREAM], 0);
 	}
 
+	dtr_stop_connect_works(transport);
 	list_for_each_entry(drbd_path, &transport->paths, list) {
 		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
 
@@ -1360,9 +1370,12 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 	if (err)
 		goto out_put;
 
-	p = atomic_cmpxchg(&cs->passive_state, PCS_CONNECTING, PCS_FINISHING);
-	if (p < PCS_CONNECTING)
-		goto out;
+	mutex_lock(&cs->mutex);
+	if (atomic_read(&cs->passive_state) != PCS_CONNECTING) {
+		atomic_set(&cs->active_state, PCS_INACTIVE);
+		mutex_unlock(&cs->mutex);
+		goto out_put;
+	}
 
 	kref_get(&cm->kref); /* connected -> expect a disconnect in the future */
 
@@ -1411,13 +1424,10 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 	if (!dtr_path_ok(path)) {
 		if (path->cs.active)
 			dtr_cma_retry_connect(path, path->cm);
-		/* Release the PCS_FINISHING hold taken above, as the success path
-		 * does below, or __dtr_disconnect_path() waits a minute for it.
-		 */
 		p = atomic_xchg(&cs->passive_state, PCS_INACTIVE);
-		if (p > PCS_INACTIVE)
+		mutex_unlock(&cs->mutex);
+		if (p == PCS_CONNECTING)
 			drbd_put_listener(&path->path);
-		wake_up(&cs->wq);
 		goto out_put;
 	}
 
@@ -1439,13 +1449,11 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 	 * kicks dtr_kick_register_buffers() when the peer's ring announce arrives.
 	 */
 
-out:
 	atomic_set(&cs->active_state, PCS_INACTIVE);
 	p = atomic_xchg(&cs->passive_state, PCS_INACTIVE);
-	if (p > PCS_INACTIVE)
+	mutex_unlock(&cs->mutex);
+	if (p == PCS_CONNECTING)
 		drbd_put_listener(&path->path);
-
-	wake_up(&cs->wq);
 
 out_put:
 	kref_put(&cm->kref, dtr_destroy_cm);  /* for work */
@@ -1541,7 +1549,7 @@ static int dtr_cma_accept(struct dtr_listener *listener, struct rdma_cm_id *new_
 	 */
 	if (!mutex_trylock(&cs->mutex))
 		goto reject;
-	if (atomic_read(&cs->passive_state) < PCS_CONNECTING)
+	if (atomic_read(&cs->passive_state) != PCS_CONNECTING)
 		goto reject_unlock;
 
 	cm = dtr_alloc_cm(path);
@@ -1634,14 +1642,10 @@ static void dtr_cma_retry_connect_work_fn(struct work_struct *work)
 {
 	struct dtr_connect_state *cs =
 		container_of(work, struct dtr_connect_state, retry_connect_work.work);
-	enum connect_state_enum p;
 	int err;
 
-	p = atomic_cmpxchg(&cs->active_state, PCS_REQUEST_ABORT, PCS_INACTIVE);
-	if (p != PCS_CONNECTING) {
-		wake_up(&cs->wq);
+	if (atomic_read(&cs->active_state) != PCS_CONNECTING)
 		return;
-	}
 
 	err = dtr_start_try_connect(cs);
 	if (err) {
@@ -1683,23 +1687,18 @@ static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_c
 	struct dtr_connect_state *cs = &path->cs;
 	long connect_int = 10 * HZ;
 	struct drbd_net_conf *nc;
-	int a;
 
 	dtr_cancel_connect_timeout(failed_cm);
 	dtr_remove_cm_from_path(path, failed_cm);
 
-	a = atomic_read(&cs->active_state);
-	if (a == PCS_INACTIVE) {
+	if (atomic_read(&cs->active_state) != PCS_CONNECTING)
 		return;
-	} else if (a == PCS_CONNECTING) {
-		rcu_read_lock();
-		nc = rcu_dereference(transport->net_conf);
-		if (nc)
-			connect_int = nc->connect_int * HZ;
-		rcu_read_unlock();
-	} else {
-		connect_int = 1;
-	}
+
+	rcu_read_lock();
+	nc = rcu_dereference(transport->net_conf);
+	if (nc)
+		connect_int = nc->connect_int * HZ;
+	rcu_read_unlock();
 	schedule_delayed_work(&cs->retry_connect_work, connect_int);
 }
 
@@ -1785,14 +1784,11 @@ static void dtr_cma_connect_work_fn(struct work_struct *work)
 	struct dtr_cm *cm = container_of(work, struct dtr_cm, connect_work);
 	struct dtr_path *path = cm->path;
 	struct drbd_transport *transport = path->path.transport;
-	enum connect_state_enum p;
 	int err;
 
 	mutex_lock(&path->cs.mutex);
-	p = atomic_cmpxchg(&path->cs.active_state, PCS_REQUEST_ABORT, PCS_INACTIVE);
-	if (p != PCS_CONNECTING) {
+	if (atomic_read(&path->cs.active_state) != PCS_CONNECTING) {
 		mutex_unlock(&path->cs.mutex);
-		wake_up(&path->cs.wq);
 		kref_put(&cm->kref, dtr_destroy_cm); /* for work */
 		return;
 	}
@@ -5307,10 +5303,8 @@ static void __dtr_modify_qp_to_err(struct dtr_cm *cm)
 static void __dtr_disconnect_path(struct dtr_path *path)
 {
 	struct drbd_transport *transport;
-	enum connect_state_enum a, p;
-	bool was_scheduled;
+	enum connect_state_enum p;
 	struct dtr_cm *cm;
-	long t;
 	int err;
 
 	if (!path)
@@ -5318,47 +5312,14 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 
 	transport = path->path.transport;
 
-	a = atomic_cmpxchg(&path->cs.active_state, PCS_CONNECTING, PCS_REQUEST_ABORT);
-	p = atomic_cmpxchg(&path->cs.passive_state, PCS_CONNECTING, PCS_INACTIVE);
-	/* Wait for a dtr_path_prepare() in progress */
+	atomic_set(&path->cs.active_state, PCS_INACTIVE);
+	p = atomic_xchg(&path->cs.passive_state, PCS_INACTIVE);
+	/* Wait for a dtr_path_prepare() or establishing in progress */
 	mutex_lock(&path->cs.mutex);
 	mutex_unlock(&path->cs.mutex);
-
-	switch (p) {
-	case PCS_CONNECTING:
+	if (p == PCS_CONNECTING)
 		drbd_put_listener(&path->path);
-		break;
-	case PCS_FINISHING:
-		t = wait_event_timeout(path->cs.wq,
-				       atomic_read(&path->cs.passive_state) == PCS_INACTIVE,
-				       HZ * 60);
-		if (t == 0)
-			tr_warn(transport, "passive_state still %d\n",
-				atomic_read(&path->cs.passive_state));
-		fallthrough;
-	case PCS_INACTIVE:
-		break;
-	}
-
-	switch (a) {
-	case PCS_CONNECTING:
-		was_scheduled = flush_delayed_work(&path->cs.retry_connect_work);
-		if (!was_scheduled) {
-			atomic_set(&path->cs.active_state, PCS_INACTIVE);
-			break;
-		}
-		fallthrough;
-	case PCS_REQUEST_ABORT:
-		t = wait_event_timeout(path->cs.wq,
-				       atomic_read(&path->cs.active_state) == PCS_INACTIVE,
-				       HZ * 60);
-		if (t == 0)
-			tr_warn(transport, "active_state still %d\n",
-				atomic_read(&path->cs.active_state));
-		fallthrough;
-	case PCS_INACTIVE:
-		break;
-	}
+	cancel_delayed_work_sync(&path->cs.retry_connect_work);
 
 	cm = dtr_path_get_cm(path);
 	if (!cm)
@@ -5590,8 +5551,6 @@ static int dtr_activate_path(struct dtr_path *path)
 	if (test_bit(DTR_ACTIVE_SHUT_DOWN, &path->flags))
 		return 0;
 
-	init_waitqueue_head(&cs->wq);
-
 	/* A path re-establishing after a passive graceful shutdown (the peer ran
 	 * del-path) carries a stale DTR_PASSIVE_SHUT_DOWN bit; clear it so the fresh
 	 * connection is selectable for tx again.
@@ -5631,7 +5590,6 @@ out:
 out_no_put:
 	atomic_set(&cs->passive_state, PCS_INACTIVE);
 	atomic_set(&cs->active_state, PCS_INACTIVE);
-	wake_up(&cs->wq);
 
 	return err;
 }
@@ -5731,6 +5689,7 @@ static void dtr_finish_connect(struct drbd_transport *transport)
 	if (!rdma_transport->active) {
 		struct dtr_path *path;
 
+		dtr_stop_connect_works(transport);
 		list_for_each_entry(path, &transport->paths, path.list)
 			dtr_disconnect_path(path);
 	}
