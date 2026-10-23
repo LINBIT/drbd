@@ -1962,26 +1962,12 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 	case RDMA_CM_EVENT_REJECTED:
 		set_bit(DSB_ERROR, &cm->state);
 
-		/* shield ref: prevent the last kref put calling rdma_destroy_id() here */
-		kref_get(&cm->kref);
-		dtr_cma_retry_connect(cm->path, cm);
 		connecting = test_and_clear_bit(DSB_CONNECTING, &cm->state) ||
 			test_and_clear_bit(DSB_CONNECT_REQ, &cm->state);
-		if (connecting) {
-			/* Drop the "expecting ESTABLISHED" ref. Use the keep_id variant:
-			 * if a racing teardown already dropped this cm's path->cm and timer
-			 * refs while the connecting bit stayed set, this put can be the last
-			 * one -- and rdma_destroy_id() must never run inside an rdma_cm event
-			 * callback (it blocks on the id's handler_mutex, which this callback
-			 * holds: self-deadlock, the cm_id then leaks and pins the port at
-			 * bind -98). When it is the last put, return non-zero so the core
-			 * destroys the id outside the callback, exactly as the tail put does.
-			 * The shield above keeps this from being the last put in the balanced
-			 * case, where the tail put at function exit does the final release.
-			 */
-			if (kref_put(&cm->kref, dtr_destroy_cm_keep_id))
-				return 1;
-		}
+		if (!connecting)
+			return 0; /* teardown or the watchdog won and dropped the ref */
+
+		dtr_cma_retry_connect(cm->path, cm);
 		break;
 
 	case RDMA_CM_EVENT_DISCONNECTED:
