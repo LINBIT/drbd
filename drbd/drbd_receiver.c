@@ -11411,7 +11411,15 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 		drbd_info(connection, "No reconciliation resync even though \'%s\' disappeared. (o=%d)\n",
 			  lost_peer->transport.net_conf->name, (int)dagtag_offset);
 
+		/* Only bits this loss set are covered by the equal dagtags.
+		 * Do not consume the flag: a second primary lost at the same
+		 * time shares it, and the next loss rewrites it anyway.
+		 */
 		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+			if (test_bit(BITMAP_HELD_AT_PRIMARY_LOSS, peer_device->flags)) {
+				drbd_info(peer_device, "Keeping out-of-sync bits from before\n");
+				continue;
+			}
 			if (get_ldev(peer_device->device)) {
 				drbd_bm_clear_many_bits(peer_device, 0, -1UL);
 				put_ldev(peer_device->device);
@@ -12457,6 +12465,28 @@ static void cleanup_remote_state_change(struct drbd_connection *connection)
 		nested_twopc_abort(resource, &request);
 }
 
+/* Before cleanup_unacked_peer_requests() marks the lost primary's writes */
+static void note_bitmaps_held_at_primary_loss(struct drbd_connection *lost_peer)
+{
+	struct drbd_resource *resource = lost_peer->resource;
+	struct drbd_connection *connection;
+	struct drbd_peer_device *peer_device;
+	int vnr;
+
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		if (connection == lost_peer)
+			continue;
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+			if (drbd_bm_total_weight(peer_device))
+				set_bit(BITMAP_HELD_AT_PRIMARY_LOSS, peer_device->flags);
+			else
+				clear_bit(BITMAP_HELD_AT_PRIMARY_LOSS, peer_device->flags);
+		}
+	}
+	rcu_read_unlock();
+}
+
 static void drbd_notify_peers_lost_primary(struct drbd_connection *lost_peer)
 {
 	struct drbd_resource *resource = lost_peer->resource;
@@ -12688,6 +12718,8 @@ static void conn_disconnect(struct drbd_connection *connection)
 	if (i)
 		drbd_info(connection, "dagtag_wait_ee not empty, killed %u entries\n", i);
 
+	if (test_bit(NOTIFY_PEERS_LOST_PRIMARY, &connection->flags))
+		note_bitmaps_held_at_primary_loss(connection);
 	cleanup_unacked_peer_requests(connection);
 	cleanup_peer_ack_list(connection);
 
