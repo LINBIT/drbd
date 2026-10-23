@@ -1403,6 +1403,18 @@ retry:
 void resync_stalled_timer_fn(struct timer_list *t)
 {
         struct drbd_peer_device *peer_device = from_timer(peer_device, t, resync_stalled_timer, struct drbd_peer_device);
+	enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
+	unsigned long left;
+
+	if (repl_state != L_SYNC_SOURCE && repl_state != L_SYNC_TARGET)
+		return;
+
+	left = drbd_bm_total_weight(peer_device);
+	if (left < peer_device->rs_stall_check_left) {
+		peer_device->rs_stall_check_left = left;
+		mod_timer(&peer_device->resync_stalled_timer, jiffies + 5*HZ);
+		return;
+	}
 
 	windrbd_suspend_application_io(peer_device->device->this_bdev,
 		"Sync stalled, suspending application I/O.\n");

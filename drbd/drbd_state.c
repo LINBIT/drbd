@@ -2299,6 +2299,7 @@ static void initialize_resync(struct drbd_peer_device *peer_device)
 	peer_device->rs_total = tw;
 	peer_device->rs_start = now;
 	peer_device->rs_last_bm_extent = NULL;
+	peer_device->rs_stall_check_left = tw;
 	peer_device->rs_last_writeout = now;
 	initialize_resync_progress_marks(peer_device);
 	drbd_rs_controller_reset(peer_device);
@@ -2631,6 +2632,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			    (repl_state[NEW] == L_SYNC_SOURCE || repl_state[NEW] == L_SYNC_TARGET)) {
 			/* In case resync is stalled when resuming */
 				printk("Resuming sync, arming application suspension timer.\n");
+				peer_device->rs_stall_check_left = drbd_bm_total_weight(peer_device);
 				mod_timer(&peer_device->resync_stalled_timer, jiffies + 5*HZ);
 				peer_device->rs_last_bm_extent = NULL;	/* We don't know where it was before. */
 			}

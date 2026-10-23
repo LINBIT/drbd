@@ -1184,6 +1184,8 @@ struct drbd_peer_device {
 	struct bm_extent *rs_last_bm_extent;
 	/* Timer for sync stall */
 	struct timer_list resync_stalled_timer;
+	/* Out-of-sync bits at the last sync stall check */
+	unsigned long rs_stall_check_left;
 	/* cumulated time in PausedSyncX state [unit jiffies] */
 	unsigned long rs_paused;
 	/* skipped because csum was equal [unit BM_BLOCK_SIZE] */
