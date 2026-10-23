@@ -1021,6 +1021,7 @@ enum connection_flag {
 	TWOPC_NO,
 	TWOPC_RETRY,
 	CONN_DRY_RUN,		/* Expect disconnect after resync handshake. */
+	CONN_DRY_RUN_LOCAL,	/* This node asked for the dry run. */
 	DISCONNECT_EXPECTED,
 	CORKED,
 	DATA_CORKED = CORKED,	/* used as computed value CORKED + DATA_STREAM */

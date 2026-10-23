@@ -5164,8 +5164,10 @@ static int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 		}
 		set_bit(CONN_DISCARD_MY_DATA, &connection->flags);
 	}
-	if (parms.tentative)
+	if (parms.tentative) {
 		set_bit(CONN_DRY_RUN, &connection->flags);
+		set_bit(CONN_DRY_RUN_LOCAL, &connection->flags);
+	}
 
 	/* Eventually allocate bitmap indexes for the peer_devices here */
 	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
