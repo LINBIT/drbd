@@ -11383,21 +11383,30 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 			connection->after_reconciliation.lost_node_id = be32_to_cpu(p->node_id);
 		}
 
+		/* The peer drops our P_PEER_DAGTAG while it still has the lost node
+		 * connected. Send ours again, ahead of the bitmap, so it decides too.
+		 */
+		if (new_repl_state == L_WF_BITMAP_S)
+			drbd_send_peer_dagtag(connection, lost_peer);
+
 		begin_state_change(resource, &irq_flags, CS_VERBOSE);
 		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 			__change_repl_state(peer_device, new_repl_state);
 			set_bit(RECONCILIATION_RESYNC, peer_device->flags);
 		}
 		rv = end_state_change(resource, &irq_flags, "receive-peer-dagtag");
-		if (rv == SS_SUCCESS)
+		if (rv == SS_SUCCESS) {
 			drbd_info(connection, "Reconciliation resync because \'%s\' disappeared. (o=%d)\n",
 				  lost_peer->transport.net_conf->name, (int)dagtag_offset);
-		else if (rv == SS_NOTHING_TO_DO)
+			if (new_repl_state == L_WF_BITMAP_T)
+				drbd_send_peer_dagtag(connection, lost_peer);
+		} else if (rv == SS_NOTHING_TO_DO) {
 			drbd_info(connection, "\'%s\' disappeared (o=%d), no reconciliation since one diskless\n",
 				  lost_peer->transport.net_conf->name, (int)dagtag_offset);
 			/* sanitize_state() silently removes the resync and the RECONCILIATION_RESYNC bit */
-		else
+		} else {
 			drbd_info(connection, "rv = %d", rv);
+		}
 	} else {
 		drbd_info(connection, "No reconciliation resync even though \'%s\' disappeared. (o=%d)\n",
 			  lost_peer->transport.net_conf->name, (int)dagtag_offset);
