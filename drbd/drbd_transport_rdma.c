@@ -1349,13 +1349,12 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		// pr_info("event = %d, status = %d\n", event->event, event->status);
 		set_bit(DSB_ERROR, &cm->state);
 
-		/* shield ref: prevent the last kref put calling rdma_destroy_id() here */
-		kref_get(&cm->kref);
-		dtr_cma_retry_connect(cm->path, cm);
 		connecting = test_and_clear_bit(DSB_CONNECTING, &cm->state) ||
 			test_and_clear_bit(DSB_CONNECT_REQ, &cm->state);
-		if (connecting)
-			kref_put(&cm->kref, dtr_destroy_cm);
+		if (!connecting)
+			return 0; /* __dtr_disconnect_path() won and dropped the ref */
+
+		dtr_cma_retry_connect(cm->path, cm);
 		break;
 
 	case RDMA_CM_EVENT_DISCONNECTED:
