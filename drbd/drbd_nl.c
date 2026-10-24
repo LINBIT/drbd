@@ -2618,8 +2618,6 @@ static int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 
 	mutex_unlock(&resource->conf_update);
 
-	__update_mdf_al_disabled(device, new_disk_conf->al_updates, NOW);
-
 	if (new_disk_conf->md_flushes)
 		clear_bit(MD_NO_FUA, &device->flags);
 	else
@@ -2632,7 +2630,14 @@ static int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 	    new_disk_conf->discard_zeroes_if_aligned)
 		drbd_reconsider_queue_parameters(device, device->ldev);
 
+	/* No extent becomes active without a transaction before the superblock
+	 * says AL updates are off.
+	 */
+	wait_event(device->al_wait, drbd_al_try_lock_for_transaction(device));
+	__update_mdf_al_disabled(device, new_disk_conf->al_updates, NOW);
 	drbd_md_sync_if_dirty(device);
+	lc_unlock(device->act_log);
+	wake_up(&device->al_wait);
 
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state[NOW] >= L_ESTABLISHED)
