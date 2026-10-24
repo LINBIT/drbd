@@ -2481,7 +2481,8 @@ static void __update_mdf_al_disabled(struct drbd_device *device, bool al_updates
 {
 	struct drbd_md *md = &device->ldev->md;
 	struct drbd_connection *peer = NULL;
-	bool al_updates_old = !(md->flags & MDF_AL_DISABLED);
+	bool al_updates_old = !(md->flags & MDF_AL_DISABLED) ||
+			      test_bit(AL_ENABLE_PENDING, &device->flags);
 	bool optimized = false;
 
 	if (al_updates)
@@ -2503,10 +2504,18 @@ static void __update_mdf_al_disabled(struct drbd_device *device, bool al_updates
 
 	if (al_updates) {
 		drbd_info(device, "Enabling local AL-updates\n");
+		/* Extents that became active meanwhile have no transaction;
+		 * drbd_al_begin_io_commit() writes them, then clears the flag.
+		 */
+		if (!drbd_md_dax_active(device->ldev)) {
+			set_bit(AL_ENABLE_PENDING, &device->flags);
+			return;
+		}
 		md->flags &= ~MDF_AL_DISABLED;
 	} else {
 		drbd_info(device, "Disabling local AL-updates %s\n",
 			  optimized ? "(optimization)" : "(config)");
+		clear_bit(AL_ENABLE_PENDING, &device->flags);
 		md->flags |= MDF_AL_DISABLED;
 	}
 	drbd_md_mark_dirty(device);
