@@ -784,12 +784,26 @@ static int dtr_init_listener(struct drbd_transport *transport, const struct sock
 static void dtr_destroy_listener(struct drbd_listener *generic_listener);
 
 
+/* Sent as the connection manager's private data in the connect request and
+ * the accept. The rdma transport sends none, so both sides recognize a peer
+ * running it before the QP carries any message.
+ */
+static const __be32 dtr_cm_magic = cpu_to_be32(DTR_MAGIC);
+
 static struct rdma_conn_param dtr_conn_param = {
+	.private_data = &dtr_cm_magic,
+	.private_data_len = sizeof(dtr_cm_magic),
 	.responder_resources = 1,
 	.initiator_depth = 1,
 	.retry_count = 10,
 	.rnr_retry_count  = 7,
 };
+
+static bool dtr_peer_runs_rdma2(const struct rdma_conn_param *conn)
+{
+	return conn->private_data_len >= sizeof(dtr_cm_magic) &&
+		!memcmp(conn->private_data, &dtr_cm_magic, sizeof(dtr_cm_magic));
+}
 
 static u32 dtr_cm_to_lkey(struct dtr_cm *cm)
 {
@@ -1498,8 +1512,9 @@ static struct dtr_cm *dtr_alloc_cm(struct dtr_path *path)
 }
 
 static int dtr_cma_accept(struct dtr_listener *listener, struct rdma_cm_id *new_cm_id,
-			  struct dtr_cm **ret_cm)
+			  const struct rdma_conn_param *conn, struct dtr_cm **ret_cm)
 {
+	struct dtr_transport *rdma_transport;
 	struct sockaddr_storage *peer_addr;
 	struct dtr_connect_state *cs;
 	struct dtr_path *path;
@@ -1542,6 +1557,13 @@ static int dtr_cma_accept(struct dtr_listener *listener, struct rdma_cm_id *new_
 
 	path = container_of(drbd_path, struct dtr_path, path);
 	cs = &path->cs;
+	rdma_transport = container_of(drbd_path->transport, struct dtr_transport, transport);
+	if (!dtr_peer_runs_rdma2(conn)) {
+		if (__ratelimit(&rdma_transport->rate_limit))
+			tr_err(&rdma_transport->transport,
+			       "Rejecting connection, peer does not run the rdma2 transport\n");
+		goto reject;
+	}
 	/*
 	 * Do not block the rdma_cm event handler. A busy mutex means our
 	 * connect work is installing its cm, or teardown is running; either
@@ -1933,7 +1955,7 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		/* for listener */
 
 		listener = container_of(cm, struct dtr_listener, cm);
-		err = dtr_cma_accept(listener, cm_id, &cm);
+		err = dtr_cma_accept(listener, cm_id, &event->param.conn, &cm);
 
 		/*
 		 * When a new connection comes in, the callback gets called
@@ -1962,10 +1984,19 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		/* cm->state = DSM_CONNECTED; is set later in the work item */
 		/* This is called for active and passive connections */
 
-		connecting = test_and_clear_bit(DSB_CONNECTING, &cm->state) ||
-			test_and_clear_bit(DSB_CONNECT_REQ, &cm->state);
-		if (!connecting)
+		if (test_and_clear_bit(DSB_CONNECTING, &cm->state)) {
+			/* Active side: the accept's private data identifies the peer */
+			if (!dtr_peer_runs_rdma2(&event->param.conn)) {
+				if (__ratelimit(&cm->rdma_transport->rate_limit))
+					tr_err(&cm->rdma_transport->transport,
+					       "Dropping connection, peer does not run the rdma2 transport\n");
+				set_bit(DSB_ERROR, &cm->state);
+				dtr_cma_retry_connect(cm->path, cm);
+				break;
+			}
+		} else if (!test_and_clear_bit(DSB_CONNECT_REQ, &cm->state)) {
 			return 0; /* __dtr_disconnect_path() won and dropped the ref */
+		}
 
 		kref_get(&cm->kref); /* for the work */
 		schedule_work(&cm->establish_work);
