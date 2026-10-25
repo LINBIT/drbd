@@ -5997,19 +5997,11 @@ static enum sync_strategy drbd_asb_recover_1p(struct drbd_peer_device *peer_devi
 	case ASB_CALL_HELPER:
 		strategy = drbd_asb_recover_0p(peer_device);
 		if (strategy == SYNC_TARGET_USE_BITMAP && resource->role[NOW] == R_PRIMARY) {
-			enum drbd_state_rv rv2;
-
-			 /* drbd_change_state() does not sleep while in SS_IN_TRANSIENT_STATE,
-			  * we might be here in L_OFF which is transient.
-			  * we do not need to wait for the after state change work either. */
-			rv2 = change_role(resource, R_SECONDARY, CS_VERBOSE,
-					"after-sb-1pri", NULL);
-			if (rv2 != SS_SUCCESS) {
-				drbd_maybe_khelper(device, connection, "pri-lost-after-sb");
-			} else {
-				drbd_warn(device, "Successfully gave up primary role.\n");
-				rv = strategy;
-			}
+			/* Force-demote on the retry-connect path: a role change
+			 * is a cluster-wide two-phase commit, barred here.
+			 */
+			set_bit(CONN_HANDSHAKE_DEMOTE, &connection->flags);
+			rv = RETRY_CONNECT;
 		} else
 			rv = strategy;
 	}
@@ -6051,19 +6043,11 @@ static enum sync_strategy drbd_asb_recover_2p(struct drbd_peer_device *peer_devi
 	case ASB_CALL_HELPER:
 		strategy = drbd_asb_recover_0p(peer_device);
 		if (strategy == SYNC_TARGET_USE_BITMAP) {
-			enum drbd_state_rv rv2;
-
-			 /* drbd_change_state() does not sleep while in SS_IN_TRANSIENT_STATE,
-			  * we might be here in L_OFF which is transient.
-			  * we do not need to wait for the after state change work either. */
-			rv2 = change_role(device->resource, R_SECONDARY, CS_VERBOSE,
-					"after-sb-2pri", NULL);
-			if (rv2 != SS_SUCCESS) {
-				drbd_maybe_khelper(device, connection, "pri-lost-after-sb");
-			} else {
-				drbd_warn(device, "Successfully gave up primary role.\n");
-				rv = strategy;
-			}
+			/* Force-demote on the retry-connect path: a role change
+			 * is a cluster-wide two-phase commit, barred here.
+			 */
+			set_bit(CONN_HANDSHAKE_DEMOTE, &connection->flags);
+			rv = RETRY_CONNECT;
 		} else
 			rv = strategy;
 	}
@@ -7188,6 +7172,8 @@ static enum sync_strategy drbd_attach_handshake(struct drbd_peer_device *peer_de
 				break;
 			}
 		}
+		if (strategy == RETRY_CONNECT)
+			return strategy;
 		if (!strategy_descriptor(strategy).is_split_brain) {
 			drbd_warn(peer_device,
 				  "Split-Brain detected during attach, %d primary(ies), automatically resolved. Sync from %s node\n",
@@ -7365,6 +7351,16 @@ static enum sync_strategy drbd_sync_handshake(struct drbd_peer_device *peer_devi
 				strategy = drbd_asb_recover_2p(peer_device);
 				break;
 			}
+		}
+		if (strategy == RETRY_CONNECT) {
+			/* A dry run must not give up the Primary role. */
+			if (test_bit(CONN_DRY_RUN, &connection->flags)) {
+				clear_bit(CONN_HANDSHAKE_DEMOTE, &connection->flags);
+				drbd_info(peer_device,
+					  "dry-run connect: Split-Brain, would give up Primary role.\n");
+				return SPLIT_BRAIN_DISCONNECT;
+			}
+			return strategy;
 		}
 		if (!strategy_descriptor(strategy).is_split_brain) {
 			drbd_warn(peer_device, "Split-Brain detected, %d primaries, "
@@ -9376,6 +9372,7 @@ void drbd_init_connect_state(struct drbd_connection *connection)
 	clear_bit(CONN_HANDSHAKE_DISCONNECT, &connection->flags);
 	clear_bit(CONN_HANDSHAKE_RETRY, &connection->flags);
 	clear_bit(CONN_HANDSHAKE_READY, &connection->flags);
+	clear_bit(CONN_HANDSHAKE_DEMOTE, &connection->flags);
 }
 
 enum csc_rv {
@@ -10193,10 +10190,15 @@ static void propagate_exposed_uuid(struct drbd_device *device)
 static void maybe_force_secondary(struct drbd_peer_device *peer_device)
 {
 	struct drbd_resource *resource = peer_device->device->resource;
+	struct drbd_connection *connection = peer_device->connection;
 	unsigned long irq_flags;
+	bool force;
 
-	if (!resource->fail_io[NOW] && resource->cached_susp &&
-	    resource->res_opts.on_susp_primary_outdated == SPO_FORCE_SECONDARY) {
+	force = !resource->fail_io[NOW] && resource->cached_susp &&
+		resource->res_opts.on_susp_primary_outdated == SPO_FORCE_SECONDARY;
+	force |= test_and_clear_bit(CONN_HANDSHAKE_DEMOTE, &connection->flags);
+
+	if (force) {
 		drbd_warn(peer_device, "force secondary!\n");
 		begin_state_change(resource, &irq_flags,
 				   CS_VERBOSE | CS_HARD | CS_FS_IGN_OPENERS);
