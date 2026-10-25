@@ -105,7 +105,7 @@ MODULE_VERSION(REL_VERSION);
 # define DTR_MAX_TX_SGES (PAGE_SIZE / 512)
 #endif
 
-#define DTR_MAGIC ((u32)0x5257494E)
+#define DTR_MAGIC ((u32)0x52444D32) /* "RDM2" */
 
 /*
  * These numbers are sent within the immediate data value to identify
@@ -2586,9 +2586,7 @@ static void dtr_rx_protocol_error(struct dtr_cm *cm, struct dtr_rx_desc *rx_desc
 		kref_put(&cm->kref, dtr_destroy_cm);
 }
 
-/* A record SENT into a recv buffer must be complete. The rdma transport
- * shares DTR_MAGIC but sends a shorter flow-control record.
- */
+/* A record SENT into a recv buffer must be complete and carry one of our magics */
 static bool dtr_record_len_ok(u32 magic, u32 len)
 {
 	switch (magic) {
