@@ -2455,6 +2455,8 @@ void drbd_bm_slot_lock(struct drbd_peer_device *peer_device, char *why,
 void drbd_bm_slot_unlock(struct drbd_peer_device *peer_device);
 void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_index,
 		       unsigned int to_index);
+void drbd_bm_or_slot(struct drbd_device *device, unsigned int from_index,
+		     unsigned int to_index);
 /* drbd_main.c */
 
 extern struct workqueue_struct *ping_ack_sender;
