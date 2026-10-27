@@ -12300,6 +12300,7 @@ static void conn_disconnect(struct drbd_connection *connection)
 	clear_bit(CONN_DRY_RUN, &connection->flags);
 	dry_run = test_and_clear_bit(CONN_DRY_RUN_LOCAL, &connection->flags);
 	clear_bit(CONN_CONGESTED, &connection->flags);
+	clear_bit(CONN_PRE_110, &connection->flags);
 
 	if (connection->cstate[NOW] == C_STANDALONE)
 		return;
@@ -12604,13 +12605,16 @@ int drbd_do_features(struct drbd_connection *connection)
 		struct drbd_connection *connection2;
 		bool multiple = false;
 
-		rcu_read_lock();
-		for_each_connection_rcu(connection2, resource) {
+		/* new-peer adds a connection under the write lock, and none beside CONN_PRE_110 */
+		read_lock_irq(&resource->state_rwlock);
+		for_each_connection(connection2, resource) {
 			if (connection == connection2)
 				continue;
 			multiple = true;
 		}
-		rcu_read_unlock();
+		if (!multiple)
+			set_bit(CONN_PRE_110, &connection->flags);
+		read_unlock_irq(&resource->state_rwlock);
 
 		if (multiple) {
 			drbd_err(connection, "Peer supports protocols %d-%d, but "

@@ -4793,6 +4793,8 @@ static int adm_new_connection(struct drbd_config_context *adm_ctx, struct genl_i
 	char *transport_name;
 	struct drbd_transport_class *tr_class;
 	struct drbd_transport *transport;
+	struct drbd_connection *connection2;
+	int pre_110_node_id = -1, pre_110_pro = 0;
 
 	/* allocation not in the IO path, drbdsetup / netlink process context */
 	new_net_conf = kzalloc_obj(*new_net_conf);
@@ -4909,6 +4911,23 @@ static int adm_new_connection(struct drbd_config_context *adm_ctx, struct genl_i
 	 * if no further writes occur.
 	 */
 	connection->last_peer_ack_dagtag_seen = READ_ONCE(adm_ctx->resource->dagtag_sector);
+
+	/* A peer below protocol 110 must stay the only one (drbd_do_features()) */
+	for_each_connection(connection2, adm_ctx->resource) {
+		if (test_bit(CONN_PRE_110, &connection2->flags)) {
+			pre_110_node_id = connection2->peer_node_id;
+			pre_110_pro = connection2->agreed_pro_version;
+			break;
+		}
+	}
+	if (pre_110_node_id >= 0) {
+		write_unlock_irq(&adm_ctx->resource->state_rwlock);
+		drbd_msg_sprintf_info(adm_ctx->reply_skb,
+				      "peer %d is connected with protocol %d, which allows no other connection",
+				      pre_110_node_id, pre_110_pro);
+		retcode = ERR_INVALID_REQUEST;
+		goto unlock_fail_free_connection;
+	}
 
 	list_add_tail_rcu(&connection->connections, &adm_ctx->resource->connections);
 	write_unlock_irq(&adm_ctx->resource->state_rwlock);
