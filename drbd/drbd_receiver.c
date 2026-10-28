@@ -271,7 +271,7 @@ static void process_twopc(struct drbd_connection *, struct twopc_reply *, struct
 static void drbd_resync(struct drbd_peer_device *, enum resync_reason);
 static void drbd_unplug_all_devices(struct drbd_connection *connection);
 static int decode_header(struct drbd_connection *, const void *, struct packet_info *);
-static void check_resync_source(struct drbd_device *device, u64 weak_nodes);
+static void check_resync_source(struct drbd_peer_device *primary_pd, u64 weak_nodes);
 static void set_rcvtimeo(struct drbd_connection *connection, enum rcv_timeou_kind kind);
 static bool disconnect_expected(struct drbd_connection *connection);
 static bool uuid_in_peer_history(struct drbd_peer_device *peer_device, u64 uuid);
@@ -8716,7 +8716,7 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 
 	if (peer_device->connection->peer_role[NOW] == R_PRIMARY &&
 	    peer_device->uuid_flags & UUID_FLAG_STABLE)
-		check_resync_source(device, node_mask);
+		check_resync_source(peer_device, node_mask);
 
 	err = __receive_uuids(peer_device, node_mask);
 
@@ -8745,9 +8745,47 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 	return err;
 }
 
+/*
+ * Nothing else restarts a resync that check_resync_source() aborted: with no
+ * other resync queued the target would stay Inconsistent next to an UpToDate
+ * Primary until a reconnect. Carry the blocks the weak source still owed over
+ * to the Primary's bitmap slot and resync from the Primary instead.
+ */
+static void resync_from_primary_after_abort(struct drbd_peer_device *primary_pd,
+					    struct drbd_peer_device *weak_pd)
+{
+	struct drbd_device *device = primary_pd->device;
+
+	if (primary_pd->repl_state[NOW] != L_ESTABLISHED ||
+	    primary_pd->disk_state[NOW] != D_UP_TO_DATE ||
+	    device->disk_state[NOW] >= D_UP_TO_DATE)
+		return;
+
+	if (!get_ldev(device))
+		return;
+
+	/* Without both slots the owed blocks cannot be carried over. */
+	if (weak_pd->bitmap_index == -1 || primary_pd->bitmap_index == -1) {
+		put_ldev(device);
+		return;
+	}
+
+	drbd_suspend_io(device, WRITE_ONLY);
+	drbd_bm_slot_lock(primary_pd, "or_slot after resync abort", BM_LOCK_BULK);
+	drbd_bm_or_slot(device, weak_pd->bitmap_index, primary_pd->bitmap_index);
+	drbd_bm_write(device, NULL);
+	drbd_bm_slot_unlock(primary_pd);
+	drbd_resume_io(device);
+
+	drbd_info(primary_pd, "Resyncing from the primary instead of the weak sync source\n");
+	drbd_send_uuids(primary_pd, UUID_FLAG_RESYNC, 0);
+	drbd_resync(primary_pd, AFTER_UNSTABLE);
+	put_ldev(device);
+}
+
 /**
  * check_resync_source() - Abort resync if the source is weak
- * @device: The device to check
+ * @primary_pd: The peer device of the primary that reported @weak_nodes
  * @weak_nodes: Mask of currently weak nodes in the cluster
  *
  * If a primary loses connection to a SYNC_SOURCE node from us, then we
@@ -8761,8 +8799,9 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
  * We are stopping the resync from such an outdated source here and waiting
  * until all the resync activity has drained (P_RS_DATA_REPLY packets).
  */
-static void check_resync_source(struct drbd_device *device, u64 weak_nodes)
+static void check_resync_source(struct drbd_peer_device *primary_pd, u64 weak_nodes)
 {
+	struct drbd_device *device = primary_pd->device;
 	struct drbd_peer_device *peer_device;
 	struct drbd_connection *connection;
 
@@ -8795,6 +8834,8 @@ abort:
 	peer_device->rs_total  = 0;
 	peer_device->rs_failed = 0;
 	peer_device->rs_paused = 0;
+
+	resync_from_primary_after_abort(primary_pd, peer_device);
 }
 
 /**
@@ -10415,7 +10456,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 	if (!test_bit(INITIAL_STATE_RECEIVED, peer_device->flags) &&
 	    peer_state.role == R_PRIMARY && peer_device->uuid_flags & UUID_FLAG_STABLE)
-		check_resync_source(device, peer_device->uuid_node_mask);
+		check_resync_source(peer_device, peer_device->uuid_node_mask);
 
 	peer_was_resync_target =
 		connection->agreed_pro_version >= 110 ?
@@ -11504,7 +11545,7 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 		put_ldev(device);
 	}
 	if (connection->peer_role[NOW] == R_PRIMARY)
-		check_resync_source(device, weak_nodes);
+		check_resync_source(peer_device, weak_nodes);
 
 	if (connection->peer_role[NOW] == R_UNKNOWN) {
 		set_bit(CURRENT_UUID_RECEIVED, peer_device->flags);
