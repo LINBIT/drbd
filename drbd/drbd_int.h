@@ -1096,6 +1096,7 @@ enum connection_flag {
 			     * behind that walk.
 			     */
 	PING_TIMEOUT_ACTIVE,
+	CONN_PRE_110,		/* agreed on a protocol below 110: the only connection */
 };
 
 /* flag bits per resource */
