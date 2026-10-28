@@ -765,6 +765,9 @@ enum peer_device_flag {
 	INITIAL_STATE_SENT,
 	INITIAL_STATE_RECEIVED,
 	RECONCILIATION_RESYNC,
+	RECONCILE_UNSTABLE_TARGET, /* WFBitMapT by the after-unstable reconcile of
+				    * equal-UUID bits the peer holds
+				    */
 	RECONCILE_PENDING,	/* post-loss reconcile owed, not yet armed;
 				 * bridges loss -> RECONCILIATION_RESYNC
 				 */
