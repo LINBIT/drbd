@@ -4026,6 +4026,17 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 		if (cstate[OLD] < C_CONNECTED && cstate[NEW] == C_CONNECTED)
 			connection->last_reconnect_jif = jiffies;
 
+		/* A dry run that got this far had no resync handshake to
+		 * report on (a diskless side or no volumes); the connection is
+		 * a real one now. With protocol < 118 the handshake follows
+		 * C_CONNECTED, so the dry run is still pending there.
+		 */
+		if (cstate[OLD] < C_CONNECTED && cstate[NEW] == C_CONNECTED &&
+		    connection->agreed_pro_version >= 118) {
+			clear_bit(CONN_DRY_RUN, &connection->flags);
+			clear_bit(CONN_DRY_RUN_LOCAL, &connection->flags);
+		}
+
 		if (resource_suspended[OLD]) {
 			enum drbd_req_event walk_event = -1;
 

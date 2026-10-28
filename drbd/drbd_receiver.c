@@ -141,6 +141,7 @@ enum sync_strategy {
 	REQUIRES_PROTO_124,
 	SYNC_TARGET_PRIMARY_RECONNECT,
 	SYNC_TARGET_PRIMARY_DISCONNECT,
+	DRY_RUN,
 };
 
 struct sync_descriptor {
@@ -249,6 +250,10 @@ static const struct sync_descriptor sync_descriptors[] = {
 	[SYNC_TARGET_PRIMARY_DISCONNECT] = {
 		.name = "sync-target-primary-disconnect",
 		.is_sync_target = true,
+		.disconnect = true,
+	},
+	[DRY_RUN] = {
+		.name = "dry-run",
 		.disconnect = true,
 	},
 };
@@ -7254,8 +7259,8 @@ static enum sync_strategy discard_my_data_to_strategy(struct drbd_peer_device *p
 	return strategy;
 }
 
-/* drbd_sync_handshake() returns the new replication state on success, and -1
- * on failure.
+/* drbd_sync_handshake() returns the strategy for this connection; one with
+ * .reconnect or .disconnect set ends the connect attempt.
  */
 static enum sync_strategy drbd_sync_handshake(struct drbd_peer_device *peer_device,
 					      union drbd_state peer_state)
@@ -7494,7 +7499,7 @@ static enum sync_strategy drbd_sync_handshake(struct drbd_peer_device *peer_devi
 			drbd_info(peer_device, "dry-run connect: Would become %s, doing a %s resync.",
 				 drbd_repl_str(strategy_descriptor(strategy).is_sync_target ? L_SYNC_TARGET : L_SYNC_SOURCE),
 				 strategy_descriptor(strategy).name);
-		return -2;
+		return DRY_RUN;
 	}
 
 	err = bitmap_mod_after_handshake(peer_device, strategy, peer_node_id);
@@ -12651,9 +12656,11 @@ static void conn_disconnect(struct drbd_connection *connection)
 	unsigned long irq_flags;
 	bool reconsider = false;
 	bool kept_for_resend;
+	bool dry_run;
 	int vnr, i;
 
 	clear_bit(CONN_DRY_RUN, &connection->flags);
+	dry_run = test_and_clear_bit(CONN_DRY_RUN_LOCAL, &connection->flags);
 	clear_bit(CONN_CONGESTED, &connection->flags);
 
 	if (connection->cstate[NOW] == C_STANDALONE)
@@ -12810,7 +12817,11 @@ static void conn_disconnect(struct drbd_connection *connection)
 
 	begin_state_change(resource, &irq_flags, CS_VERBOSE | CS_LOCAL_ONLY);
 	oc = connection->cstate[NOW];
-	if (oc >= C_UNCONNECTED) {
+	if (oc >= C_UNCONNECTED && dry_run) {
+		/* The node that asked for the dry run stays down; its peer reconnects */
+		__change_cstate(connection, C_DISCONNECTING);
+		oc = C_DISCONNECTING;
+	} else if (oc >= C_UNCONNECTED) {
 		__change_cstate(connection, C_UNCONNECTED);
 		/* drbd_receiver() has to be restarted after it returns */
 		drbd_thread_restart_nowait(&connection->receiver);
