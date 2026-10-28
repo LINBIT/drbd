@@ -116,7 +116,6 @@ int err = bd_link_disk_holder(
 +	bdev
 	, ...);
 if (err) {
--	bdev_release(handle);
 	...
 }
 ...
