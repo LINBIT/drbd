@@ -2521,8 +2521,6 @@ int drbd_adm_disk_opts(struct drbd_adm_ctx *adm_ctx)
 
 	mutex_unlock(&resource->conf_update);
 
-	__update_mdf_al_disabled(device, new_disk_conf->al_updates, NOW);
-
 	assign_bit(MD_NO_FUA, &device->flags, !new_disk_conf->md_flushes);
 
 	if (write_ordering_changed(old_disk_conf, new_disk_conf))
@@ -2532,7 +2530,14 @@ int drbd_adm_disk_opts(struct drbd_adm_ctx *adm_ctx)
 	    new_disk_conf->discard_zeroes_if_aligned)
 		drbd_reconsider_queue_parameters(device, device->ldev);
 
+	/* No extent becomes active without a transaction before the superblock
+	 * says AL updates are off.
+	 */
+	wait_event(device->al_wait, drbd_al_try_lock_for_transaction(device));
+	__update_mdf_al_disabled(device, new_disk_conf->al_updates, NOW);
 	drbd_md_sync_if_dirty(device);
+	lc_unlock(device->act_log);
+	wake_up(&device->al_wait);
 
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state[NOW] >= L_ESTABLISHED)
