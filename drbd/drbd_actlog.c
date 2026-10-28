@@ -281,6 +281,9 @@ bool drbd_al_begin_io_fastpath(struct drbd_device *device, struct drbd_interval 
 	if (first != last)
 		return false;
 
+	if (test_bit(AL_ENABLE_PENDING, &device->flags))
+		return false;
+
 	return _al_get_nonblock(device, first) != NULL;
 }
 
@@ -482,6 +485,41 @@ bool drbd_al_try_lock_for_transaction(struct drbd_device *device)
 	return locked;
 }
 
+/* While AL updates were off, extents became active without a transaction, and
+ * evicted extents left their bitmap pages unwritten. Put both on disk.
+ */
+static bool al_enable_updates(struct drbd_device *device)
+{
+	struct lru_cache *al = device->act_log;
+	bool enable;
+	int i, n = 0;
+
+	for (i = 0; i < al->nr_elements; i++) {
+		if (lc_element_by_index(al, i)->lc_number != LC_FREE) {
+			n = DIV_ROUND_UP(al->nr_elements, AL_CONTEXT_PER_TRANSACTION);
+			break;
+		}
+	}
+
+	if (drbd_bm_write_copy_pages(device, NULL))
+		return false;
+	for (i = 0; i < n; i++) {
+		if (al_write_transaction(device))
+			return false;
+	}
+	/* The AL lock serializes against the other md.flags writers; the read
+	 * lock against the write-back in finish_state_change().
+	 */
+	read_lock_irq(&device->resource->state_rwlock);
+	enable = test_and_clear_bit(AL_ENABLE_PENDING, &device->flags);
+	if (enable)
+		device->ldev->md.flags &= ~MDF_AL_DISABLED;
+	read_unlock_irq(&device->resource->state_rwlock);
+	if (enable)
+		drbd_md_sync(device);
+	return n > 0;
+}
+
 void drbd_al_begin_io_commit(struct drbd_device *device)
 {
 	bool locked = false;
@@ -493,17 +531,22 @@ void drbd_al_begin_io_commit(struct drbd_device *device)
 	}
 
 	wait_event(device->al_wait,
-			device->act_log->pending_changes == 0 ||
+			(device->act_log->pending_changes == 0 &&
+			 !test_bit(AL_ENABLE_PENDING, &device->flags)) ||
 			(locked = drbd_al_try_lock_for_transaction(device)));
 
 	if (locked) {
+		/* A transaction written there also carries the pending changes. */
+		bool written = test_bit(AL_ENABLE_PENDING, &device->flags) &&
+			       al_enable_updates(device);
+
 		/* Double check: it may have been committed by someone else
 		 * while we were waiting for the lock. */
-		if (device->act_log->pending_changes) {
-			bool write_al_updates = !(device->ldev->md.flags & MDF_AL_DISABLED);
+		if (!written && device->act_log->pending_changes &&
+		    !(device->ldev->md.flags & MDF_AL_DISABLED))
+			al_write_transaction(device);
 
-			if (write_al_updates)
-				al_write_transaction(device);
+		if (device->act_log->pending_changes) {
 			spin_lock_irq(&device->al_lock);
 			/* FIXME
 			if (err)

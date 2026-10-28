@@ -1386,7 +1386,8 @@ static int device_al_updates_show(struct seq_file *m, void *ignored)
 	if (!get_ldev_if_state(device, D_FAILED))
 		return -ENODEV;
 
-	al_updates = !(device->ldev->md.flags & MDF_AL_DISABLED);
+	al_updates = !(device->ldev->md.flags & MDF_AL_DISABLED) ||
+		     test_bit(AL_ENABLE_PENDING, &device->flags);
 	rcu_read_lock();
 	cfg_al_updates = rcu_dereference(device->ldev->disk_conf)->al_updates;
 	rcu_read_unlock();

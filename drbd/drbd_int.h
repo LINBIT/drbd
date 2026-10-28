@@ -635,6 +635,7 @@ enum device_flag {
 	FORCE_DETACH,		/* Force-detach from local disk, aborting any pending local IO */
 	ABORT_MDIO,		/* Interrupt ongoing meta-data I/O */
 	AL_SUSPENDED,		/* Activity logging is currently suspended. */
+	AL_ENABLE_PENDING,	/* AL updates on, the in-core AL not yet on disk */
 	UNREGISTERED,
 	FLUSH_PENDING,		/* if set, device->flush_jif is when we submitted that flush
 				 * from drbd_flush_after_epoch() */
