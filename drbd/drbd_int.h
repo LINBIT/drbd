@@ -1707,6 +1707,7 @@ struct drbd_peer_device {
 	u64 comm_current_uuid; /* communicated current UUID */
 	u64 comm_uuid_flags; /* communicated UUID flags */
 	u64 comm_bitmap_uuid;
+	int comm_day0_node_id; /* communicated day0 slot, or -1 */
 	union drbd_state comm_state;
 
 #ifdef CONFIG_DEBUG_FS
