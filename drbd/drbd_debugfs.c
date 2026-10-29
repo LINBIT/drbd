@@ -357,12 +357,10 @@ enum drbd_peer_request_state {
 
 static enum drbd_peer_request_state drbd_get_peer_request_state(struct drbd_peer_request *peer_req)
 {
-	unsigned long interval_flags = peer_req->i.flags;
-
-	if (interval_flags & INTERVAL_SUBMITTED)
+	if (test_bit(INTERVAL_SUBMITTED, &peer_req->i.flags))
 		return PRS_SUBMITTED;
 
-	if (interval_flags & INTERVAL_READY_TO_SEND)
+	if (test_bit(INTERVAL_READY_TO_SEND, &peer_req->i.flags))
 		return PRS_READY_TO_SEND;
 
 	return PRS_NEW;
