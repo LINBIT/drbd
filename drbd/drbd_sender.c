@@ -2021,13 +2021,11 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 	if (peer_device->rs_failed) {
 		drbd_info(peer_device, "            %lu failed blocks\n", peer_device->rs_failed);
 
-		if (repl_state[NOW] == L_SYNC_TARGET || repl_state[NOW] == L_PAUSED_SYNC_T) {
+		/* The source may be Outdated; failed blocks must not raise it. */
+		if (repl_state[NOW] == L_SYNC_TARGET || repl_state[NOW] == L_PAUSED_SYNC_T)
 			__change_disk_state(device, D_INCONSISTENT);
-			__change_peer_disk_state(peer_device, D_UP_TO_DATE);
-		} else {
-			__change_disk_state(device, D_UP_TO_DATE);
+		else
 			__change_peer_disk_state(peer_device, D_INCONSISTENT);
-		}
 	} else {
 		if (repl_state[NOW] == L_SYNC_TARGET || repl_state[NOW] == L_PAUSED_SYNC_T) {
 			bool stable_resync = was_resync_stable(peer_device);
