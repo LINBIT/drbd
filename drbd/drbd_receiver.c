@@ -3484,6 +3484,11 @@ static int e_end_block_tail(struct drbd_peer_request *peer_req, int cancel)
 		drbd_free_peer_req(peer_req);
 	} else {
 		drbd_free_page_chain(&connection->transport, &peer_req->page_chain);
+		/* The write stays on peer_requests until the peer ack. The
+		 * interval is no longer in the tree; the flag only tells
+		 * debugfs that this write is done here.
+		 */
+		set_bit(INTERVAL_COMPLETED, &peer_req->i.flags);
 		drbd_may_finish_epoch(connection, peer_req->epoch, EV_PUT + (cancel ? EV_CLEANUP : 0));
 		/* Do not use peer_req after this point. We may have sent the
 		 * corresponding barrier and received the corresponding peer ack. As a

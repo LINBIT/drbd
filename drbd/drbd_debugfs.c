@@ -407,12 +407,17 @@ static void seq_print_peer_request(struct seq_file *m,
 	struct drbd_connection *connection, struct list_head *lh,
 	const char *list_name, unsigned long jif)
 {
-	int count = 0;
+	int count[2] = {0};
 	struct drbd_peer_request *peer_req;
 
+	/* Cap completed and not yet completed entries separately, so that
+	 * completed ones waiting for a peer ack never hide a stuck one.
+	 */
 	list_for_each_entry(peer_req, lh, recv_order) {
-		count++;
-		if (count <= 16)
+		bool completed = test_bit(INTERVAL_COMPLETED, &peer_req->i.flags);
+
+		count[completed]++;
+		if (count[completed] <= 16)
 			seq_print_peer_request_one(m, peer_req, list_name, jif);
 	}
 }
@@ -553,7 +558,7 @@ static int resource_in_flight_summary_show(struct seq_file *m, void *pos)
 	unsigned long jif = jiffies;
 
 	/* BUMP me if you change the file format/content/presentation */
-	seq_printf(m, "v: %u\n\n", 2);
+	seq_printf(m, "v: %u\n\n", 3);
 
 	seq_puts(m, "oldest bitmap IO\n");
 	seq_print_resource_pending_bitmap_io(m, resource, jif);
