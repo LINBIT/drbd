@@ -50,6 +50,8 @@ enum chg_state_flags {
 };
 
 void drbd_resume_al(struct drbd_device *device);
+void drbd_flush_connect_prepared(struct drbd_resource *resource, int node_a, int node_b);
+void drbd_flush_connect_committed(struct drbd_resource *resource);
 
 enum drbd_disk_state conn_highest_disk(struct drbd_connection *connection);
 enum drbd_disk_state conn_highest_pdsk(struct drbd_connection *connection);

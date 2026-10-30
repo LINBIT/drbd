@@ -1285,6 +1285,10 @@ struct drbd_resource {
 	/* Protects current_flush_sequence and pending_flush_mask (connection) */
 	spinlock_t initiator_flush_lock;
 	u64 current_flush_sequence;
+	/* A prepared connect of a Primary, which may need a new flush round */
+	u64 flush_connect_nodes;
+	u64 flush_connect_sequence;
+	bool flush_connect_own_missing;
 
 	struct semaphore state_sem;
 	wait_queue_head_t state_wait;  /* upon each state change. */
@@ -2806,6 +2810,8 @@ int w_send_dagtag(struct drbd_work *w, int cancel);
 int w_send_uuids(struct drbd_work *w, int cancel);
 
 bool drbd_any_flush_pending(struct drbd_resource *resource);
+bool drbd_flush_connect_needs_restart(struct drbd_resource *resource);
+void drbd_flush_ack_for_lost_peer(struct drbd_connection *lost_connection);
 void resync_timer_fn(struct timer_list *t);
 void start_resync_timer_fn(struct timer_list *t);
 

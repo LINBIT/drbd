@@ -5755,12 +5755,44 @@ static int receive_dagtag_ov_reply(struct drbd_connection *connection, struct pa
 			be32_to_cpu(p_rs_req->dagtag_node_id), be64_to_cpu(p_rs_req->dagtag));
 }
 
+/* Answer a flush round of @initiator_connection on behalf of @primary_node_id */
+static void queue_flush_ack(struct drbd_connection *initiator_connection,
+		int primary_node_id, u64 flush_sequence)
+{
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&initiator_connection->flush_ack_lock, irq_flags);
+	initiator_connection->flush_ack_sequence[primary_node_id] = flush_sequence;
+	drbd_queue_work_if_unqueued(&initiator_connection->sender_work,
+			&initiator_connection->flush_ack_work);
+	spin_unlock_irqrestore(&initiator_connection->flush_ack_lock, irq_flags);
+}
+
+/*
+ * No peer acks come from this peer any more, and the out-of-sync bits from
+ * its unacked writes are queued: a flush answer on its behalf may go out.
+ * Not while a connect to it is prepared: that connection may carry writes
+ * from before the Primary's flush point. Caller holds state_rwlock.
+ */
+static bool flush_ack_on_behalf_allowed(struct drbd_connection *connection)
+{
+	struct drbd_resource *resource = connection->resource;
+	enum drbd_conn_state cstate = connection->cstate[NOW];
+
+	if (cstate != C_STANDALONE && cstate != C_UNCONNECTED && cstate != C_CONNECTING)
+		return false;
+
+	return !(resource->remote_state_change && resource->twopc_reply.is_connect &&
+		 drbd_twopc_between_peer_and_me(connection));
+}
+
 static int receive_flush_requests(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_connection *other_connection;
 	struct p_flush_requests *p_flush_requests = pi->data;
 	u64 flush_requests_dagtag;
+	u64 flush_sequence = be64_to_cpu(p_flush_requests->flush_sequence);
 
 	spin_lock_irq(&resource->tl_update_lock);
 	/*
@@ -5776,7 +5808,7 @@ static int receive_flush_requests(struct drbd_connection *connection, struct pac
 
 	spin_lock_irq(&connection->primary_flush_lock);
 	connection->flush_requests_dagtag = flush_requests_dagtag;
-	connection->flush_sequence = be64_to_cpu(p_flush_requests->flush_sequence);
+	connection->flush_sequence = flush_sequence;
 	connection->flush_forward_sent_mask = 0;
 	spin_unlock_irq(&connection->primary_flush_lock);
 
@@ -5789,6 +5821,8 @@ static int receive_flush_requests(struct drbd_connection *connection, struct pac
 	for_each_connection_rcu(other_connection, resource) {
 		if (other_connection->cstate[NOW] == C_CONNECTED)
 			queue_work(other_connection->ack_sender, &other_connection->peer_ack_work);
+		else if (flush_ack_on_behalf_allowed(other_connection))
+			queue_flush_ack(connection, other_connection->peer_node_id, flush_sequence);
 	}
 	rcu_read_unlock();
 	read_unlock_irq(&resource->state_rwlock);
@@ -10012,6 +10046,17 @@ match:
 						     flags | CS_IGN_OUTD_FAIL);
 		else
 			rv = far_away_change(connection, &request, reply, flags);
+
+		/* An abort is handled by clear_remote_state_change() */
+		if (!peer_device && !affected_connection && !(flags & CS_ABORT) &&
+		    state_change->mask.conn == conn_MASK &&
+		    state_change->val.conn == C_CONNECTED) {
+			if (flags & CS_PREPARE && rv >= SS_SUCCESS)
+				drbd_flush_connect_prepared(resource, reply->initiator_node_id,
+							    reply->target_node_id);
+			else if (flags & CS_PREPARED)
+				drbd_flush_connect_committed(resource);
+		}
 		break;
 	case TWOPC_RESIZE:
 		if (flags & CS_PREPARE) {
@@ -12648,6 +12693,38 @@ bool drbd_maybe_release_rotated_gen(struct drbd_device *device)
 	return true;
 }
 
+/*
+ * A sync target waits for our answer to its flush round on behalf of each
+ * Primary, which that Primary can no longer send us. Give it now.
+ * Caller holds state_rwlock.
+ */
+void drbd_flush_ack_for_lost_peer(struct drbd_connection *lost_connection)
+{
+	struct drbd_resource *resource = lost_connection->resource;
+	struct drbd_connection *initiator_connection;
+	unsigned long irq_flags;
+
+	if (!flush_ack_on_behalf_allowed(lost_connection))
+		return;
+
+	rcu_read_lock();
+	for_each_connection_rcu(initiator_connection, resource) {
+		u64 flush_sequence;
+
+		if (initiator_connection == lost_connection)
+			continue;
+
+		spin_lock_irqsave(&initiator_connection->primary_flush_lock, irq_flags);
+		flush_sequence = initiator_connection->flush_sequence;
+		spin_unlock_irqrestore(&initiator_connection->primary_flush_lock, irq_flags);
+
+		if (flush_sequence) /* Active flushes use non-zero sequence numbers */
+			queue_flush_ack(initiator_connection, lost_connection->peer_node_id,
+					flush_sequence);
+	}
+	rcu_read_unlock();
+}
+
 static void conn_disconnect(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
@@ -12849,6 +12926,10 @@ static void conn_disconnect(struct drbd_connection *connection)
 	if (oc == C_DISCONNECTING)
 		change_cstate_tag(connection, C_STANDALONE, CS_VERBOSE | CS_HARD | CS_LOCAL_ONLY,
 				"disconnected", NULL);
+
+	read_lock_irq(&resource->state_rwlock);
+	drbd_flush_ack_for_lost_peer(connection);
+	read_unlock_irq(&resource->state_rwlock);
 }
 
 /*
@@ -14482,11 +14563,7 @@ static int got_flush_forward(struct drbd_connection *connection, struct packet_i
 		return 0;
 	}
 
-	spin_lock_irq(&initiator_connection->flush_ack_lock);
-	initiator_connection->flush_ack_sequence[connection->peer_node_id] = flush_sequence;
-	drbd_queue_work_if_unqueued(&initiator_connection->sender_work,
-			&initiator_connection->flush_ack_work);
-	spin_unlock_irq(&initiator_connection->flush_ack_lock);
+	queue_flush_ack(initiator_connection, connection->peer_node_id, flush_sequence);
 	rcu_read_unlock();
 	return 0;
 }

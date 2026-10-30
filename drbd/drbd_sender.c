@@ -807,9 +807,19 @@ bool drbd_any_flush_pending(struct drbd_resource *resource)
 		}
 	}
 	rcu_read_unlock();
+	if (drbd_flush_connect_needs_restart(resource))
+		any_flush_pending = true;
 	spin_unlock_irqrestore(&resource->initiator_flush_lock, flags);
 
 	return any_flush_pending;
+}
+
+/* Caller holds initiator_flush_lock. */
+bool drbd_flush_connect_needs_restart(struct drbd_resource *resource)
+{
+	return resource->flush_connect_nodes &&
+		(resource->flush_connect_own_missing ||
+		 resource->flush_connect_sequence != resource->current_flush_sequence);
 }
 
 void resync_timer_fn(struct timer_list *t)
