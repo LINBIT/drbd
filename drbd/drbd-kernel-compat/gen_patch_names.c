@@ -683,6 +683,12 @@ int main(int argc, char **argv)
 	patch(1, "struct_sockaddr_unsized", true, false,
 	      COMPAT_HAVE_STRUCT_SOCKADDR_UNSIZED, "present");
 
+	patch(1, "wq_has_sleeper", true, false,
+	      COMPAT_HAVE_WQ_HAS_SLEEPER, "present");
+
+	patch(1, "smp_load_acquire", true, false,
+	      COMPAT_SMP_LOAD_ACQUIRE_TAKES_BOOL, "takes_bool");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
