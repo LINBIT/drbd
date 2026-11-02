@@ -6495,12 +6495,11 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 				SYNC_SOURCE_IF_BOTH_FAILED :
 				SYNC_TARGET_IF_BOTH_FAILED;
 
-		if (connection->agreed_pro_version < 120) {
-			*rule = RULE_RECONNECTED;
-			if (peer_device->uuid_flags & UUID_FLAG_RECONNECT &&
-			    local_uuid_flags & UUID_FLAG_RECONNECT)
-				return NO_SYNC;
-		}
+		*rule = RULE_RECONNECTED;
+		if (connection->agreed_pro_version < 120 &&
+		    peer_device->uuid_flags & UUID_FLAG_RECONNECT &&
+		    local_uuid_flags & UUID_FLAG_RECONNECT)
+			return NO_SYNC;
 
 		/* Peer crashed as primary, I survived, resync from me */
 		if (peer_device->uuid_flags & UUID_FLAG_CRASHED_PRIMARY &&
