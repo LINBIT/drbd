@@ -1390,8 +1390,12 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	if (test_bit(SYNC_TARGET_TO_BEHIND, peer_device->flags)) {
 		/* If a P_RS_CANCEL_AHEAD on control socket overtook the
 		 * already queued data and state change to Ahead/Behind,
-		 * don't add more resync requests, just wait it out. */
-		drbd_info_ratelimit(peer_device, "peer pulled ahead during resync\n");
+		 * don't add more resync requests, just wait it out.
+		 * Keep polling: once we are Behind, w_resync_timer() clears
+		 * resync_active; once all answers are in, nothing else
+		 * re-arms this timer.
+		 */
+		mod_timer(&peer_device->resync_timer, jiffies + RS_MAKE_REQS_INTV);
 		return 0;
 	}
 	if (!get_ldev(device)) {
