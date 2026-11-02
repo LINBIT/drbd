@@ -8502,6 +8502,11 @@ static void resync_from_primary_after_abort(struct drbd_peer_device *primary_pd,
 					    struct drbd_peer_device *weak_pd)
 {
 	struct drbd_device *device = primary_pd->device;
+	enum drbd_repl_state weak_rs = weak_pd->repl_state[NOW];
+
+	/* The weak peer started resyncing again while we drained. */
+	if (weak_rs == L_SYNC_TARGET || weak_rs == L_PAUSED_SYNC_T)
+		return;
 
 	if (primary_pd->repl_state[NOW] != L_ESTABLISHED ||
 	    primary_pd->disk_state[NOW] != D_UP_TO_DATE ||
@@ -8551,6 +8556,7 @@ static void check_resync_source(struct drbd_peer_device *primary_pd, u64 weak_no
 	struct drbd_device *device = primary_pd->device;
 	struct drbd_peer_device *peer_device;
 	struct drbd_connection *connection;
+	int err;
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
@@ -8566,20 +8572,27 @@ static void check_resync_source(struct drbd_peer_device *primary_pd, u64 weak_no
 abort:
 	connection = peer_device->connection;
 	drbd_info(peer_device, "My sync source became a weak node, aborting resync!\n");
-	change_repl_state(peer_device, L_ESTABLISHED, CS_VERBOSE, "abort-resync");
+	if (change_repl_state(peer_device, L_ESTABLISHED, CS_VERBOSE, "abort-resync") < SS_SUCCESS)
+		return;
 	drbd_flush_workqueue(&connection->sender_work);
 	drbd_cancel_conflicting_resync_requests(peer_device);
 
-	wait_event_interruptible(connection->ee_wait,
-				 peer_device->repl_state[NOW] <= L_ESTABLISHED ||
-				 atomic_read(&connection->backing_ee_cnt) == 0);
-	wait_event_interruptible(device->misc_wait,
-				 peer_device->repl_state[NOW] <= L_ESTABLISHED ||
-				 atomic_read(&peer_device->rs_pending_cnt) == 0);
+	/* Wait for the replies still in flight, then for their writes. */
+	err = wait_event_interruptible(device->misc_wait,
+				       peer_device->repl_state[NOW] < L_ESTABLISHED ||
+				       atomic_read(&peer_device->rs_pending_cnt) == 0);
+	if (!err)
+		err = wait_event_interruptible(connection->ee_wait,
+					       peer_device->repl_state[NOW] < L_ESTABLISHED ||
+					       atomic_read(&connection->backing_ee_cnt) == 0);
 
 	peer_device->rs_total  = 0;
 	peer_device->rs_failed = 0;
 	peer_device->rs_paused = 0;
+
+	/* Interrupted, resync replies from the weak source may still arrive. */
+	if (err)
+		return;
 
 	resync_from_primary_after_abort(primary_pd, peer_device);
 }
