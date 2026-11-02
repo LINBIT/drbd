@@ -1785,6 +1785,31 @@ int drbd_send_state(struct drbd_peer_device *peer_device, union drbd_state state
 	return send_state(peer_device->connection, peer_device->device->vnr, state);
 }
 
+/**
+ * drbd_send_uuids_peer_attach() - Send P_UUIDS and P_STATE for a peer attach
+ * @peer_device: Peer DRBD device that attached.
+ *
+ * The worker and the receiver both call this; whichever clears
+ * SEND_UUIDS_PEER_ATTACH first does the sending. The mutex covers the
+ * clear and the sends, so when this returns, P_UUIDS has been sent and
+ * comm_bm_set and comm_uuid_flags hold what the peer decides on, no
+ * matter which thread sent them.
+ *
+ * The state is read after the flag is cleared, so it includes the state
+ * change that set the flag. A worker item queued for an earlier attach
+ * that clears the flag of a later one therefore sends a state that
+ * matches the later attach, not its own stale one.
+ */
+void drbd_send_uuids_peer_attach(struct drbd_peer_device *peer_device)
+{
+	mutex_lock(&peer_device->peer_attach_send_mutex);
+	if (test_and_clear_bit(SEND_UUIDS_PEER_ATTACH, peer_device->flags)) {
+		drbd_send_uuids(peer_device, 0, 0);
+		drbd_send_current_state(peer_device);
+	}
+	mutex_unlock(&peer_device->peer_attach_send_mutex);
+}
+
 int conn_send_state_req(struct drbd_connection *connection, int vnr, enum drbd_packet cmd,
 			union drbd_state mask, union drbd_state val)
 {
@@ -4167,6 +4192,7 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 	peer_device->disk_state[NOW] = D_UNKNOWN;
 	peer_device->repl_state[NOW] = L_OFF;
 	spin_lock_init(&peer_device->peer_seq_lock);
+	mutex_init(&peer_device->peer_attach_send_mutex);
 
 	ratelimit_state_init(&peer_device->ratelimit[D_RL_PD_GENERIC], 5*HZ, /* no burst */ 1);
 

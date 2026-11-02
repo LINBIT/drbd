@@ -3718,6 +3718,10 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 			if (repl_state[OLD] <= L_ESTABLISHED && repl_state[NEW] == L_WF_BITMAP_S)
 				starting_resync = true;
 
+			if (peer_disk_state[OLD] < D_NEGOTIATING &&
+			    peer_disk_state[NEW] == D_NEGOTIATING)
+				set_bit(SEND_UUIDS_PEER_ATTACH, peer_device->flags);
+
 			if ((disk_state[OLD] != D_UP_TO_DATE || peer_disk_state[OLD] != D_UP_TO_DATE) &&
 			    (disk_state[NEW] == D_UP_TO_DATE && peer_disk_state[NEW] == D_UP_TO_DATE)) {
 				clear_bit(CRASHED_PRIMARY, &device->flags);
@@ -4956,8 +4960,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				peer_device->rs_total = 0;
 				peer_device->rs_failed = 0;
 
-				drbd_send_uuids(peer_device, 0, 0);
-				drbd_send_state(peer_device, new_state);
+				drbd_send_uuids_peer_attach(peer_device);
 			}
 			/* No point in queuing send_bitmap if we don't have a connection
 			 * anymore, so check also the _current_ state, not only the new state
