@@ -13841,10 +13841,10 @@ static int got_OVResult(struct drbd_connection *connection, struct packet_info *
 	else
 		ov_out_of_sync_print(peer_device);
 
+	dec_rs_pending(peer_device);
+
 	if (!get_ldev(device))
 		return 0;
-
-	dec_rs_pending(peer_device);
 
 	verify_progress(peer_device, sector, size);
 
