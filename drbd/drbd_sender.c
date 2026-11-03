@@ -1109,8 +1109,20 @@ void drbd_rs_all_in_flight_came_back(struct drbd_peer_device *peer_device, int r
 	struct drbd_device *device = peer_device->device;
 	unsigned int c_max_rate, interval, latency, m, amount_kb;
 	unsigned int rs_kib_in = rs_sect_in / 2;
+	enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
 	ktime_t latency_kt;
 	bool kickstart;
+
+	/*
+	 * Not making requests, last reply in: w_resync_timer() clears
+	 * resync_active. Keep the pacing below for SyncTarget and VerifyS,
+	 * which make new requests from that work.
+	 */
+	if (repl_state != L_SYNC_TARGET && repl_state != L_VERIFY_S) {
+		drbd_queue_work_if_unqueued(&peer_device->connection->sender_work,
+					    &peer_device->resync_work);
+		return;
+	}
 
 	if (get_ldev(device)) {
 		max_bio_size_kb = queue_max_hw_sectors(device->rq_queue) / 2;
@@ -1131,7 +1143,7 @@ void drbd_rs_all_in_flight_came_back(struct drbd_peer_device *peer_device, int r
 		interval = 0;
 	/* interval holds the ideal pace in which we should request max_bio_size */
 
-	if (peer_device->repl_state[NOW] == L_SYNC_TARGET) {
+	if (repl_state == L_SYNC_TARGET) {
 		/* Only run resync_work early if we are definitely making
 		 * progress. Otherwise we might continually lock a resync
 		 * extent even when all the requests are canceled. This can

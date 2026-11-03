@@ -3273,7 +3273,11 @@ static inline void inc_rs_pending(struct drbd_peer_device *peer_device)
 	((void)expect((peer_device), __dec_rs_pending(peer_device) >= 0))
 static inline int __dec_rs_pending(struct drbd_peer_device *peer_device)
 {
-	return atomic_dec_return(&peer_device->rs_pending_cnt);
+	int rs_pending_cnt = atomic_dec_return(&peer_device->rs_pending_cnt);
+
+	if (rs_pending_cnt == 0)
+		wake_up(&peer_device->device->misc_wait);
+	return rs_pending_cnt;
 }
 
 /* counts how many answers we still need to send to the peer.
