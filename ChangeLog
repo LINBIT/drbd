@@ -2,6 +2,87 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.3.5-rc.1 (api:genl2/proto:86-101,118-125/transport:23)
+--------
+ * Track changed blocks for incremental backups: a tracking bitmap slot
+   records every write to the backing device; cbt-flush and cbt-start
+   bracket a snapshot taken while I/O is suspended on all nodes
+ * suspend-io now also waits for the barrier ack of the last epoch, so
+   that with protocols A and B the writes are on the peers' stable
+   storage too; flush-to-peers=no skips that wait
+ * Add rdma2, a new RDMA transport that moves all data with one-sided
+   RDMA-WRITE, sends bios zero-copy, and fails over to a surviving path
+   when a link goes down
+ * Serve the new drbd2 netlink family next to the drbd family
+ * Optionally serve DRBD 8.4 userland over the netlink family at version
+   1 (CONFIG_DRBD_NL_DRBD1, rpmbuild --with nl_drbd1,
+   DEB_BUILD_OPTIONS=nl_drbd1); off by default
+ * Fix lb-tcp skipping a path for good after the peer closed it first
+   during a disconnect, which starved every later handshake
+ * Fix spurious and racy "bitmap locked" warnings when bitmap operations
+   on different peer slots run concurrently
+ * All fixes from 9.2.21-rc.1
+  - Fix a resync target staying Inconsistent with nothing left to sync:
+    when the Primary cannot reach the sync source, after aborting a weak
+    sync source, and when P_RS_CANCEL_AHEAD overtakes the Ahead state
+    change
+  - Fix a reconciliation resync target waiting in WFBitMapT forever, and
+    out-of-sync bits from before a lost diskless Primary being dropped at
+    equal dagtags
+  - Fix a peer's connect-time upgrade from Outdated going unnoticed,
+    which left writes unreplicated
+  - Fix an Outdated sync source being marked UpToDate after a resync
+    with failed blocks
+  - Fix the day0 slots, a regression in 9.2.20: forget-peer left a slot
+    that the next UUID bump filled with a later generation, and a peer
+    created from the day0 UUID could be refused as unrelated data;
+    attach repairs such meta data
+  - Fix promoting a peer that holds an older generation of the data a
+    diskless Primary exposes
+  - Fix P_OUT_OF_SYNC: never sent for Primaries with node-id 8 or higher,
+    a crash after del-peer of a Primary, and writes left pending for a
+    peer that lost its connection
+  - Fix the activity log: AL updates turned off while a crashed Primary
+    resyncs, the superblock written too late on "al-updates no", and the
+    in-core AL not written when AL updates come back on
+  - Fix a dry-run connect (--tentative) establishing the connection
+    without a resync
+  - Fix the last close returning before the peers have the last write on
+    stable storage, and auto-demote failing on a pending signal
+  - Fix call-pri-lost-after-sb killing the receiver instead of demoting
+  - Fix online resize: drain application I/O before the commit and before
+    a participant replies, cache the peers' size answers per volume, and
+    refuse a too small peer while syncing from a larger one
+  - Fix a receiver deadlock at the end of a resync when the link fails
+    while the bitmap is written, and bound the memory a bitmap write-out
+    holds
+  - Fix resync pacing: the fixed resync-rate (c-plan-ahead 0) holds, the
+    resync queue at the backing device is bounded so application I/O does
+    not wait behind it, and DRBD logs when max-buffers or c-max-rate
+    limit a resync
+  - Fix connect and disconnect issues: a spurious NetworkFailure right
+    after a handshake, a stale ping timeout dropping the next connect, a
+    peer's close while connecting taken as a network error, ko-count 0
+    being counted down, and a second peer accepted beside a DRBD 8.4 peer
+  - Fix lb-tcp: a NULL pointer dereference in the receiver, a CPU spin
+    when the peer closes mid-payload, zero-length data chunks, hot-adding
+    paths, and listeners left on unused paths
+  - Fix rdma: use-after-free and refcount underflows on teardown during
+    connect, a 60 s hang after a failed establish, going StandAlone on an
+    interrupted connect, and a crash with a peer running rdma2
+  - Fix the TLS handshake compat code (upstream fixes): leaks, refcount
+    and use-after-free bugs, and a missing admin check on DONE
+  - Fix memory corruption by peer_device flags on 32-bit kernels
+  - Fix a negative ap-in-flight after a resend, BarrierAck count warnings,
+    sending on after a send failed, and an unsent packet flushed at
+    disconnect ("Wrong magic value" on the peer)
+  - Fix attach hanging after the node was a verify target, and a double
+    release when linking the holder fails
+  - Show the submit and sent ages of requests in debugfs again, and mark
+    peer writes that completed locally
+  - Fix building SUSE KMPs on SLES 16, and the build with
+    CONFIG_DRBD_TIMING_STATS
+
 9.3.4 (api:genl2/proto:86-101,118-125/transport:22)
 --------
  * Fix drbdsetup failing with "Operation not supported" on every command
