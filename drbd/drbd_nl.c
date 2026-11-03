@@ -3167,6 +3167,21 @@ static void distrust_unsupported_peer_flags(struct drbd_device *device, struct d
 			  "not trusting MDF_PEER_DIVERGENCE_BITMAP of node(s) 0x%llX\n", nodes);
 }
 
+/* A slot without a bitmap needs no divergence flag: is_divergence_bitmap() is
+ * true for it regardless, and a day0 slot must keep flags == 0.
+ */
+static void drop_divergence_flag_without_bitmap(struct drbd_md *md)
+{
+	int i;
+
+	for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
+		struct drbd_peer_md *peer_md = &md->peers[i];
+
+		if (!test_bit(__MDF_HAVE_BITMAP, &peer_md->flags))
+			clear_bit(__MDF_PEER_DIVERGENCE_BITMAP, &peer_md->flags);
+	}
+}
+
 static void decode_magic(struct meta_data_on_disk_9 *on_disk, u32 *magic, u32 *flags)
 {
 	/* magic and flags are in at the same offsets in 8.4 and 9 */
@@ -3210,6 +3225,7 @@ int drbd_md_decode(struct drbd_adm_ctx *adm_ctx,
 		clear_bit(LEGACY_84_MD, &device->flags);
 		decode_md_9(buffer, &bdev->md);
 		distrust_unsupported_peer_flags(device, &bdev->md);
+		drop_divergence_flag_without_bitmap(&bdev->md);
 	} else {
 		if (!device->resource->res_opts.drbd8_compat_mode) {
 			drbd_err_and_skb_info(adm_ctx,
