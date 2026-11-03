@@ -2281,6 +2281,7 @@ void drbd_uuid_new_current_by_user(struct drbd_device *device);
 void _drbd_uuid_push_history(struct drbd_device *device, u64 val);
 u64 _drbd_uuid_pull_history(struct drbd_peer_device *peer_device);
 void drbd_set_peer_bitmap_uuid(struct drbd_peer_md *peer_md, u64 bitmap_uuid, u64 dagtag);
+int drbd_day0_node_id(struct drbd_md *md, int exclude);
 void drbd_uuid_resync_starting(struct drbd_peer_device *peer_device);
 void drbd_uuid_resync_starting_source(struct drbd_peer_device *peer_device);
 u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device);
@@ -3549,6 +3550,17 @@ static inline bool is_divergence_bitmap(struct drbd_peer_md *peer_md)
 {
 	return !test_bit(__MDF_HAVE_BITMAP, &peer_md->flags) ||
 		test_bit(__MDF_PEER_DIVERGENCE_BITMAP, &peer_md->flags);
+}
+
+/* A day0 slot: a totally unused peer slot, without a bitmap of its own and
+ * without flags.
+ */
+static inline bool drbd_is_day0_slot(struct drbd_md *md, int node_id)
+{
+	struct drbd_peer_md *peer_md = &md->peers[node_id];
+
+	return node_id != md->node_id && peer_md->bitmap_index == -1 &&
+		!peer_md->flags;
 }
 
 static inline u64 drbd_history_uuid(struct drbd_device *device, int i)

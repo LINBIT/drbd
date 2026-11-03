@@ -2671,20 +2671,11 @@ allocate_bitmap_index(struct drbd_peer_device *peer_device,
 	return 0;
 }
 
-static struct drbd_peer_md *day0_peer_md(struct drbd_device *device)
+static struct drbd_peer_md *day0_peer_md(struct drbd_device *device, int exclude)
 {
-	const int my_node_id = device->resource->res_opts.node_id;
-	struct drbd_peer_md *peer_md = device->ldev->md.peers;
-	int node_id;
+	int node_id = drbd_day0_node_id(&device->ldev->md, exclude);
 
-	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
-		if (node_id == my_node_id)
-			continue;
-		/* Only totally unused slots definitely contain the day0 UUID. */
-		if (peer_md[node_id].bitmap_index == -1 && !peer_md[node_id].flags)
-			return &peer_md[node_id];
-	}
-	return NULL;
+	return node_id == -1 ? NULL : &device->ldev->md.peers[node_id];
 }
 
 /* Clear the flags in "mask", one bit at a time, so that a concurrent set_bit()
@@ -2737,7 +2728,7 @@ static int clear_peer_slot(struct drbd_device *device, int peer_node_id, u32 md_
 		goto out_no_buffer;
 
 	/* Look for day0 UUID before changing this peer slot to a day0 slot. */
-	day0_md = day0_peer_md(device);
+	day0_md = day0_peer_md(device, peer_node_id);
 
 	clear_peer_md_flags(peer_md, ~md_flags | MDF_HAVE_BITMAP);
 	peer_md->bitmap_index = -1;
