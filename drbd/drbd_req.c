@@ -933,6 +933,25 @@ static bool drbd_sender_needs_master_bio(unsigned int net_rq_state)
 	return (net_rq_state & RQ_NET_QUEUED) && !(net_rq_state & RQ_NET_DONE);
 }
 
+/* Once nothing is in flight to the peer, start the resync for every L_AHEAD peer device */
+static void maybe_ahead_to_sync_source(struct drbd_connection *connection)
+{
+	struct drbd_peer_device *pd;
+	int vnr;
+
+	if (atomic_read(&connection->ap_in_flight) != 0)
+		return;
+
+	idr_for_each_entry(&connection->peer_devices, pd, vnr) {
+		if (pd->repl_state[NOW] != L_AHEAD)
+			continue;
+		if (test_and_set_bit(AHEAD_TO_SYNC_SOURCE, pd->flags))
+			continue; /* already done */
+		pd->start_resync_side = L_SYNC_SOURCE;
+		mod_timer(&pd->start_resync_timer, jiffies + HZ);
+	}
+}
+
 /* I'd like this to be the only place that manipulates
  * req->completion_ref and req->kref. */
 static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
@@ -1079,9 +1098,12 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		atomic_sub(req_payload_sectors(req), &connection->ap_in_flight);
 
 	if (!(old_net & RQ_NET_DONE) && (set & RQ_NET_DONE)) {
-		if (old_net & RQ_NET_SENT)
+		if (old_net & RQ_NET_SENT) {
 			atomic_sub(req_payload_sectors(req),
 					&peer_device->connection->ap_in_flight);
+			/* a write may overtake the last P_OUT_OF_SYNC */
+			maybe_ahead_to_sync_source(connection);
+		}
 		if (old_net & RQ_EXP_BARR_ACK)
 			++d_put;
 		ktime_get_accounting(req->net_done_kt[peer_device->node_id]);
@@ -1090,25 +1112,8 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 				  req, 0, RQ_NET_DONE);
 	}
 
-	if ((old_net & RQ_NET_PENDING_OOS) && (clear & RQ_NET_PENDING_OOS)) {
-		if (peer_device->repl_state[NOW] == L_AHEAD &&
-		    atomic_read(&peer_device->connection->ap_in_flight) == 0) {
-			struct drbd_peer_device *pd;
-			int vnr;
-			/* The first peer device to notice that it is time to
-			 * go Ahead -> SyncSource tries to trigger that
-			 * transition for *all* peer devices currently in
-			 * L_AHEAD for this connection. */
-			idr_for_each_entry(&peer_device->connection->peer_devices, pd, vnr) {
-				if (pd->repl_state[NOW] != L_AHEAD)
-					continue;
-				if (test_and_set_bit(AHEAD_TO_SYNC_SOURCE, pd->flags))
-					continue; /* already done */
-				pd->start_resync_side = L_SYNC_SOURCE;
-				mod_timer(&pd->start_resync_timer, jiffies + HZ);
-			}
-		}
-	}
+	if ((old_net & RQ_NET_PENDING_OOS) && (clear & RQ_NET_PENDING_OOS))
+		maybe_ahead_to_sync_source(connection);
 
 	/* potentially complete and destroy */
 	drbd_req_put_completion_ref(req, m, c_put);
