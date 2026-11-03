@@ -1535,14 +1535,16 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_md *peer_md;
 	struct p_uuids110 *p;
-	int i, pos = 0, day0 = -1;
+	int i, pos = 0, day0 = -1, sent_day0 = -1;
 	u64 local_uuid_flags = 0, authoritative_mask, bitmap_uuids_mask = 0;
 	int p_size = sizeof(*p);
 
-	if (!get_ldev_if_state(device, D_NEGOTIATING))
+	if (!get_ldev_if_state(device, D_NEGOTIATING)) {
+		WRITE_ONCE(peer_device->comm_day0_node_id, -1);
 		return drbd_send_current_uuid(peer_device,
 					      diskless_primary_present_current_uuid(peer_device),
 					      drbd_weak_nodes_device(device));
+	}
 
 	peer_md = device->ldev->md.peers;
 
@@ -1558,7 +1560,7 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 	p->current_uuid = cpu_to_be64(peer_device->comm_current_uuid);
 
 	/* Advertise an unallocated day0 bitmap slot only if we actually have
-	 * one, and always the one drbd_find_bitmap_by_uuid() considers.
+	 * one. drbd_find_bitmap_by_uuid() considers only the one we sent.
 	 */
 	if (peer_device->connection->agreed_pro_version >= 116 &&
 	    drbd_unallocated_index(device->ldev) != -1)
@@ -1569,6 +1571,7 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 			test_bit(__MDF_NODE_EXISTS, &peer_md[i].flags);
 		if (i == day0 && val) {
 			send_this = true;
+			sent_day0 = i;
 			uuid_flags |= (u64)i << UUID_FLAG_UNALLOC_SHIFT;
 			uuid_flags |= UUID_FLAG_HAS_UNALLOC;
 		}
@@ -1577,6 +1580,7 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 			p->other_uuids[pos++] = cpu_to_be64(val);
 		}
 	}
+	WRITE_ONCE(peer_device->comm_day0_node_id, sent_day0);
 	peer_device->comm_bitmap_uuid = drbd_bitmap_uuid(peer_device);
 
 	for (i = 0; i < HISTORY_UUIDS; i++)
@@ -4242,6 +4246,7 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 	atomic_set(&peer_device->rs_sect_parked, 0);
 
 	peer_device->bitmap_index = -1;
+	peer_device->comm_day0_node_id = -1;
 	peer_device->resync_finished_pdsk = D_UNKNOWN;
 
 	peer_device->q_limits.physical_block_size = SECTOR_SIZE;

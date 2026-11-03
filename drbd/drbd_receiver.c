@@ -6150,16 +6150,17 @@ static int drbd_find_peer_bitmap_by_uuid(struct drbd_peer_device *peer_device, u
  * on the result.
  *
  * Of the slots without a bitmap and without a known node, consider only the
- * day0 slot _drbd_send_uuids110() advertises to this peer. The peer sees only
- * that one, so a match on another one would be a decision it does not share.
+ * day0 slot _drbd_send_uuids110() last sent to this peer, if any. The peer
+ * sees only that one, so a match on another one would be a decision it does
+ * not share. Which slot that is, and whether one is sent at all, can change
+ * between sending and the handshake, so take what was sent.
  */
 static int drbd_find_bitmap_by_uuid(struct drbd_peer_device *peer_device, u64 uuid)
 {
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
-	struct drbd_md *md = &device->ldev->md;
-	struct drbd_peer_md *peer_md = md->peers;
-	int day0 = drbd_day0_node_id(md, peer_device->node_id);
+	struct drbd_peer_md *peer_md = device->ldev->md.peers;
+	int day0 = READ_ONCE(peer_device->comm_day0_node_id);
 	int i, any = -1;
 
 	for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
@@ -11558,6 +11559,29 @@ out:
 	return 0;
 }
 
+/* Whether any of our peer slots holds the UUID. Unlike
+ * drbd_find_bitmap_by_uuid() this is a local question, so it looks at every
+ * slot, not only at those the peer knows about.
+ */
+static bool uuid_in_my_bitmap_slots(struct drbd_peer_device *peer_device, u64 uuid)
+{
+	struct drbd_device *device = peer_device->device;
+	struct drbd_peer_md *peer_md = device->ldev->md.peers;
+	int i;
+
+	for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
+		if (i == device->ldev->md.node_id)
+			continue;
+		if (peer_device->connection->agreed_pro_version < 116 &&
+		    peer_md[i].bitmap_index == -1)
+			continue;
+		if ((peer_md[i].bitmap_uuid & ~UUID_PRIMARY) == uuid)
+			return true;
+	}
+
+	return false;
+}
+
 static bool drbd_diskless_moved_on(struct drbd_peer_device *peer_device, u64 current_uuid)
 {
 	struct drbd_device *device = peer_device->device;
@@ -11578,7 +11602,7 @@ static bool drbd_diskless_moved_on(struct drbd_peer_device *peer_device, u64 cur
 
 	if (get_ldev(device)) {
 		from_the_past =
-			drbd_find_bitmap_by_uuid(peer_device, current_uuid & ~UUID_PRIMARY) != -1;
+			uuid_in_my_bitmap_slots(peer_device, current_uuid & ~UUID_PRIMARY);
 		if (!from_the_past)
 			from_the_past = uuid_in_my_history(device, current_uuid & ~UUID_PRIMARY);
 		put_ldev(device);
