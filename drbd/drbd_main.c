@@ -1213,6 +1213,16 @@ int drbd_send_command(struct drbd_peer_device *peer_device,
 			    cmd, drbd_stream);
 }
 
+int drbd_send_disconnect(struct drbd_connection *connection)
+{
+	if (connection->agreed_pro_version < 118)
+		return 0;
+
+	if (!conn_prepare_command(connection, 0, DATA_STREAM))
+		return -EIO;
+	return send_command(connection, -1, P_DISCONNECT, DATA_STREAM | SFLAG_FLUSH);
+}
+
 int drbd_send_ping(struct drbd_connection *connection)
 {
 	if (!conn_prepare_command(connection, 0, CONTROL_STREAM))
@@ -4138,6 +4148,72 @@ void drbd_transport_shutdown(struct drbd_connection *connection, enum drbd_tr_fr
 
 	mutex_unlock(&connection->mutex[CONTROL_STREAM]);
 	mutex_unlock(&connection->mutex[DATA_STREAM]);
+}
+
+/**
+ * drbd_transport_drain() - Discard received data until the peer closes the connection
+ * @connection: The connection we sent a disconnect (P_TWOPC_COMMIT or P_DISCONNECT)
+ *
+ * Closing a TCP socket with unread data in its receive queue resets the
+ * connection. The peer, that has yet to process our disconnect, may then fail
+ * a send and see a network failure instead of the disconnect. Keep the
+ * sockets open until the peer has processed the disconnect and closed them,
+ * at most for the ping timeout, or until drbd_transport_abort_drain().
+ */
+void drbd_transport_drain(struct drbd_connection *connection)
+{
+	struct drbd_transport *transport = &connection->transport;
+	struct drbd_transport_ops *tr_ops = &transport->class->ops;
+	unsigned long deadline;
+	struct net_conf *nc;
+	long timeout = 0;
+	void *buf;
+	int rv;
+
+	if (!transport->class->drain_before_close)
+		return;
+
+	rcu_read_lock();
+	nc = rcu_dereference(transport->net_conf);
+	if (nc)
+		timeout = nc->ping_timeo * HZ / 10;
+	rcu_read_unlock();
+	if (!timeout)
+		return;
+
+	deadline = jiffies + timeout;
+	while (time_before(jiffies, deadline)) {
+		/* Signals from stopping the receiver are expected here; only
+		 * drbd_transport_abort_drain() ends the wait early.
+		 */
+		flush_signals(current);
+		if (test_bit(ABORT_DRAIN, &connection->flags)) {
+			drbd_info(connection, "Stopped waiting for the peer to close\n");
+			return;
+		}
+		tr_ops->set_rcvtimeo(transport, DATA_STREAM, max_t(long, deadline - jiffies, 1));
+		rv = tr_ops->recv(transport, DATA_STREAM, &buf, DRBD_SOCKET_BUFFER_SIZE, 0);
+		if (rv == 0)
+			return;
+		if (rv < 0 && rv != -EAGAIN && rv != -EINTR && rv != -ERESTARTSYS)
+			return;
+	}
+	drbd_warn(connection, "Peer did not close the connection in time\n");
+}
+
+void drbd_transport_abort_drain(struct drbd_connection *connection)
+{
+	struct drbd_thread *thi = &connection->receiver;
+	unsigned long flags;
+
+	set_bit(ABORT_DRAIN, &connection->flags);
+	/* Only a disconnecting receiver drains; do not disturb a running one */
+	if (connection->cstate[NOW] != C_DISCONNECTING)
+		return;
+	spin_lock_irqsave(&thi->t_lock, flags);
+	if (thi->task && thi->task != current)
+		send_sig(DRBD_SIGKILL, thi->task, 1);
+	spin_unlock_irqrestore(&thi->t_lock, flags);
 }
 
 void drbd_destroy_path(struct kref *kref)

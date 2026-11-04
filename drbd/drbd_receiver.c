@@ -649,16 +649,6 @@ static int drbd_recv_all_warn(struct drbd_connection *connection, void **buf, si
 	return err;
 }
 
-static int drbd_send_disconnect(struct drbd_connection *connection)
-{
-	if (connection->agreed_pro_version < 118)
-		return 0;
-
-	if (!conn_prepare_command(connection, 0, DATA_STREAM))
-		return -EIO;
-	return send_command(connection, -1, P_DISCONNECT, DATA_STREAM);
-}
-
 static void initialize_send_buffer(struct drbd_connection *connection, enum drbd_stream drbd_stream)
 {
 	struct drbd_send_buffer *sbuf = &connection->send_buffer[drbd_stream];
@@ -985,7 +975,9 @@ static int connect_work(struct drbd_work *work, int cancel)
 			return 0; /* Keep reference */
 		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 	} else if (rv == SS_HANDSHAKE_DISCONNECT || (incompat_states && !retry)) {
-		drbd_send_disconnect(connection);
+		/* Peers before 118 get no P_DISCONNECT; they would not close */
+		if (!drbd_send_disconnect(connection) && connection->agreed_pro_version >= 118)
+			set_bit(WAIT_FOR_PEER_CLOSE, &connection->flags);
 		apply_local_state_change(connection, OUTDATE_DISKS_AND_DISCONNECT, force_demote);
 	} else {
 		drbd_info(connection, "Failure to connect: %s (%d); retrying\n",
@@ -1123,6 +1115,8 @@ start:
 	have_mutex = false;
 	clear_bit(PING_PENDING, &connection->flags);
 	clear_bit(DISCONNECT_EXPECTED, &connection->flags);
+	clear_bit(WAIT_FOR_PEER_CLOSE, &connection->flags);
+	clear_bit(ABORT_DRAIN, &connection->flags);
 	/* A send that failed on the previous socket must not fail this attempt:
 	 * C_CONNECTING lets other threads flush before the transport is up.
 	 */
@@ -12447,12 +12441,15 @@ static void conn_disconnect(struct drbd_connection *connection)
 	bool reconsider = false;
 	bool kept_for_resend;
 	bool dry_run;
+	bool drain;
 	int vnr, i;
 
 	clear_bit(CONN_DRY_RUN, &connection->flags);
 	dry_run = test_and_clear_bit(CONN_DRY_RUN_LOCAL, &connection->flags);
 	clear_bit(CONN_CONGESTED, &connection->flags);
 	clear_bit(CONN_PRE_110, &connection->flags);
+	drain = test_and_clear_bit(WAIT_FOR_PEER_CLOSE, &connection->flags) &&
+		connection->cstate[NOW] == C_DISCONNECTING;
 
 	if (connection->cstate[NOW] == C_STANDALONE)
 		return;
@@ -12477,9 +12474,11 @@ static void conn_disconnect(struct drbd_connection *connection)
 	drbd_thread_stop(&connection->sender);
 	drbd_thread_start(&connection->sender);
 
-	mutex_lock(&resource->conf_update);
-	drbd_transport_shutdown(connection, CLOSE_CONNECTION);
-	mutex_unlock(&resource->conf_update);
+	if (!drain) {
+		mutex_lock(&resource->conf_update);
+		drbd_transport_shutdown(connection, CLOSE_CONNECTION);
+		mutex_unlock(&resource->conf_update);
+	}
 
 	cleanup_remote_state_change(connection);
 
@@ -12595,6 +12594,17 @@ static void conn_disconnect(struct drbd_connection *connection)
 	WRITE_ONCE(connection->last_acked_epoch_nr,
 		   READ_ONCE(connection->send.last_sent_epoch_nr));
 	wake_up(&resource->barrier_wait);
+
+	/* Requests are completed and peer requests freed; only now wait for
+	 * the peer to close. In C_DISCONNECTING nothing gets sent meanwhile.
+	 */
+	if (drain) {
+		drbd_transport_drain(connection);
+		clear_bit(ABORT_DRAIN, &connection->flags);
+		mutex_lock(&resource->conf_update);
+		drbd_transport_shutdown(connection, CLOSE_CONNECTION);
+		mutex_unlock(&resource->conf_update);
+	}
 
 	drbd_info(connection, "Connection closed\n");
 
@@ -14560,6 +14570,9 @@ void drbd_control_event(struct drbd_transport *transport, enum drbd_tr_event eve
 		}
 	} else /* event == CLOSED_BY_PEER */ {
 		if (connection->cstate[NOW] == C_CONNECTED && disconnect_expected(connection))
+			return;
+		/* Expected while conn_disconnect() drains, and nothing to do else */
+		if (connection->cstate[NOW] == C_DISCONNECTING)
 			return;
 		drbd_warn(connection, "meta connection shut down by peer.\n");
 	}

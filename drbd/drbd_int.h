@@ -1026,6 +1026,8 @@ enum connection_flag {
 	CONN_DRY_RUN,		/* Expect disconnect after resync handshake. */
 	CONN_DRY_RUN_LOCAL,	/* This node asked for the dry run. */
 	DISCONNECT_EXPECTED,
+	WAIT_FOR_PEER_CLOSE,	/* We sent the peer a disconnect it has yet to process. */
+	ABORT_DRAIN,		/* Stop waiting for the peer to close, see drbd_transport_drain() */
 	CORKED,
 	DATA_CORKED = CORKED,	/* used as computed value CORKED + DATA_STREAM */
 	CONTROL_CORKED,		/* used as computed value CORKED + CONTROL_STREAM */
@@ -2525,6 +2527,8 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 					       struct drbd_transport_class *tc);
 void drbd_transport_shutdown(struct drbd_connection *connection,
 			     enum drbd_tr_free_op op);
+void drbd_transport_drain(struct drbd_connection *connection);
+void drbd_transport_abort_drain(struct drbd_connection *connection);
 void drbd_destroy_connection(struct kref *kref);
 void conn_free_crypto(struct drbd_connection *connection);
 
@@ -3040,6 +3044,7 @@ int send_command(struct drbd_connection *connection, int vnr,
 int drbd_send_command(struct drbd_peer_device *peer_device,
 		      enum drbd_packet cmd, enum drbd_stream drbd_stream);
 
+int drbd_send_disconnect(struct drbd_connection *connection);
 int drbd_send_ping(struct drbd_connection *connection);
 int conn_send_state_req(struct drbd_connection *connection, int vnr,
 			enum drbd_packet cmd, union drbd_state mask,
