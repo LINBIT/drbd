@@ -2795,10 +2795,7 @@ static bool __device_is_resyncing(struct drbd_device *device)
 	struct drbd_peer_device *peer_device;
 
 	for_each_peer_device_rcu(peer_device, device) {
-		enum drbd_repl_state s = peer_device->repl_state[NOW];
-
-		if (s == L_SYNC_SOURCE || s == L_SYNC_TARGET ||
-		    s == L_VERIFY_S || s == L_VERIFY_T)
+		if (repl_holds_resync_slot(peer_device->repl_state[NOW]))
 			return true;
 	}
 	return false;
@@ -2828,8 +2825,7 @@ static bool device_held_by_max_parallel(struct drbd_device *device)
 	for_each_peer_device_rcu(peer_device, device) {
 		enum drbd_repl_state s = peer_device->repl_state[NOW];
 
-		if ((s != L_PAUSED_SYNC_S && s != L_PAUSED_SYNC_T) ||
-		    !peer_device->resync_susp_max_parallel[NOW])
+		if (s != L_PAUSED_SYNC_T || !peer_device->resync_susp_max_parallel[NOW])
 			continue;
 
 		if (peer_device->resync_susp_user[NOW] ||
@@ -2850,8 +2846,10 @@ static bool set_suspend_resync_device_max_parallel(struct drbd_device *device, b
 
 	begin_state_change_locked(resource, CS_HARD);
 	for_each_peer_device_rcu(peer_device, device) {
-		if (peer_device->resync_susp_max_parallel[NOW] != value)
-			__change_resync_susp_max_parallel(peer_device, value);
+		bool v = value && repl_is_sync_target(peer_device->repl_state[NOW]);
+
+		if (peer_device->resync_susp_max_parallel[NOW] != v)
+			__change_resync_susp_max_parallel(peer_device, v);
 	}
 	return end_state_change_locked(resource, "resync-max-parallel") != SS_NOTHING_TO_DO;
 }
@@ -3280,7 +3278,7 @@ skip_helper:
 
 	begin_state_change_locked(device->resource, CS_VERBOSE);
 	__change_resync_susp_dependency(peer_device, !__drbd_may_sync_now(peer_device));
-	__change_resync_susp_max_parallel(peer_device,
+	__change_resync_susp_max_parallel(peer_device, side == L_SYNC_TARGET &&
 					  !__device_max_parallel_admit(device));
 	__change_repl_state(peer_device, side);
 	if (side == L_SYNC_TARGET)
