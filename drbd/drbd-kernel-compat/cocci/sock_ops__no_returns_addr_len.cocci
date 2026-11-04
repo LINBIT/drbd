@@ -13,32 +13,13 @@ int addr_len;
 ...
 }
 
-@ has_call @
-identifier fn;
-struct socket *sock;
-struct sockaddr *uaddr;
-int peer;
 @@
-fn(...)
-{
-<+...
-sock->ops->getname(sock, uaddr, peer);
-...+>
-}
-
-@@
-identifier has_call.fn;
-@@
-fn(...)
-{
-+int ___addr_len;
-...
-}
-
-@ depends on has_call @
 struct socket *sock;
 struct sockaddr *uaddr;
 int peer;
 @@
 - sock->ops->getname(sock, uaddr, peer);
++ {
++ int ___addr_len;
 + sock->ops->getname(sock, uaddr, &___addr_len, peer);
++ }
