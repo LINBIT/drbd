@@ -547,6 +547,7 @@ typedef int (*tls_hello_func)(const struct tls_handshake_args *, gfp_t);
 
 struct tls_handshake_wait {
 	struct completion done;
+	struct sock *sk;
 	int status;
 };
 
@@ -559,6 +560,12 @@ static void tls_handshake_done(void *data, int status, key_serial_t peerid)
 	// then negated and cast to int, so who knows what will be returned.
 	if (status > 0)
 		status = -status;
+
+	/* tlshd reports a reset connection as -EACCES, like a rejected certificate.
+	 * The node that rejects a certificate still has an established connection.
+	 */
+	if (status && READ_ONCE(wait->sk->sk_state) != TCP_ESTABLISHED)
+		status = -ECONNRESET;
 
 	wait->status = status;
 	complete(&wait->done);
@@ -583,6 +590,8 @@ static int tls_init_hello(struct socket *sock, const char *peername,
 	if (IS_ERR(sock_alloc_file(sock, O_NONBLOCK, NULL)))
 		return -EIO;
 
+	tls_wait->sk = sock->sk;
+
 	do {
 		err = hello(&tls_args, GFP_KERNEL);
 	} while (err == -EAGAIN);
@@ -602,10 +611,11 @@ static int tls_wait_hello(struct tls_handshake_wait *csocket_tls_wait,
 	if (!wait_for_completion_timeout(&dsocket_tls_wait->done, remaining))
 		return -ETIMEDOUT;
 
-	if (csocket_tls_wait->status)
-		return csocket_tls_wait->status;
+	/* A fatal error on either socket outranks a transient one. */
+	if (dtt_socket_err_to_eagain(csocket_tls_wait->status) != -EAGAIN)
+		return csocket_tls_wait->status ?: dsocket_tls_wait->status;
 
-	return dsocket_tls_wait->status;
+	return dsocket_tls_wait->status ?: csocket_tls_wait->status;
 }
 
 
