@@ -3157,9 +3157,8 @@ static inline bool repl_is_sync(enum drbd_repl_state repl_state)
 		repl_is_sync_target(repl_state);
 }
 
-/* Only the side that sends the requests takes a max_parallel_resyncs slot.
- * A SyncSource answers what its target asks for, and the target's node
- * counts and pauses it.
+/* A device that sends resync or verify requests takes a max_parallel_resyncs
+ * slot. The SyncSource peer devices a node serves have a cap of their own.
  */
 static inline bool repl_holds_resync_slot(enum drbd_repl_state repl_state)
 {

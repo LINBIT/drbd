@@ -5009,6 +5009,12 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			     (resync_susp_max_parallel[OLD] != resync_susp_max_parallel[NEW])))
 				send_state = true;
 
+			/* The target pauses while its source reports L_PAUSED_SYNC_S. */
+			if (repl_is_sync_source(repl_state[OLD]) &&
+			    repl_is_sync_source(repl_state[NEW]) &&
+			    repl_state[OLD] != repl_state[NEW])
+				send_state = true;
+
 			/* finished resync, tell sync source */
 			if ((repl_state[OLD] == L_SYNC_TARGET || repl_state[OLD] == L_PAUSED_SYNC_T) &&
 			    repl_state[NEW] == L_ESTABLISHED)
@@ -5084,8 +5090,10 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				/* ldev_safe: ref from extra_ldev_ref_for_after_state_chg() */
 				resume_next_sg(device);
 				drbd_apply_resync_max_parallel();
-			} else if (repl_holds_resync_slot(repl_state[OLD]) &&
-				   !repl_holds_resync_slot(repl_state[NEW])) {
+			} else if ((repl_holds_resync_slot(repl_state[OLD]) &&
+				    !repl_holds_resync_slot(repl_state[NEW])) ||
+				   (repl_state[OLD] == L_SYNC_SOURCE &&
+				    repl_state[NEW] != L_SYNC_SOURCE)) {
 				drbd_apply_resync_max_parallel();
 			}
 

@@ -2846,36 +2846,118 @@ static bool set_suspend_resync_device_max_parallel(struct drbd_device *device, b
 
 	begin_state_change_locked(resource, CS_HARD);
 	for_each_peer_device_rcu(peer_device, device) {
-		bool v = value && repl_is_sync_target(peer_device->repl_state[NOW]);
+		enum drbd_repl_state s = peer_device->repl_state[NOW];
+		bool v = value && repl_is_sync_target(s);
 
+		if (repl_is_sync_source(s))
+			continue;
 		if (peer_device->resync_susp_max_parallel[NOW] != v)
 			__change_resync_susp_max_parallel(peer_device, v);
 	}
 	return end_state_change_locked(resource, "resync-max-parallel") != SS_NOTHING_TO_DO;
 }
 
-/* Re-evaluate the parallel-resync limit across all volumes and toggle
- * resync_susp_max_parallel to enforce drbd_max_parallel_resyncs. limit == 0
- * means unlimited (clear all max_parallel suspensions).
- */
-void drbd_apply_resync_max_parallel(void)
+static bool set_resync_susp_max_parallel(struct drbd_peer_device *peer_device, bool value)
 {
-	unsigned int limit = READ_ONCE(drbd_max_parallel_resyncs);
+	struct drbd_resource *resource = peer_device->device->resource;
+
+	if (peer_device->resync_susp_max_parallel[NOW] == value)
+		return false;
+	begin_state_change_locked(resource, CS_HARD);
+	__change_resync_susp_max_parallel(peer_device, value);
+	return end_state_change_locked(resource, "resync-max-parallel") != SS_NOTHING_TO_DO;
+}
+
+/* The resyncs a node serves are capped apart from the ones it requests, and
+ * per peer device: each SyncSource reads the out-of-sync blocks of its peer.
+ */
+static unsigned int __resource_sync_sources(struct drbd_resource *resource)
+{
+	struct drbd_peer_device *peer_device;
+	struct drbd_device *device;
+	unsigned int n = 0;
+	int vnr;
+
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		for_each_peer_device_rcu(peer_device, device) {
+			if (peer_device->repl_state[NOW] == L_SYNC_SOURCE)
+				n++;
+		}
+	}
+	return n;
+}
+
+static unsigned int __count_sync_sources(void)
+{
+	struct drbd_resource *resource;
+	unsigned int n = 0;
+
+	for_each_resource_rcu(resource, &drbd_resources)
+		n += __resource_sync_sources(resource);
+	return n;
+}
+
+static bool source_held_by_max_parallel(struct drbd_peer_device *peer_device)
+{
+	return peer_device->repl_state[NOW] == L_PAUSED_SYNC_S &&
+		peer_device->resync_susp_max_parallel[NOW] &&
+		!peer_device->resync_susp_user[NOW] &&
+		!peer_device->resync_susp_peer[NOW] &&
+		!resync_susp_comb_dep(peer_device, NOW);
+}
+
+static void apply_max_parallel_sources(unsigned int limit)
+{
+	unsigned int running = __count_sync_sources();
+	struct drbd_peer_device *peer_device;
+	struct drbd_resource *resource;
+	struct drbd_device *device;
+	unsigned int n;
+	int vnr, pass;
+
+	if (running > limit) {
+		n = running - limit;
+		for_each_resource_rcu(resource, &drbd_resources) {
+			idr_for_each_entry(&resource->devices, device, vnr) {
+				for_each_peer_device_rcu(peer_device, device) {
+					if (n == 0)
+						return;
+					if (peer_device->repl_state[NOW] == L_SYNC_SOURCE &&
+					    set_resync_susp_max_parallel(peer_device, true))
+						n--;
+				}
+			}
+		}
+		return;
+	}
+
+	/* As for the requesting side: first the resources that serve a resync
+	 * already, then the others.
+	 */
+	n = limit - running;
+	for (pass = 0; pass < 2; pass++) {
+		for_each_resource_rcu(resource, &drbd_resources) {
+			if (pass == 0 && !__resource_sync_sources(resource))
+				continue;
+			idr_for_each_entry(&resource->devices, device, vnr) {
+				for_each_peer_device_rcu(peer_device, device) {
+					if (n == 0)
+						return;
+					if (source_held_by_max_parallel(peer_device) &&
+					    set_resync_susp_max_parallel(peer_device, false))
+						n--;
+				}
+			}
+		}
+	}
+}
+
+static void apply_max_parallel_targets(unsigned int limit)
+{
 	struct drbd_resource *resource;
 	struct drbd_device *device;
 	unsigned int running = 0;
 	int vnr;
-
-	lock_all_resources();
-	rcu_read_lock();
-
-	if (limit == 0) {
-		for_each_resource_rcu(resource, &drbd_resources) {
-			idr_for_each_entry(&resource->devices, device, vnr)
-				set_suspend_resync_device_max_parallel(device, false);
-		}
-		goto out;
-	}
 
 	for_each_resource_rcu(resource, &drbd_resources) {
 		idr_for_each_entry(&resource->devices, device, vnr) {
@@ -2937,8 +3019,35 @@ void drbd_apply_resync_max_parallel(void)
 			}
 		}
 	}
+}
 
-out:
+/* Re-evaluate the parallel-resync limit across all volumes and toggle
+ * resync_susp_max_parallel to enforce drbd_max_parallel_resyncs. limit == 0
+ * means unlimited (clear all max_parallel suspensions).
+ */
+void drbd_apply_resync_max_parallel(void)
+{
+	unsigned int limit = READ_ONCE(drbd_max_parallel_resyncs);
+	struct drbd_peer_device *peer_device;
+	struct drbd_resource *resource;
+	struct drbd_device *device;
+	int vnr;
+
+	lock_all_resources();
+	rcu_read_lock();
+
+	if (limit == 0) {
+		for_each_resource_rcu(resource, &drbd_resources) {
+			idr_for_each_entry(&resource->devices, device, vnr) {
+				for_each_peer_device_rcu(peer_device, device)
+					set_resync_susp_max_parallel(peer_device, false);
+			}
+		}
+	} else {
+		apply_max_parallel_targets(limit);
+		apply_max_parallel_sources(limit);
+	}
+
 	rcu_read_unlock();
 	unlock_all_resources();
 }
@@ -2969,6 +3078,15 @@ static bool __device_max_parallel_admit(struct drbd_device *device)
 		}
 	}
 	return running < limit;
+}
+
+static bool __source_max_parallel_admit(struct drbd_peer_device *peer_device)
+{
+	unsigned int limit = READ_ONCE(drbd_max_parallel_resyncs);
+
+	if (limit == 0 || peer_device->repl_state[NOW] == L_SYNC_SOURCE)
+		return true;
+	return __count_sync_sources() < limit;
 }
 
 /* caller must hold resources_mutex */
@@ -3278,8 +3396,9 @@ skip_helper:
 
 	begin_state_change_locked(device->resource, CS_VERBOSE);
 	__change_resync_susp_dependency(peer_device, !__drbd_may_sync_now(peer_device));
-	__change_resync_susp_max_parallel(peer_device, side == L_SYNC_TARGET &&
-					  !__device_max_parallel_admit(device));
+	__change_resync_susp_max_parallel(peer_device, side == L_SYNC_TARGET ?
+					  !__device_max_parallel_admit(device) :
+					  !__source_max_parallel_admit(peer_device));
 	__change_repl_state(peer_device, side);
 	if (side == L_SYNC_TARGET)
 		init_resync_stable_bits(peer_device);

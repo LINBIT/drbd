@@ -10579,7 +10579,11 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	__change_peer_role(connection, peer_state.role);
 	if (peer_state.disk != D_NEGOTIATING)
 		__change_peer_disk_state(peer_device, peer_disk_state);
-	__change_resync_susp_peer(peer_device, peer_state.aftr_isp | peer_state.user_isp);
+	/* A SyncSource paused on its max_parallel_resyncs limit reports
+	 * L_PAUSED_SYNC_S with no isp bit set.
+	 */
+	__change_resync_susp_peer(peer_device, peer_state.aftr_isp | peer_state.user_isp ||
+				  peer_state.conn == L_PAUSED_SYNC_S);
 	repl_state = peer_device->repl_state;
 	if (repl_state[OLD] < L_ESTABLISHED && repl_state[NEW] >= L_ESTABLISHED)
 		resource->state_change_flags |= CS_HARD;
