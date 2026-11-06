@@ -25,14 +25,6 @@
 #include "drbd_protocol.h"
 #include "drbd_transport.h"
 
-#define tr_dbg(transport, fmt, args...) ({				\
-	rcu_read_lock();						\
-	pr_debug("drbd %s %s:%s: " fmt, (transport)->log_prefix,	\
-		 (transport)->class->name,				\
-		 rcu_dereference((transport)->net_conf)->name, ## args); \
-	rcu_read_unlock();						\
-	})
-
 
 MODULE_AUTHOR("Philipp Reisner <philipp.reisner@linbit.com>");
 MODULE_AUTHOR("Lars Ellenberg <lars.ellenberg@linbit.com>");
