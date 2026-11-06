@@ -996,13 +996,14 @@ static void rs_hint_mxb_limited(struct drbd_peer_device *peer_device, int mxb,
 			  mxb, c_max_rate, kib_s);
 }
 
-static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
+static int drbd_rs_number_requests(struct drbd_peer_device *peer_device,
+				   int discard_granularity)
 {
 	struct net_conf *nc;
 	ktime_t duration, now;
 	unsigned int sect_in;  /* Number of sectors that came in since the last turn */
 	unsigned int c_max_rate;
-	int number, mxb;
+	int number, mxb, room, granule;
 
 	sect_in = atomic_xchg(&peer_device->rs_sect_in, 0);
 	peer_device->rs_in_flight -= sect_in;
@@ -1038,12 +1039,24 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 	 * mxb (as used here, and in drbd_alloc_pages on the peer) is
 	 * "number of pages" (typically also 4k),
 	 * but "rs_in_flight" is in "sectors" (512 Byte). */
-	if (mxb - drbd_rs_outstanding(peer_device)/8 < number) {
-		number = mxb - drbd_rs_outstanding(peer_device)/8;
+	room = mxb - drbd_rs_outstanding(peer_device)/8;
+	if (room < number) {
+		number = room;
 		rs_hint_mxb_limited(peer_device, mxb, c_max_rate, sect_in,
 				    ktime_to_ns(duration));
 	} else {
 		peer_device->rs_mxb_limited = 0;
+	}
+
+	/* Raise to one discard granule only within the max-buffers room, or when
+	 * nothing is outstanding, so that a max-buffers below a granule cannot stall.
+	 */
+	granule = discard_granularity / BM_BLOCK_SIZE;
+	if (number < granule) {
+		if (room >= granule || drbd_rs_outstanding(peer_device) == 0)
+			number = granule;
+		else
+			number = 0;
 	}
 
 	return number;
@@ -1331,9 +1344,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 		rcu_read_unlock();
 	}
 
-	number = drbd_rs_number_requests(peer_device);
-	if (number * BM_BLOCK_SIZE < discard_granularity)
-		number = discard_granularity / BM_BLOCK_SIZE;
+	number = drbd_rs_number_requests(peer_device, discard_granularity);
 
 	spin_lock_bh(&peer_device->resync_next_bit_lock);
 	/*
@@ -1619,7 +1630,7 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 	if (!get_ldev(device))
 		return 0;
 
-	number = drbd_rs_number_requests(peer_device);
+	number = drbd_rs_number_requests(peer_device, 0);
 	sector = peer_device->ov_position;
 
 	/* don't let rs_sectors_came_in() re-schedule us "early"
