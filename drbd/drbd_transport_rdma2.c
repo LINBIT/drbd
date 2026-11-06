@@ -963,7 +963,7 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		}
 	}
 
-	timer_delete_sync(&rdma_transport->control_timer);
+	timer_shutdown_sync(&rdma_transport->control_timer);
 
 	if (free_op == DESTROY_TRANSPORT) {
 		list_for_each_entry(drbd_path, &transport->paths, list) {
@@ -2812,7 +2812,7 @@ static void dtr_rx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 			return;
 		}
 
-		if (stream == ST_CONTROL)
+		if (stream == ST_CONTROL && rdma_transport->active)
 			mod_timer(&rdma_transport->control_timer,
 				  jiffies + rdma_stream->recv_timeout);
 
@@ -5708,6 +5708,9 @@ static int dtr_prepare_connect(struct drbd_transport *transport)
 	atomic_set(&rdma_transport->first_path_connect_err, 1);
 	init_completion(&rdma_transport->connected);
 
+	/* dtr_free() shut the control timer down; make it armable again. */
+	timer_setup(&rdma_transport->control_timer, dtr_control_timer_fn, 0);
+
 	rdma_transport->active = true;
 
 	list_for_each_entry(path, &transport->paths, path.list) {
@@ -5808,7 +5811,10 @@ static void dtr_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream 
 
 	rdma_transport->stream[stream].recv_timeout = timeout;
 
-	if (stream == CONTROL_STREAM)
+	/* Not armed once teardown started: the ping work that calls this can
+	 * run after dtr_free() shut the timer down (see dtr_free()).
+	 */
+	if (stream == CONTROL_STREAM && rdma_transport->active)
 		mod_timer(&rdma_transport->control_timer, jiffies + timeout);
 }
 
