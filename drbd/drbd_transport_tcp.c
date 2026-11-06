@@ -754,9 +754,18 @@ static void unregister_state_change(struct sock *sock, struct dtt_listener *list
 	write_unlock_bh(&sock->sk_callback_lock);
 }
 
+static bool dtt_connect_pending(struct drbd_transport *transport)
+{
+	struct dtt_path *path = dtt_wait_connect_cond(transport);
+
+	if (path)
+		kref_put(&path->path.kref, drbd_destroy_path);
+	return path != NULL;
+}
+
 static int dtt_wait_for_connect(struct drbd_transport *transport,
 				struct socket **socket,
-				struct dtt_path **ret_path)
+				struct dtt_path **ret_path, bool nowait)
 {
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
@@ -790,6 +799,8 @@ static int dtt_wait_for_connect(struct drbd_transport *transport,
 
 	timeo = connect_int * HZ;
 	timeo += get_random_u32_below(2) ? timeo / 7 : -timeo / 7; /* 28.5% random jitter */
+	if (nowait)
+		timeo = 0;
 
 retry:
 	if (path)
@@ -797,7 +808,10 @@ retry:
 	timeo = wait_event_interruptible_timeout(tcp_transport->wait,
 			(path = dtt_wait_connect_cond(transport)),
 			timeo);
-	if (timeo <= 0) {
+	/* Before Linux 3.12 (RHEL 7 included), a timeout of 0 returns 0 even when
+	 * the condition holds, so the path decides, not the return value.
+	 */
+	if (!path) {
 		err = -EAGAIN;
 		goto out;
 	}
@@ -1222,7 +1236,7 @@ static int dtt_connect(struct drbd_transport *transport)
 	char peername[64];
 	key_serial_t tls_keyring, tls_privkey, tls_certificate;
 	int timeout, err;
-	bool ok;
+	bool ok, nowait = false;
 	struct tls_handshake_wait csocket_tls_wait = { .status = 0 };
 	struct tls_handshake_wait dsocket_tls_wait = { .status = 0 };
 
@@ -1237,6 +1251,13 @@ static int dtt_connect(struct drbd_transport *transport)
 
 	do {
 		struct socket *s = NULL;
+
+		/* The peer may already use these as its data and control socket */
+		if (!nowait && dtt_connect_pending(transport)) {
+			nowait = true;
+			goto retry;
+		}
+		nowait = false;
 
 		err = dtt_try_connect(connect_to_path, &s);
 		if (err < 0 && err != -EAGAIN)
@@ -1307,7 +1328,9 @@ static int dtt_connect(struct drbd_transport *transport)
 
 retry:
 		s = NULL;
-		err = dtt_wait_for_connect(transport, &s, &connect_to_path);
+		err = dtt_wait_for_connect(transport, &s, &connect_to_path, nowait);
+		if (s)
+			nowait = false;
 		if (err < 0 && err != -EAGAIN)
 			goto out_release_sockets;
 
