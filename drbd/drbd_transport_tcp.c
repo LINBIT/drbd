@@ -25,6 +25,14 @@
 #include "drbd_protocol.h"
 #include "drbd_transport.h"
 
+#define tr_dbg(transport, fmt, args...) ({				\
+	rcu_read_lock();						\
+	pr_debug("drbd %s %s:%s: " fmt, (transport)->log_prefix,	\
+		 (transport)->class->name,				\
+		 rcu_dereference((transport)->net_conf)->name, ## args); \
+	rcu_read_unlock();						\
+	})
+
 
 MODULE_AUTHOR("Philipp Reisner <philipp.reisner@linbit.com>");
 MODULE_AUTHOR("Lars Ellenberg <lars.ellenberg@linbit.com>");
@@ -533,6 +541,9 @@ out:
 			sock_release(socket);
 		if (err != -EAGAIN && err != -EADDRNOTAVAIL)
 			tr_err(transport, "%s failed, err = %d\n", what, err);
+		else
+			tr_dbg(transport, "connect %pISpc -> %pISpc: %d\n",
+			       &path->path.my_addr, &peer_addr, err);
 	} else {
 		*ret_socket = socket;
 	}
@@ -628,6 +639,17 @@ static int dtt_send_first_packet(struct drbd_tcp_transport *tcp_transport, struc
 	return _dtt_send(tcp_transport, socket, &h, sizeof(h), 0);
 }
 
+static void dtt_dbg_socket(struct drbd_transport *transport, struct socket *socket,
+			   const char *what)
+{
+	struct sockaddr_storage me = {}, peer = {};
+
+	socket->ops->getname(socket, (struct sockaddr *)&me, 0);
+	socket->ops->getname(socket, (struct sockaddr *)&peer, 2);
+	tr_dbg(transport, "%s %pISpc -> %pISpc, state %d\n",
+	       what, &me, &peer, socket->sk->sk_state);
+}
+
 /**
  * dtt_socket_free() - Free the socket
  * @socket:	pointer to the pointer to the socket.
@@ -652,7 +674,8 @@ static void dtt_socket_free(struct socket **socket)
  * dtt_socket_ok_or_free() - Free the socket if its connection is not okay
  * @socket:	pointer to the pointer to the socket.
  */
-static bool dtt_socket_ok_or_free(struct socket **socket)
+static bool dtt_socket_ok_or_free(struct drbd_transport *transport,
+				  struct socket **socket, const char *what)
 {
 	if (!*socket)
 		return false;
@@ -660,6 +683,7 @@ static bool dtt_socket_ok_or_free(struct socket **socket)
 	if ((*socket)->sk->sk_state == TCP_ESTABLISHED)
 		return true;
 
+	dtt_dbg_socket(transport, *socket, what);
 	dtt_socket_free(socket);
 	return false;
 }
@@ -681,8 +705,8 @@ static bool dtt_connection_established(struct drbd_transport *transport,
 	rcu_read_unlock();
 	schedule_timeout_interruptible(timeout);
 
-	good += dtt_socket_ok_or_free(socket1);
-	good += dtt_socket_ok_or_free(socket2);
+	good += dtt_socket_ok_or_free(transport, socket1, "drop data socket");
+	good += dtt_socket_ok_or_free(transport, socket2, "drop control socket");
 
 	if (good == 0) {
 		kref_put(&(*first_path)->path.kref, drbd_destroy_path);
@@ -842,8 +866,11 @@ retry:
 			wake_up(&path2_tcp_transport->wait);
 			goto retry_locked;
 		}
-		if (s_estab->sk->sk_state != TCP_ESTABLISHED)
+		if (s_estab->sk->sk_state != TCP_ESTABLISHED) {
+			tr_dbg(transport, "drop accepted socket from %pISpc, state %d\n",
+			       &peer_addr, s_estab->sk->sk_state);
 			goto retry_locked;
+		}
 	}
 	spin_unlock_bh(&listener->listener.waiters_lock);
 	*socket = s_estab;
@@ -1257,9 +1284,11 @@ static int dtt_connect(struct drbd_transport *transport)
 			} else if (use_for_data) {
 				dsocket = s;
 				dsocket_is_server = false;
+				dtt_dbg_socket(transport, s, "data socket, client");
 			} else {
 				csocket = s;
 				csocket_is_server = false;
+				dtt_dbg_socket(transport, s, "control socket, client");
 			}
 		} else if (!first_path) {
 			connect_to_path = dtt_next_path(connect_to_path, transport);
@@ -1285,6 +1314,10 @@ retry:
 		if (s) {
 			int fp = dtt_receive_first_packet(tcp_transport, s);
 
+			dtt_dbg_socket(transport, s, fp == P_INITIAL_DATA ? "data socket, server" :
+				       fp == P_INITIAL_META ? "control socket, server" :
+				       "accepted socket without initial packet");
+
 			if (first_path) {
 				if (first_path != connect_to_path) {
 					tr_info(transport, "initial paths crossed P - fail over\n");
@@ -1299,8 +1332,8 @@ retry:
 			kref_get(&connect_to_path->path.kref);
 			first_path = connect_to_path;
 
-			dtt_socket_ok_or_free(&dsocket);
-			dtt_socket_ok_or_free(&csocket);
+			dtt_socket_ok_or_free(transport, &dsocket, "drop data socket");
+			dtt_socket_ok_or_free(transport, &csocket, "drop control socket");
 			switch (fp) {
 			case P_INITIAL_DATA:
 				if (dsocket) {
@@ -1339,6 +1372,11 @@ randomize:
 
 		ok = dtt_connection_established(transport, &dsocket, &csocket, &first_path);
 	} while (!ok);
+
+	dtt_dbg_socket(transport, dsocket, dsocket_is_server ? "use data socket, server" :
+		       "use data socket, client");
+	dtt_dbg_socket(transport, csocket, csocket_is_server ? "use control socket, server" :
+		       "use control socket, client");
 
 	rcu_read_lock();
 	nc = rcu_dereference(transport->net_conf);
