@@ -10676,6 +10676,14 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 				   peer_state.conn == L_WF_BITMAP_T &&
 				   peer_device->uuid_flags & UUID_FLAG_CRASHED_PRIMARY;
 
+		/* The peer decides on the UUIDs we send after its attach; so do we,
+		 * whichever handshake runs below. Once the peer has decided, it
+		 * no longer reports D_NEGOTIATING; sending now would make us
+		 * decide on UUIDs it never saw.
+		 */
+		if (old_peer_state.conn == L_ESTABLISHED && peer_state.disk == D_NEGOTIATING)
+			drbd_send_uuids_peer_attach(peer_device);
+
 		if (consider_resync) {
 			strategy = drbd_sync_handshake(peer_device, peer_state);
 			new_repl_state = strategy_to_repl_state(peer_device, peer_state.role, strategy);

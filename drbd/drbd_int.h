@@ -795,6 +795,9 @@ enum peer_device_flag {
 	BITMAP_HELD_AT_PRIMARY_LOSS, /* had bits before the last lost primary */
 	UNSTABLE_RESYNC,	/* Sync source went unstable during resync. */
 	PEER_UPGRADE_PREDICTED,	/* Recorded the peer UpToDate before its P_STATE */
+	SEND_UUIDS_PEER_ATTACH,	/* Peer attached: receiver or worker, whichever is
+				 * first, sends P_UUIDS and P_STATE before we decide
+				 */
 	SEND_STATE_AFTER_AHEAD,
 	GOT_NEG_ACK,		/* got a neg_ack while primary, wait until peer_disk is lower than
 				   D_UP_TO_DATE before becoming secondary! */
@@ -1780,6 +1783,8 @@ struct drbd_peer_device {
 	unsigned long comm_bm_set; /* communicated number of set bits. */
 	u64 comm_current_uuid; /* communicated current UUID */
 	u64 comm_uuid_flags; /* communicated UUID flags */
+	/* Held across clearing SEND_UUIDS_PEER_ATTACH and the sends it calls for */
+	struct mutex peer_attach_send_mutex;
 	u64 comm_bitmap_uuid;
 	int comm_day0_node_id; /* communicated day0 slot, or -1 */
 	union drbd_state comm_state;
@@ -2220,6 +2225,7 @@ int conn_send_state(struct drbd_connection *connection,
 int drbd_send_state(struct drbd_peer_device *peer_device,
 		    union drbd_state state);
 int drbd_send_current_state(struct drbd_peer_device *peer_device);
+void drbd_send_uuids_peer_attach(struct drbd_peer_device *peer_device);
 int drbd_send_sync_param(struct drbd_peer_device *peer_device);
 int drbd_send_out_of_sync(struct drbd_peer_device *peer_device,
 			  sector_t sector, unsigned int size);
