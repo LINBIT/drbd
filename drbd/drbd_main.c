@@ -2841,14 +2841,14 @@ static int try_to_promote(struct drbd_device *device, long timeout, bool ndelay)
 				timeout);
 			if (t <= 0)
 				break;
-			timeout -= t;
+			timeout = t;
 		} else if (rv == SS_NO_UP_TO_DATE_DISK && connection_state_may_improve_soon(resource)) {
 			/* Wait until we get a connection established */
 			t = wait_event_interruptible_timeout(resource->state_wait,
 				any_disk_is_uptodate(device), timeout);
 			if (t <= 0)
 				break;
-			timeout -= t;
+			timeout = t;
 		} else {
 			break;
 		}
