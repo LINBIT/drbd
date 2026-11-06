@@ -681,14 +681,14 @@ static bool dtt_socket_ok_or_free(struct drbd_transport *transport,
 }
 
 static bool dtt_connection_established(struct drbd_transport *transport,
-				       struct socket **socket1,
-				       struct socket **socket2,
+				       struct socket **dsocket,
+				       struct socket **csocket,
 				       struct dtt_path **first_path)
 {
 	struct drbd_net_conf *nc;
 	int timeout, good = 0;
 
-	if (!*socket1 || !*socket2)
+	if (!*dsocket || !*csocket)
 		return false;
 
 	rcu_read_lock();
@@ -697,8 +697,8 @@ static bool dtt_connection_established(struct drbd_transport *transport,
 	rcu_read_unlock();
 	schedule_timeout_interruptible(timeout);
 
-	good += dtt_socket_ok_or_free(transport, socket1, "drop data socket");
-	good += dtt_socket_ok_or_free(transport, socket2, "drop control socket");
+	good += dtt_socket_ok_or_free(transport, dsocket, "drop data socket");
+	good += dtt_socket_ok_or_free(transport, csocket, "drop control socket");
 
 	if (good == 0) {
 		kref_put(&(*first_path)->path.kref, drbd_destroy_path);
@@ -755,9 +755,9 @@ static bool dtt_connect_pending(struct drbd_transport *transport)
 	return path != NULL;
 }
 
-static int dtt_wait_for_connect(struct drbd_transport *transport,
-				struct socket **socket,
-				struct dtt_path **ret_path, bool nowait)
+static int dtt_accept_connection(struct drbd_transport *transport,
+				 struct socket **socket,
+				 struct dtt_path **ret_path, bool nowait)
 {
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
@@ -1320,7 +1320,7 @@ static int dtt_connect(struct drbd_transport *transport)
 
 retry:
 		s = NULL;
-		err = dtt_wait_for_connect(transport, &s, &connect_to_path, nowait);
+		err = dtt_accept_connection(transport, &s, &connect_to_path, nowait);
 		if (s)
 			nowait = false;
 		if (err < 0 && err != -EAGAIN)
