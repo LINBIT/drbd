@@ -800,9 +800,6 @@ retry:
 	timeo = wait_event_interruptible_timeout(tcp_transport->wait,
 			(path = dtt_wait_connect_cond(transport)),
 			timeo);
-	/* Before Linux 3.12 (RHEL 7 included), a timeout of 0 returns 0 even when
-	 * the condition holds, so the path decides, not the return value.
-	 */
 	if (!path) {
 		err = -EAGAIN;
 		goto out;
