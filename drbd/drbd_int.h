@@ -3323,6 +3323,15 @@ static inline bool repl_is_sync(enum drbd_repl_state repl_state)
 		repl_is_sync_target(repl_state);
 }
 
+/* Only the side that sends the requests takes a max_parallel_resyncs slot.
+ * A SyncSource answers what its target asks for, and the target's node
+ * counts and pauses it.
+ */
+static inline bool repl_holds_resync_slot(enum drbd_repl_state repl_state)
+{
+	return repl_state == L_SYNC_TARGET || repl_state == L_VERIFY_S;
+}
+
 static inline bool is_sync_target_state(struct drbd_peer_device *peer_device,
 					enum which_state which)
 {

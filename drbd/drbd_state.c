@@ -5225,16 +5225,9 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				/* ldev_safe: ref from extra_ldev_ref_for_after_state_chg() */
 				resume_next_sg(device);
 				drbd_apply_resync_max_parallel();
-			} else {
-				enum drbd_repl_state old = repl_state[OLD];
-				enum drbd_repl_state new = repl_state[NEW];
-
-				/* A resync got paused; re-evaluate max_parallel_resyncs. */
-				if ((old == L_SYNC_SOURCE || old == L_SYNC_TARGET ||
-				     old == L_VERIFY_S || old == L_VERIFY_T) &&
-				    !(new == L_SYNC_SOURCE || new == L_SYNC_TARGET ||
-				      new == L_VERIFY_S || new == L_VERIFY_T))
-					drbd_apply_resync_max_parallel();
+			} else if (repl_holds_resync_slot(repl_state[OLD]) &&
+				   !repl_holds_resync_slot(repl_state[NEW])) {
+				drbd_apply_resync_max_parallel();
 			}
 
 			/* sync target done with resync. Explicitly notify all peers. Our sync
