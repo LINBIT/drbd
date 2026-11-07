@@ -4297,6 +4297,7 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 
 	atomic_set(&peer_device->rs_sect_in, 0);
 	atomic_set(&peer_device->rs_sect_parked, 0);
+	atomic_set(&peer_device->rs_read_sect_held, 0);
 
 	peer_device->bitmap_index = -1;
 	peer_device->comm_day0_node_id = -1;

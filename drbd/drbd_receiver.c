@@ -469,6 +469,8 @@ void drbd_free_peer_req(struct drbd_peer_request *peer_req)
 		spin_unlock_irq(&connection->peer_reqs_lock);
 	}
 	D_ASSERT(peer_device, !(peer_req->flags & EE_ON_SEND_OOS));
+	if (peer_req->flags & EE_RS_READ_HELD)
+		drbd_rs_read_unhold(peer_device, peer_req->i.size);
 	if (peer_req->flags & EE_HAS_DIGEST)
 		kfree(peer_req->digest);
 	D_ASSERT(peer_device, atomic_read(&peer_req->pending_bios) == 0);
@@ -4808,6 +4810,26 @@ static void drbd_cleanup_peer_read(
 		wake_up(&connection->ee_wait);
 }
 
+/* A resync read gets its pages at submission, so that a parked read holds none.
+ * No max-buffers delay here: this may run on the conflict submitter.
+ */
+static int peer_read_alloc_pages(struct drbd_peer_request *peer_req)
+{
+	struct drbd_connection *connection = peer_req->peer_device->connection;
+	unsigned int nr = DIV_ROUND_UP(peer_req->i.size, PAGE_SIZE);
+	struct page *page;
+
+	page = __drbd_alloc_pages(connection->resource, nr, GFP_TRY);
+	if (!page)
+		return -ENOMEM;
+	atomic_add(nr, &connection->pp_in_use);
+	peer_req->page_chain.head = page;
+	peer_req->page_chain.nr_pages = nr;
+	if (!mempool_is_saturated(&drbd_buffer_page_pool))
+		peer_req->flags |= EE_RELEASE_TO_MEMPOOL;
+	return 0;
+}
+
 void drbd_conflict_submit_peer_read(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
@@ -4848,6 +4870,11 @@ void drbd_conflict_submit_peer_read(struct drbd_peer_request *peer_req)
 		} else {
 			submit = false;
 		}
+		if ((too_deep || submit) && peer_req->i.type == INTERVAL_RESYNC_READ &&
+		    !(peer_req->flags & EE_RS_READ_HELD)) {
+			peer_req->flags |= EE_RS_READ_HELD;
+			atomic_add(peer_req->i.size >> 9, &peer_device->rs_read_sect_held);
+		}
 		spin_unlock_irq(&device->interval_lock);
 	}
 
@@ -4872,12 +4899,17 @@ void drbd_conflict_submit_peer_read(struct drbd_peer_request *peer_req)
 	 * which case we submit it anyway but skip the block if it conflicted. */
 	if (submit) {
 		unsigned int size = drbd_interval_is_resync(&peer_req->i) ? peer_req->i.size : 0;
-		int err;
+		int err = 0;
 
-		drbd_rs_depth_queued(device, size >> 9);
-		err = drbd_submit_peer_request(peer_req);
+		if (!peer_req->page_chain.head)
+			err = peer_read_alloc_pages(peer_req);
+		if (!err) {
+			drbd_rs_depth_queued(device, size >> 9);
+			err = drbd_submit_peer_request(peer_req);
+			if (err)
+				atomic_sub(size >> 9, &device->rs_sect_queued);
+		}
 		if (err) {
-			atomic_sub(size >> 9, &device->rs_sect_queued);
 			if (drbd_ratelimit())
 				drbd_err(peer_device, "submit failed, triggering re-connect\n");
 
@@ -5107,6 +5139,55 @@ static int receive_digest(struct drbd_peer_request *peer_req, int digest_size)
 	return drbd_recv_into(peer_req->peer_device->connection, di->digest, digest_size);
 }
 
+static bool is_resync_read_request(enum drbd_packet cmd)
+{
+	switch (cmd) {
+	case P_RS_DATA_REQUEST:
+	case P_RS_DAGTAG_REQ:
+	case P_CSUM_RS_REQUEST:
+	case P_RS_CSUM_DAGTAG_REQ:
+	case P_RS_THIN_REQ:
+	case P_RS_THIN_DAGTAG_REQ:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static bool rs_read_room(struct drbd_peer_device *peer_device, int size)
+{
+	unsigned int held = atomic_read(&peer_device->rs_read_sect_held);
+	unsigned int mxb;
+
+	if (!held)
+		return true;
+
+	rcu_read_lock();
+	mxb = rcu_dereference(peer_device->connection->transport.net_conf)->max_buffers;
+	rcu_read_unlock();
+
+	return (u64)held + (size >> 9) <= (u64)mxb << (PAGE_SHIFT - 9);
+}
+
+/* Above max-buffers of held resync reads, the peer requests faster than this
+ * node reads or sends: wait. A target within its own max-buffers never does.
+ */
+static int wait_for_rs_read_room(struct drbd_peer_device *peer_device, int size)
+{
+	struct drbd_connection *connection = peer_device->connection;
+	long t;
+
+	while (!rs_read_room(peer_device, size)) {
+		if (connection->cstate[NOW] < C_CONNECTED)
+			return -EIO;
+		t = wait_event_interruptible_timeout(connection->ee_wait,
+				rs_read_room(peer_device, size), HZ);
+		if (t < 0)
+			return t;
+	}
+	return 0;
+}
+
 static int receive_common_data_request(struct drbd_connection *connection, struct packet_info *pi,
 		struct p_block_req_common *p,
 		unsigned int depend_dagtag_node_id, u64 depend_dagtag)
@@ -5136,6 +5217,12 @@ static int receive_common_data_request(struct drbd_connection *connection, struc
 		drbd_err(peer_device, "%s:%d: sector: %llus, size: %u\n", __FILE__, __LINE__,
 				(unsigned long long)sector, size);
 		return -EINVAL;
+	}
+
+	if (is_resync_read_request(pi->cmd)) {
+		err = wait_for_rs_read_room(peer_device, size);
+		if (err)
+			return err;
 	}
 
 	/* Tell target to have a retry, waiting for the rescheduled
@@ -5228,7 +5315,7 @@ static int receive_common_data_request(struct drbd_connection *connection, struc
 	err = -ENOMEM;
 	if (!peer_req)
 		goto fail;
-	if (size) {
+	if (size && !is_resync_read_request(pi->cmd)) {
 		drbd_alloc_page_chain(&peer_device->connection->transport,
 			&peer_req->page_chain, DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
 		if (!peer_req->page_chain.head)

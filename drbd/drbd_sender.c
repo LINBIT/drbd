@@ -2273,6 +2273,9 @@ static int drbd_rs_reply(struct drbd_peer_device *peer_device, struct drbd_peer_
 		peer_device->rs_same_csum += peer_req->i.size >> BM_BLOCK_SHIFT;
 		err = drbd_send_ack(peer_device, P_RS_IS_IN_SYNC, peer_req);
 	} else {
+		unsigned int size = peer_req->i.size;
+		bool held = peer_req->flags & EE_RS_READ_HELD;
+
 		inc_rs_pending(peer_device);
 		/*
 		 * If we send back as P_RS_DEALLOCATED,
@@ -2282,6 +2285,7 @@ static int drbd_rs_reply(struct drbd_peer_device *peer_device, struct drbd_peer_
 		 */
 		atomic_add(peer_req->i.size >> 9, &connection->rs_in_flight);
 
+		peer_req->flags &= ~EE_RS_READ_HELD;
 		/* After setting this, peer_req can be found by got_RSWriteAck. */
 		set_bit(INTERVAL_READY_TO_SEND, &peer_req->i.flags);
 
@@ -2293,6 +2297,8 @@ static int drbd_rs_reply(struct drbd_peer_device *peer_device, struct drbd_peer_
 		*expect_ack = true;
 
 		drbd_free_page_chain(&connection->transport, &peer_req->page_chain);
+		if (held)
+			drbd_rs_read_unhold(peer_device, size);
 
 		drbd_resync_read_req_mod(peer_req, INTERVAL_SENT);
 		peer_req = NULL;

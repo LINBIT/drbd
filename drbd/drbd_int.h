@@ -572,6 +572,11 @@ enum {
 	 * backing device already holds its share of resync work.
 	 */
 	__EE_RS_DEPTH_PARKED,
+
+	/* SyncSource: a resync read from submission or parking until its
+	 * reply is sent, counted in rs_read_sect_held.
+	 */
+	__EE_RS_READ_HELD,
 };
 #define EE_MAY_SET_IN_SYNC     (1<<__EE_MAY_SET_IN_SYNC)
 #define EE_SET_OUT_OF_SYNC     (1<<__EE_SET_OUT_OF_SYNC)
@@ -588,6 +593,7 @@ enum {
 #define EE_IN_ACTLOG		(1<<__EE_IN_ACTLOG)
 #define EE_LAST_RESYNC_REQUEST	(1<<__EE_LAST_RESYNC_REQUEST)
 #define EE_RS_DEPTH_PARKED	(1<<__EE_RS_DEPTH_PARKED)
+#define EE_RS_READ_HELD		(1<<__EE_RS_READ_HELD)
 #define EE_ON_RECV_ORDER	(1<<__EE_ON_RECV_ORDER)
 #define EE_ON_SEND_OOS		(1<<__EE_ON_SEND_OOS)
 #define EE_WAIT_FOR_SOURCE	(1<<__EE_WAIT_FOR_SOURCE)
@@ -1690,6 +1696,10 @@ struct drbd_peer_device {
 	 * bound: no longer in flight, not yet submitted.
 	 */
 	atomic_t rs_sect_parked;
+	/* SyncSource: resync reads submitted or parked and not yet answered.
+	 * The receiver limits them to max-buffers.
+	 */
+	atomic_t rs_read_sect_held;
 	int rs_last_events;  /* counter of read or write "events" (unit sectors)
 			      * on the lower level device when we last looked. */
 	int rs_in_flight; /* resync sectors in flight (to proxy, in proxy and from proxy) */
@@ -3137,6 +3147,12 @@ static inline int __dec_rs_pending(struct drbd_peer_device *peer_device)
 static inline void inc_unacked(struct drbd_peer_device *peer_device)
 {
 	atomic_inc(&peer_device->unacked_cnt);
+}
+
+static inline void drbd_rs_read_unhold(struct drbd_peer_device *peer_device, unsigned int size)
+{
+	atomic_sub(size >> 9, &peer_device->rs_read_sect_held);
+	wake_up(&peer_device->connection->ee_wait);
 }
 
 #define dec_unacked(peer_device) \
