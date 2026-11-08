@@ -4977,7 +4977,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				 * bitmap. This may set bits unnecessarily, but
 				 * it does no harm to resync a small amount of
 				 * additional data. */
-				drbd_set_pending_out_of_sync(peer_device);
+				drbd_set_pending_out_of_sync(peer_device, false);
 				/* ldev_safe: ref from extra_ldev_ref_for_after_state_chg() */
 				drbd_queue_bitmap_io(device, &drbd_send_bitmap, NULL,
 						"send_bitmap (WFBitMapS)",

@@ -706,7 +706,7 @@ static void drbd_req_put_completion_ref(struct drbd_request *req, struct bio_and
 	kref_put(&req->kref, drbd_req_destroy);
 }
 
-void drbd_set_pending_out_of_sync(struct drbd_peer_device *peer_device)
+void drbd_set_pending_out_of_sync(struct drbd_peer_device *peer_device, bool skip_resendable)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_resource *resource = device->resource;
@@ -728,6 +728,9 @@ void drbd_set_pending_out_of_sync(struct drbd_peer_device *peer_device)
 		if (!(local_rq_state & RQ_WRITE))
 			continue;
 
+		if (req->device != device)
+			continue;
+
 		if ((local_rq_state & (RQ_POSTPONED|RQ_LOCAL_MASK)) == RQ_POSTPONED)
 			continue;
 
@@ -735,6 +738,10 @@ void drbd_set_pending_out_of_sync(struct drbd_peer_device *peer_device)
 			continue;
 
 		if (net_rq_state & RQ_NET_OK)
+			continue;
+
+		/* Still pending: a reconnect without resync resends it */
+		if (skip_resendable && (net_rq_state & RQ_NET_PENDING))
 			continue;
 
 		drbd_set_out_of_sync(peer_device, req->i.sector, req->i.size);

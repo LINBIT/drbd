@@ -679,8 +679,11 @@ int drbd_connected(struct drbd_peer_device *peer_device)
 	err = drbd_send_sync_param(peer_device);
 	if (!err)
 		err = drbd_send_sizes(peer_device, 0, 0);
-	if (!err)
+	if (!err) {
+		/* Writes this peer will not get must count in the bits P_UUIDS reports */
+		drbd_set_pending_out_of_sync(peer_device, true);
 		err = drbd_send_uuids(peer_device, 0, weak_nodes);
+	}
 	if (!err) {
 		set_bit(INITIAL_STATE_SENT, peer_device->flags);
 		err = drbd_send_current_state(peer_device);
