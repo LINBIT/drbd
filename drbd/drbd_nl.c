@@ -16,6 +16,7 @@
 #include <linux/slab.h>
 #include <linux/cpumask.h>
 #include <linux/random.h>
+#include <linux/umh.h>
 #include "drbd_int.h"
 #include "drbd_protocol.h"
 #include "drbd_req.h"
