@@ -552,6 +552,9 @@ int main(int argc, char **argv)
 	patch(1, "blkdev_issue_discard", false, true,
 	      COMPAT_BLKDEV_ISSUE_DISCARD_TAKES_FLAGS, "takes_flags");
 
+	patch(1, "bdev_end_io_acct", true, false,
+	      COMPAT_BDEV_END_IO_ACCT_TAKES_SECTORS, "takes_sectors");
+
 	patch(1, "drbd_wrappers", false, true,
 	      COMPAT_NEED_DRBD_WRAPPERS, "need");
 
