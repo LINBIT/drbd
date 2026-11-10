@@ -5534,6 +5534,16 @@ repeat:
 		if (t <= 0)
 			break;
 		goto repeat;
+	case SS_IN_TRANSIENT_STATE:
+		/* The peer applied our disconnect and closed before our local commit;
+		 * repeat once the receiver has left C_UNCONNECTED.
+		 */
+		if (++retries > DISCONNECT_RETRIES)
+			break;
+		wait_event_interruptible_timeout(resource->state_wait,
+						 connection->cstate[NOW] != C_UNCONNECTED,
+						 HZ);
+		goto repeat;
 	case SS_ALREADY_STANDALONE:
 		rv = SS_SUCCESS;
 		break;
