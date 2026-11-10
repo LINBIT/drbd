@@ -653,6 +653,9 @@ int main(int argc, char **argv)
 	patch(1, "linux_unaligned_h", true, false,
 		COMPAT_HAVE_LINUX_UNALIGNED_H, "present");
 
+	patch(1, "linux_umh_h", true, false,
+	      COMPAT_HAVE_LINUX_UMH_H, "present");
+
 	patch(1, "genlmsg_multicast_allns", true, false,
 	      COMPAT_GENLMSG_MULTICAST_ALLNS_HAS_4_PARAMS, "has_4_params");
 
