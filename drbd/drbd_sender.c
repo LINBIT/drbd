@@ -363,8 +363,14 @@ void drbd_request_endio(struct bio *bio)
 	/* to avoid recursion in __req_mod */
 	if (unlikely(status)) {
 		enum req_op op = bio_op(bio);
-
-		if (op == REQ_OP_DISCARD || op == REQ_OP_WRITE_ZEROES) {
+		/* A failed discard is tolerated: we do not detach or mark
+		 * anything out of sync. This is questionable, because with
+		 * discard-zeroes-if-aligned we rely on discards reading back
+		 * as zeroes.
+		 * A failed write-zeroes is handled like any other failed
+		 * write, because the range still holds the old data.
+		 */
+		if (op == REQ_OP_DISCARD) {
 			if (status == BLK_STS_NOTSUPP)
 				what = DISCARD_COMPLETED_NOTSUPP;
 			else
