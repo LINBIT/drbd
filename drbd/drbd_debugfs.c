@@ -968,6 +968,8 @@ static int connection_debug_show(struct seq_file *m, void *ignored)
 	pretty_print_bit(TWOPC_RETRY);
 	pretty_print_bit(CONN_DRY_RUN);
 	pretty_print_bit(DISCONNECT_EXPECTED);
+	pretty_print_bit(WAIT_FOR_PEER_CLOSE);
+	pretty_print_bit(ABORT_DRAIN);
 	pretty_print_bit(DATA_CORKED);
 	pretty_print_bit(CONTROL_CORKED);
 	pretty_print_bit(C_UNREGISTERED);

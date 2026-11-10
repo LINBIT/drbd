@@ -5503,6 +5503,10 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection
 	int retries = 0;
 	long t;
 
+	/* A graceful disconnect before may still wait for the peer to close */
+	if (force)
+		drbd_transport_abort_drain(connection);
+
 repeat:
 	rv = change_cstate_tag(connection, C_DISCONNECTING, flags, tag, &err_str);
 	switch (rv) {

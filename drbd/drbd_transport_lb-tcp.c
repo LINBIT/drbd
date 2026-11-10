@@ -190,6 +190,7 @@ static struct drbd_transport_class dtl_transport_class = {
 	.instance_size = sizeof(struct dtl_transport),
 	.path_instance_size = sizeof(struct dtl_path),
 	.listener_instance_size = sizeof(struct dtl_listener),
+	.drain_before_close = true,
 	.ops = (struct drbd_transport_ops) {
 		.init = dtl_init,
 		.free = dtl_free,

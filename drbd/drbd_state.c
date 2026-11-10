@@ -6485,11 +6485,20 @@ retry:
 	end_remote_state_change(resource, &irq_flags, context->flags | CS_TWOPC);
 	clear_bit(TWOPC_STATE_CHANGE_PENDING, &resource->flags);
 	if (rv >= SS_SUCCESS) {
+		bool disconnect = have_peers && target_connection &&
+			context->mask.conn == conn_MASK && context->val.conn == C_DISCONNECTING;
+
+		/* Set before the commit stops the receiver, see conn_disconnect() */
+		if (disconnect)
+			set_bit(WAIT_FOR_PEER_CLOSE, &target_connection->flags);
 		change(context, PH_COMMIT);
 		rv = end_state_change(resource, &irq_flags, tag);
-		if (rv < SS_SUCCESS)
+		if (rv < SS_SUCCESS) {
 			drbd_err(resource, "FATAL: Local commit of already committed %u failed!\n",
 				 request.tid);
+			if (disconnect)
+				clear_bit(WAIT_FOR_PEER_CLOSE, &target_connection->flags);
+		}
 	} else {
 		abort_state_change(resource, &irq_flags);
 	}

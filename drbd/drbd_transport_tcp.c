@@ -135,6 +135,7 @@ static struct drbd_transport_class tcp_transport_class = {
 	.instance_size = sizeof(struct drbd_tcp_transport),
 	.path_instance_size = sizeof(struct dtt_path),
 	.listener_instance_size = sizeof(struct dtt_listener),
+	.drain_before_close = true,
 	.ops = (struct drbd_transport_ops) {
 		.init = dtt_init,
 		.free = dtt_free,
