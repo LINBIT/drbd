@@ -1688,8 +1688,7 @@ static bool dtt_hint(struct drbd_transport *transport, enum drbd_stream stream,
 		tcp_sock_set_nodelay(socket->sk);
 		break;
 	case NOSPACE:
-		if (socket->sk->sk_socket)
-			set_bit(SOCK_NOSPACE, &socket->sk->sk_socket->flags);
+		sk_set_nospace(socket->sk);
 		break;
 	case QUICKACK:
 		tcp_sock_set_quickack(socket->sk, 2);
