@@ -25,6 +25,12 @@ static struct drbd_transport_class *__find_transport_class(const char *transport
 	return NULL;
 }
 
+/* A built-in transport has no struct module: THIS_MODULE is NULL. */
+static const char *transport_class_version(const struct drbd_transport_class *tc)
+{
+	return tc->module && tc->module->version ? tc->module->version : "N/A";
+}
+
 int drbd_register_transport_class(struct drbd_transport_class *transport_class, int version,
 				  int drbd_transport_size)
 {
@@ -48,7 +54,7 @@ int drbd_register_transport_class(struct drbd_transport_class *transport_class, 
 		list_add_tail(&transport_class->list, &transport_classes);
 		pr_info("registered transport class '%s' (version:%s)\n",
 			transport_class->name,
-			transport_class->module->version ?: "N/A");
+			transport_class_version(transport_class));
 	}
 	up_write(&transport_classes_lock);
 	return rv;
@@ -109,8 +115,7 @@ void drbd_print_transports_loaded(struct seq_file *seq)
 
 	seq_puts(seq, "Transports (api:" __stringify(DRBD_TRANSPORT_API_VERSION) "):");
 	list_for_each_entry(tc, &transport_classes, list) {
-		seq_printf(seq, " %s (%s)", tc->name,
-				tc->module->version ? tc->module->version : "NONE");
+		seq_printf(seq, " %s (%s)", tc->name, transport_class_version(tc));
 	}
 	seq_putc(seq, '\n');
 
