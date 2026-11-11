@@ -925,6 +925,15 @@ compat84_overlay_net_conf(struct drbd_adm_ctx *ctx, struct drbd_net_conf *d)
 		d->name_len = strlen(v1_conn_name);
 	}
 
+	/*
+	 * The v1 net_conf has no required attribute, so -ENOMSG only
+	 * means that the whole DRBD_NLA_NET_CONF nest is absent. 8.4
+	 * drbdsetup sends no nest when no net option is configured, and
+	 * the 8.4 driver accepted that: no options means the defaults.
+	 */
+	if (err == -ENOMSG)
+		err = 0;
+
 	return err;
 }
 
