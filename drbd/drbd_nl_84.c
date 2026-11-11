@@ -2351,14 +2351,13 @@ static bool compat84_dump_filter(struct netlink_callback *cb, int holder_nr)
  * device->ldev->md.flags masked to the 8.4 bits, OR'd with the persisted
  * peer's flags, exactly as drbd_md_encode_84() builds the on-disk value.
  * Caller holds get_ldev(). Needs no live peer_device: the persisted peer
- * slot (md.peers[!md.node_id]) is valid from attach on, so pre-existing
+ * slot (drbd_md_peer_84()) is valid from attach on, so pre-existing
  * 8.4 metadata reports correctly before the first connect.
  */
 static u32 compat84_pack_disk_flags_84(struct drbd_device *device)
 {
 	struct drbd_md *md = &device->ldev->md;
-	int peer_node_id = !md->node_id;
-	struct drbd_peer_md *peer_md = &md->peers[peer_node_id];
+	struct drbd_peer_md *peer_md = drbd_md_peer_84(md);
 	u32 flags = md->flags & MDF_84_MASK;
 
 	flags |= peer_md->flags & MDF_84_PEER_MASK;
@@ -2426,8 +2425,7 @@ static int compat84_fill_state_info(struct drbd_device *device, struct state_inf
 
 	if (got_ldev) {
 		struct drbd_md *md = &device->ldev->md;
-		int peer_node_id = !md->node_id;
-		struct drbd_peer_md *peer_md = &md->peers[peer_node_id];
+		struct drbd_peer_md *peer_md = drbd_md_peer_84(md);
 		u64 uuid[UI_SIZE] = { };
 
 		spin_lock_irq(&md->uuid_lock);

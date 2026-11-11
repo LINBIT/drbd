@@ -42,6 +42,17 @@ struct meta_data_on_disk_84;
 #define PEER_DEV_FLAGS_84_MASK (MDF_PEER_CONNECTED | MDF_PEER_OUTDATED | \
 				 MDF_PEER_FENCING | MDF_PEER_FULL_SYNC)
 
+/*
+ * The md.peers[] slot of the one 8.4 peer, where it is now: slot 0 while
+ * md->node_id is -1, the peer's slot once drbd_setup_node_ids_84() has set
+ * it. Attach sets md->node_id from the resource's node id. A failed first
+ * connect resets only the latter, and the slot stays where md->node_id says.
+ */
+static inline struct drbd_peer_md *drbd_md_peer_84(struct drbd_md *md)
+{
+	return &md->peers[md->node_id == 0 ? 1 : 0];
+}
+
 #ifdef CONFIG_DRBD_COMPAT_84
 extern atomic_t nr_drbd8_devices;
 

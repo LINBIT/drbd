@@ -77,7 +77,7 @@ atomic_t nr_drbd8_devices;
  * 8.4 meta-data has one peer slot and no node ids. Before the first connect
  * (my_node_id == -1) decode it into slot 0; drbd_setup_node_ids_84() moves
  * it to the peer's slot. Once the node ids are set, decode it there right
- * away, the way drbd_md_encode_84() reads it back (md->peers[!md->node_id]).
+ * away, where drbd_md_peer_84() finds it once attach has set md->node_id.
  */
 void drbd_md_decode_84(struct meta_data_on_disk_84 *on_disk, struct drbd_md *md,
 		       int my_node_id)
@@ -137,8 +137,7 @@ void drbd_md_decode_84(struct meta_data_on_disk_84 *on_disk, struct drbd_md *md,
 void drbd_md_encode_84(struct drbd_device *device, struct meta_data_on_disk_84 *buffer)
 {
 	struct drbd_md *md = &device->ldev->md;
-	int peer_node_id = !md->node_id;
-	struct drbd_peer_md *peer_md = &md->peers[peer_node_id];
+	struct drbd_peer_md *peer_md = drbd_md_peer_84(md);
 	u32 flags = (md->flags & MDF_84_MASK) | (peer_md->flags & MDF_84_PEER_MASK);
 	int i;
 
