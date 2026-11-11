@@ -667,6 +667,7 @@ enum device_flag {
 	RESTORE_QUORUM,		/* Restore quorum when we have the same members as before */
 	RESTORING_QUORUM,	/* sanitize_state() -> finish_state_change() */
 	LEGACY_84_MD,
+	DEGR_WFC_T_84,		/* 8.4 md: USE_DEGR_WFC_T for a new peer device */
 	BDEV_FROZEN,		/* called bdev_freeze(), needs bdev_thaw() on resume-io */
 	CBT_BITMAPS_FLUSHED,	/* cbt-flush wrote the bitmap during this suspend-io */
 	RS_DEPTH_WAITERS,	/* a peer device has RS_DEPTH_DEFERRED set */

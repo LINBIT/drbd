@@ -3906,6 +3906,18 @@ int drbd_adm_attach(struct drbd_adm_ctx *adm_ctx)
 		    !drbd_md_test_peer_flag(peer_device, __MDF_PEER_CONNECTED))
 			set_bit(USE_DEGR_WFC_T, peer_device->flags);
 	}
+	/*
+	 * 8.4 userspace attaches before it connects, so there is no peer
+	 * device yet. Remember it for adm_new_connection(), as 8.4 kept it
+	 * on the device until the handshake.
+	 */
+	assign_bit(DEGR_WFC_T_84, &device->flags,
+		   test_bit(LEGACY_84_MD, &device->flags) &&
+		   list_empty(&device->peer_devices) &&
+		   resource->role[NOW] != R_PRIMARY &&
+		   drbd_md_test_flag(device->ldev, MDF_PRIMARY_IND) &&
+		   !test_bit(__MDF_PEER_CONNECTED,
+			     &drbd_md_peer_84(&device->ldev->md)->flags));
 
 	/* Load on-disk tracking bits before peers' advertised sizes can
 	 * influence the computed device size.
@@ -5030,6 +5042,8 @@ static int adm_new_connection(struct drbd_adm_ctx *adm_ctx)
 
 			if (test_bit(__MDF_PEER_OUTDATED, &peer_md->flags))
 				peer_device->disk_state[NOW] = D_OUTDATED;
+			if (test_bit(DEGR_WFC_T_84, &device->flags))
+				set_bit(USE_DEGR_WFC_T, peer_device->flags);
 			put_ldev(device);
 		}
 	}
