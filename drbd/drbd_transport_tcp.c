@@ -678,7 +678,12 @@ static void dtt_socket_free(struct socket **socket)
 
 /**
  * dtt_socket_ok_or_free() - Free the socket if its connection is not okay
+ * @transport:	the transport the socket belongs to, for the debug message.
  * @socket:	pointer to the pointer to the socket.
+ * @what:	what the socket is used for, for the debug message.
+ *
+ * Return: true if the socket is connected; otherwise, the socket is freed,
+ * *@socket is set to NULL and false is returned.
  */
 static bool dtt_socket_ok_or_free(struct drbd_transport *transport,
 				  struct socket **socket, const char *what)
