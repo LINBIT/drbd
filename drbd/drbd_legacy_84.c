@@ -130,8 +130,8 @@ void drbd_md_decode_84(struct meta_data_on_disk_84 *on_disk, struct drbd_md *md,
 	drbd_set_peer_bitmap_uuid(peer_md, be64_to_cpu(on_disk->uuid[UI_BITMAP]), 0);
 
 
-	for (i = UI_HISTORY_START; i < UI_HISTORY_END; i++)
-		md->history_uuids[i - UI_HISTORY_START] = be64_to_cpu(on_disk->uuid[i]);
+	for (i = 0; i < HISTORY_UUIDS_V08; i++)
+		md->history_uuids[i] = be64_to_cpu(on_disk->uuid[UI_HISTORY_START + i]);
 }
 
 void drbd_md_encode_84(struct drbd_device *device, struct meta_data_on_disk_84 *buffer)
@@ -150,8 +150,8 @@ void drbd_md_encode_84(struct drbd_device *device, struct meta_data_on_disk_84 *
 	buffer->device_uuid = cpu_to_be64(md->device_uuid);
 	buffer->uuid[UI_CURRENT] = cpu_to_be64(md->current_uuid);
 	buffer->uuid[UI_BITMAP] = cpu_to_be64(peer_md->bitmap_uuid);
-	for (i = UI_HISTORY_START; i < UI_HISTORY_END; i++)
-		buffer->uuid[i] = cpu_to_be64(md->history_uuids[i - UI_HISTORY_START]);
+	for (i = 0; i < HISTORY_UUIDS_V08; i++)
+		buffer->uuid[UI_HISTORY_START + i] = cpu_to_be64(md->history_uuids[i]);
 	buffer->reserved_u64_1 = 0;
 	buffer->flags = cpu_to_be32(flags);
 	buffer->magic = cpu_to_be32(DRBD_MD_MAGIC_84_UNCLEAN);
