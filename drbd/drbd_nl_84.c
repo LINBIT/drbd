@@ -1216,6 +1216,30 @@ static int compat84_put_timeout_type(struct drbd_adm_ctx *ctx, enum drbd_timeout
  */
 
 /*
+ * 8.4 drops a connection's net_conf and addresses when it goes StandAlone,
+ * through disconnect or on its own (split brain, unrelated data, failed
+ * authentication, --tentative); see after_conn_state_ch() in the 8.4
+ * driver. DRBD 9 keeps the connection, its path and its net_conf. Report
+ * a StandAlone connection to 8.4 userspace without them: drbdadm-84 adjust
+ * then sees no net section and connects again, and drbd_nl_connect_doit()
+ * takes the connection over.
+ *
+ * The state is read without a lock and can change at any time. A message
+ * that carries both the addresses and the net_conf must decide once:
+ * drbdadm-84 adjust crashes on a net_conf without addresses.
+ */
+static bool compat84_conn_is_standalone(struct drbd_connection *connection)
+{
+	return READ_ONCE(connection->cstate[NOW]) == C_STANDALONE;
+}
+
+/* @connection, or NULL if 8.4 userspace must not see its configuration. */
+static struct drbd_connection *compat84_reported_connection(struct drbd_connection *connection)
+{
+	return connection && !compat84_conn_is_standalone(connection) ? connection : NULL;
+}
+
+/*
  * DRBD_NLA_CFG_CONTEXT for a dump row. v1's container carries
  * ctx_volume, ctx_resource_name, ctx_my_addr and ctx_peer_addr; no
  * ctx_peer_node_id or ctx_conn_name (8.4 has neither concept).
@@ -1224,7 +1248,8 @@ static int compat84_put_timeout_type(struct drbd_adm_ctx *ctx, enum drbd_timeout
  * wire level, but an 8.4-mode connection carries exactly one transport
  * path, and its address pair is what mainline's nla_put_drbd_cfg_context()
  * emits from the connection directly. The rcu_read_lock() is local
- * because not every caller holds one.
+ * because not every caller holds one. Callers pass the connection through
+ * compat84_reported_connection().
  */
 static int compat84_put_cfg_context(struct sk_buff *skb, struct drbd_resource *resource,
 				    struct drbd_connection *connection,
@@ -1570,13 +1595,14 @@ static int compat84_emit_connection(struct sk_buff *skb, struct netlink_callback
 		return 0;
 	}
 
+	connection = compat84_reported_connection(connection);
 	err = compat84_put_cfg_context(skb, resource, connection, NULL);
 	if (err)
 		return err;
 
 	/* v1 has no DRBD_NLA_PATH_PARMS container. */
 
-	if (net_conf) {
+	if (net_conf && connection) {
 		/* This dump carries no GENL_ADMIN_PERM. */
 		err = compat84_put_net_conf_masked(skb, net_conf, !capable(CAP_SYS_ADMIN));
 		if (err)
@@ -1629,7 +1655,8 @@ static int compat84_emit_peer_device(struct sk_buff *skb, struct netlink_callbac
 
 	dh->minor = minor;
 	err = compat84_put_cfg_context(skb, peer_device->device->resource,
-					peer_device->connection, peer_device->device);
+					compat84_reported_connection(peer_device->connection),
+					peer_device->device);
 	if (err)
 		return err;
 
@@ -1929,7 +1956,8 @@ static int compat84_notify_connection_state(struct sk_buff *skb, unsigned int se
 		goto nla_put_failure;
 	dh->minor = -1U;
 	dh->ret_code = NO_ERROR;
-	if (compat84_put_cfg_context(skb, connection->resource, connection, NULL) ||
+	if (compat84_put_cfg_context(skb, connection->resource,
+				     compat84_reported_connection(connection), NULL) ||
 	    compat84_put_notification_header(skb, type))
 		goto nla_put_failure;
 	if ((type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY) {
@@ -2030,7 +2058,9 @@ static int compat84_notify_peer_device_state(struct sk_buff *skb, unsigned int s
 		goto nla_put_failure;
 	dh->minor = -1U;
 	dh->ret_code = NO_ERROR;
-	if (compat84_put_cfg_context(skb, resource, peer_device->connection, peer_device->device) ||
+	if (compat84_put_cfg_context(skb, resource,
+				     compat84_reported_connection(peer_device->connection),
+				     peer_device->device) ||
 	    compat84_put_notification_header(skb, type))
 		goto nla_put_failure;
 	if ((type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY) {
@@ -2155,7 +2185,8 @@ static int compat84_notify_helper(struct sk_buff *skb, unsigned int seq,
 		goto fail;
 	dh->minor = device ? device->minor : -1;
 	dh->ret_code = NO_ERROR;
-	if (compat84_put_cfg_context(skb, resource, connection, device) ||
+	if (compat84_put_cfg_context(skb, resource, compat84_reported_connection(connection),
+				     device) ||
 	    compat84_put_notification_header(skb, type) ||
 	    drbd_helper_info_to_skb(skb, &helper_info))
 		goto fail;
@@ -2531,6 +2562,8 @@ static int compat84_put_status_info(struct sk_buff *skb, struct drbd_device *dev
 	struct res_opts res_opts;
 	struct state_info si;
 	bool exclude_sensitive = reason != SIB_GET_STATUS_REPLY || !capable(CAP_SYS_ADMIN);
+	struct drbd_connection *connection;
+	bool configured;
 	int got_ldev;
 	int err;
 
@@ -2539,10 +2572,13 @@ static int compat84_put_status_info(struct sk_buff *skb, struct drbd_device *dev
 	/*
 	 * Mainline passes the_only_connection(resource) here for the doit
 	 * reply, every dumpit row and the broadcast alike; the local RCU
-	 * section is needed for the doit caller.
+	 * section is needed for the doit caller. The net_conf below follows
+	 * the same decision.
 	 */
 	rcu_read_lock();
-	err = compat84_put_cfg_context(skb, resource, compat84_single_connection(resource), device);
+	connection = compat84_reported_connection(compat84_single_connection(resource));
+	configured = connection;
+	err = compat84_put_cfg_context(skb, resource, connection, device);
 	rcu_read_unlock();
 	if (err)
 		goto out;
@@ -2561,7 +2597,7 @@ static int compat84_put_status_info(struct sk_buff *skb, struct drbd_device *dev
 		compat84_pack_disk_conf_84(&dc, disk_conf, peer_device);
 		err = disk_conf_to_skb(skb, &dc);
 	}
-	if (!err && peer_device) {
+	if (!err && peer_device && configured) {
 		struct drbd_net_conf *nc =
 			rcu_dereference(peer_device->connection->transport.net_conf);
 
@@ -2719,7 +2755,8 @@ next_resource:
 
 			dh->minor = -1U;
 			dh->ret_code = NO_ERROR;
-			connection = compat84_single_connection(resource);
+			connection = compat84_reported_connection(
+				compat84_single_connection(resource));
 			if (compat84_put_cfg_context(skb, resource, connection, NULL))
 				goto cancel;
 			if (connection) {
@@ -3222,24 +3259,86 @@ static bool compat84_result_ok(int result)
 }
 
 /*
- * A v1 disconnect deletes the connection's path (8.4 forgets the
- * connection's addresses once it is StandAlone) but keeps the connection
- * and its peer devices, so the next connect has to pick it up again.
- * Returns that path-less connection's peer node id, or -1 if there is none.
+ * DRBD 9 keeps a StandAlone connection and its peer devices, so the next
+ * connect has to take it over; see compat84_conn_is_standalone(). Sets
+ * @peer_node_id to that connection's peer node id, or to -1 if the
+ * resource has no connection yet. Like 8.4, refuses a connection that is
+ * not StandAlone with ERR_NET_CONFIGURED.
  */
-static int compat84_pathless_peer_node_id(struct drbd_resource *resource)
+static enum drbd_ret_code compat84_reusable_peer_node_id(struct drbd_resource *resource,
+							  int *peer_node_id)
 {
 	struct drbd_connection *connection;
-	int peer_node_id = -1;
+	enum drbd_ret_code retcode = NO_ERROR;
 
+	*peer_node_id = -1;
 	rcu_read_lock();
-	connection = list_first_or_null_rcu(&resource->connections,
-					     struct drbd_connection, connections);
-	if (connection && list_empty(&connection->transport.paths))
-		peer_node_id = connection->peer_node_id;
+	connection = compat84_single_connection(resource);
+	if (connection) {
+		if (compat84_conn_is_standalone(connection))
+			*peer_node_id = connection->peer_node_id;
+		else
+			retcode = ERR_NET_CONFIGURED;
+	}
 	rcu_read_unlock();
 
-	return peer_node_id;
+	return retcode;
+}
+
+/*
+ * A v1 disconnect deletes the path of the connection, but a connection
+ * that went StandAlone on its own keeps it. Delete it before connect adds
+ * the requested one, whatever its addresses: 8.4 has forgotten them by
+ * now, and the new connect may name others. adm_del_path() looks the path
+ * up by the request's addresses, so pass it the old ones for the call.
+ */
+static void compat84_del_old_path(struct drbd_adm_ctx *ctx)
+{
+	struct compat84_req *req = compat84_req(ctx);
+	u8 my_addr[sizeof(req->ctx_my_addr)], peer_addr[sizeof(req->ctx_peer_addr)];
+	u32 my_addr_len = req->ctx_my_addr_len, peer_addr_len = req->ctx_peer_addr_len;
+	struct drbd_path *path;
+	bool found = false;
+
+	memcpy(my_addr, req->ctx_my_addr, sizeof(my_addr));
+	memcpy(peer_addr, req->ctx_peer_addr, sizeof(peer_addr));
+
+	rcu_read_lock();
+	path = list_first_or_null_rcu(&ctx->connection->transport.paths,
+				      struct drbd_path, list);
+	if (path) {
+		req->ctx_my_addr_len = min_t(u32, path->my_addr_len, sizeof(req->ctx_my_addr));
+		memcpy(req->ctx_my_addr, &path->my_addr, req->ctx_my_addr_len);
+		req->ctx_peer_addr_len = min_t(u32, path->peer_addr_len,
+					       sizeof(req->ctx_peer_addr));
+		memcpy(req->ctx_peer_addr, &path->peer_addr, req->ctx_peer_addr_len);
+		found = true;
+	}
+	rcu_read_unlock();
+
+	if (found)
+		drbd_adm_del_path(ctx);
+	else
+		ctx->result = NO_ERROR;
+
+	memcpy(req->ctx_my_addr, my_addr, sizeof(my_addr));
+	req->ctx_my_addr_len = my_addr_len;
+	memcpy(req->ctx_peer_addr, peer_addr, sizeof(peer_addr));
+	req->ctx_peer_addr_len = peer_addr_len;
+}
+
+/*
+ * 8.4 starts every connect from the default net options. Apply the
+ * request's options to the taken-over connection the same way; fencing,
+ * a disk option on 8.4, survives (see compat84_overlay_net_conf()).
+ */
+static void compat84_reset_net_opts(struct drbd_adm_ctx *ctx)
+{
+	bool orig_set_defaults = ctx->set_defaults;
+
+	ctx->set_defaults = true;
+	drbd_adm_net_opts(ctx);
+	ctx->set_defaults = orig_set_defaults;
 }
 
 int drbd_nl_connect_doit(struct sk_buff *skb, struct genl_info *info)
@@ -3248,7 +3347,8 @@ int drbd_nl_connect_doit(struct sk_buff *skb, struct genl_info *info)
 	struct compat84_req *req = compat84_req(ctx);
 	struct drbd_connection *connection;
 	bool reused, path_added = false, node_ids_unset;
-	int pathless_id;
+	enum drbd_ret_code retcode;
+	int reused_id;
 	u32 peer_node_id;
 
 	if (!req->reply_skb)
@@ -3259,10 +3359,14 @@ int drbd_nl_connect_doit(struct sk_buff *skb, struct genl_info *info)
 	node_ids_unset = ctx->resource->res_opts.node_id == -1;
 	mutex_unlock(&ctx->resource->adm_mutex);
 
-	pathless_id = compat84_pathless_peer_node_id(ctx->resource);
-	reused = pathless_id >= 0;
+	retcode = compat84_reusable_peer_node_id(ctx->resource, &reused_id);
+	if (retcode != NO_ERROR) {
+		ctx->result = retcode;
+		return 0;
+	}
+	reused = reused_id >= 0;
 	if (reused) {
-		peer_node_id = pathless_id;
+		peer_node_id = reused_id;
 	} else if (compat84_connect_peer_node_id(req, &peer_node_id)) {
 		drbd_adm_msg(ctx, "%s",
 			     "could not determine a peer node id from the given addresses");
@@ -3296,9 +3400,11 @@ int drbd_nl_connect_doit(struct sk_buff *skb, struct genl_info *info)
 	kref_debug_get(&connection->kref_debug, 2);
 	ctx->connection = connection;
 
-	/* A reused connection still has the previous connect's net options. */
-	if (reused)
-		drbd_adm_net_opts(ctx);
+	if (reused) {
+		compat84_del_old_path(ctx);
+		if (compat84_result_ok(ctx->result))
+			compat84_reset_net_opts(ctx);
+	}
 	if (compat84_result_ok(ctx->result)) {
 		drbd_adm_new_path(ctx);
 		path_added = compat84_result_ok(ctx->result);
@@ -3359,7 +3465,7 @@ int drbd_nl_disconnect_doit(struct sk_buff *skb, struct genl_info *info)
 	/*
 	 * 8.4 forgets a StandAlone connection's addresses, so that the next
 	 * connect may name different ones; do the same by deleting the path.
-	 * drbd_nl_connect_doit() then reuses the path-less connection.
+	 * drbd_nl_connect_doit() then takes the connection over.
 	 */
 	drbd_adm_del_path(ctx);
 	return 0;
