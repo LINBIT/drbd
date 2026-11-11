@@ -6457,8 +6457,9 @@ int drbd_adm_suspend_io(struct drbd_adm_ctx *adm_ctx)
 	if (adm_ctx->d->has_set(adm_ctx, DRBD_NL_SET_SUSPEND_IO_PARMS)) {
 		err = drbd_adm_overlay_suspend_io_parms(adm_ctx, &params);
 		if (err) {
+			retcode = ERR_MANDATORY_TAG;
 			drbd_adm_msg_overlay_error(adm_ctx, err);
-			return err;
+			goto out;
 		}
 	}
 
@@ -6734,8 +6735,9 @@ int drbd_adm_cbt_start(struct drbd_adm_ctx *adm_ctx)
 
 	err = drbd_adm_overlay_cbt_start_parms(adm_ctx, &parms);
 	if (err) {
+		retcode = ERR_MANDATORY_TAG;
 		drbd_adm_msg_overlay_error(adm_ctx, err);
-		return err;
+		goto out;
 	}
 
 	if (mutex_lock_interruptible(&adm_ctx->resource->adm_mutex)) {
