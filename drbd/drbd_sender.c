@@ -1030,13 +1030,14 @@ static void rs_hint_mxb_limited(struct drbd_peer_device *peer_device, int mxb,
  * drbd_rs_controller() as well to get intended resync rates,
  * especially if you configure for rather small c-max-rate.
  */
-static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
+static int drbd_rs_number_requests(struct drbd_peer_device *peer_device,
+				   int discard_granularity)
 {
 	struct drbd_net_conf *nc;
 	ktime_t duration, now;
 	unsigned int sect_in;  /* Number of sectors that came in since the last turn */
 	unsigned int c_max_rate;
-	int number, mxb;
+	int number, mxb, room_sect, granule_sect;
 	int effective_resync_request_size;
 	struct drbd_bitmap *bm = peer_device->device->bitmap;
 
@@ -1074,18 +1075,24 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 	 * "number of pages" (typically 4k), and "rs_in_flight" is in "sectors"
 	 * (512 Byte). Convert everything to sectors and back.
 	 */
-	{
-		int mxb_sect = mxb << (PAGE_SHIFT - 9);
-		int num_sect = bit_to_sect(number, BM_BLOCK_SHIFT_4k);
+	room_sect = (mxb << (PAGE_SHIFT - 9)) - drbd_rs_outstanding(peer_device);
+	if (room_sect < (int)bit_to_sect(number, BM_BLOCK_SHIFT_4k)) {
+		number = room_sect > 0 ? sect_to_bit(room_sect, BM_BLOCK_SHIFT_4k) : 0;
+		rs_hint_mxb_limited(peer_device, mxb, c_max_rate, sect_in,
+				    ktime_to_ns(duration));
+	} else {
+		peer_device->rs_mxb_limited = 0;
+	}
 
-		if (mxb_sect - drbd_rs_outstanding(peer_device) < num_sect) {
-			num_sect = mxb_sect - drbd_rs_outstanding(peer_device);
-			number = sect_to_bit(num_sect, BM_BLOCK_SHIFT_4k);
-			rs_hint_mxb_limited(peer_device, mxb, c_max_rate, sect_in,
-					    ktime_to_ns(duration));
-		} else {
-			peer_device->rs_mxb_limited = 0;
-		}
+	/* Raise to one discard granule only within the max-buffers room, or when
+	 * nothing is outstanding, so that a max-buffers below a granule cannot stall.
+	 */
+	granule_sect = discard_granularity >> 9;
+	if (bit_to_sect(number, BM_BLOCK_SHIFT_4k) < granule_sect) {
+		if (room_sect >= granule_sect || drbd_rs_outstanding(peer_device) == 0)
+			number = sect_to_bit(granule_sect, BM_BLOCK_SHIFT_4k);
+		else
+			number = 0;
 	}
 
 	/* BM_BLOCK_SIZE_MAX/BM_BLOCK_SIZE_4k? Maybe. But do not round up unless we have to. */
@@ -1441,9 +1448,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	}
 
 	bm_block_shift = bm->bm_block_shift;
-	number = drbd_rs_number_requests(peer_device);
-	if (number < discard_granularity >> bm_block_shift)
-		number = discard_granularity >> bm_block_shift;
+	number = drbd_rs_number_requests(peer_device, discard_granularity);
 
 	/*
 	 * Drain resync requests when we jump back to avoid conflicts that are
@@ -1707,7 +1712,7 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 		return 0;
 
 	bm = device->bitmap;
-	number = drbd_rs_number_requests(peer_device);
+	number = drbd_rs_number_requests(peer_device, 0);
 	sector = peer_device->ov_position;
 
 	/* don't let rs_sectors_came_in() re-schedule us "early"
