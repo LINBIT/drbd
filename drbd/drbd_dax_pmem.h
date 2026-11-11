@@ -7,7 +7,7 @@
 
 #include <linux/kconfig.h>
 
-#if IS_ENABLED(CONFIG_DEV_DAX_PMEM)
+#if IS_ENABLED(CONFIG_DRBD_DAX)
 
 int drbd_dax_open(struct drbd_backing_dev *bdev);
 void drbd_dax_close(struct drbd_backing_dev *bdev);
@@ -38,6 +38,6 @@ static inline struct meta_data_on_disk_9 *drbd_dax_md_addr(struct drbd_backing_d
 
 #define arch_wb_cache_pmem(A, L) do { } while (0)
 
-#endif /* IS_ENABLED(CONFIG_DEV_DAX_PMEM) */
+#endif /* IS_ENABLED(CONFIG_DRBD_DAX) */
 
 #endif /* DRBD_DAX_H */

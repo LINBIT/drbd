@@ -1030,7 +1030,7 @@ struct drbd_backing_dev {
 	struct drbd_md md;
 	struct drbd_disk_conf __rcu *disk_conf; /* RCU, for updates: resource->conf_update */
 	sector_t known_size; /* last known size of that backing device */
-#if IS_ENABLED(CONFIG_DEV_DAX_PMEM)
+#if IS_ENABLED(CONFIG_DRBD_DAX)
 	struct dax_device *dax_dev;
 	struct meta_data_on_disk_9 *md_on_pmem; /* address of md_offset */
 	struct al_on_pmem *al_on_pmem;

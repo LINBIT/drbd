@@ -72,8 +72,16 @@ obj-$(if $(CONFIG_INFINIBAND_ADDR_TRANS),m) += drbd_transport_rdma2.o
 obj-$(COMPAT_NET_HANDSHAKE)      += drbd-kernel-compat/handshake/
 # ================================================================
 
-ifdef CONFIG_DEV_DAX_PMEM
+# DAX/PMEM meta data, the same condition as "config DRBD_DAX" in-tree:
+# fs_dax_get_by_bdev() and dax_direct_access() need FS_DAX (which selects
+# DAX built in), and without ARCH_HAS_PMEM_API arch_wb_cache_pmem() does
+# nothing, so meta data writes would not be persistent.
+ifdef CONFIG_FS_DAX
+ifdef CONFIG_ARCH_HAS_PMEM_API
 CONFIG_DRBD_DAX := y
+override EXTRA_CFLAGS += -DCONFIG_DRBD_DAX
+ccflags-y += -DCONFIG_DRBD_DAX
+endif
 endif
 
 # enable fault injection by default
