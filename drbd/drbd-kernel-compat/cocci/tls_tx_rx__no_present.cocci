@@ -17,7 +17,7 @@
 @@
 identifier msg;
 @@
-- if (msg.msg_controllen != ...) { ... }
+- if (IS_ENABLED(CONFIG_BLK_DEV_DRBD_TCP_TLS) && msg.msg_controllen != ...) { ... }
 
 @@
 typedef gfp_t;
@@ -47,7 +47,8 @@ typedef gfp_t;
 @@
 expression s;
 @@
-- tls_handshake_cancel(s);
+- if (IS_ENABLED(CONFIG_BLK_DEV_DRBD_TCP_TLS))
+-	tls_handshake_cancel(s);
 
 @ exists @
 identifier csocket_tls_wait = csocket_tls_wait;

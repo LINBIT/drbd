@@ -62,6 +62,14 @@ COMPAT_NET_HANDSHAKE := $(shell set -x; grep -qe '^.define COMPAT_HAVE_TLS_TX_RX
 endif
 endif
 
+# TLS in the TCP transport, "config BLK_DEV_DRBD_TCP_TLS" in-tree. With kTLS,
+# the kernel's or our own handshake module (above) provides the handshake API;
+# without it, tls_tx_rx__no_present.cocci removes the TLS code instead.
+ifeq ($(shell grep -qe '^.define COMPAT_HAVE_TLS_TX_RX$$' $(src)/compat.h && echo y),y)
+override EXTRA_CFLAGS += -DCONFIG_BLK_DEV_DRBD_TCP_TLS
+ccflags-y += -DCONFIG_BLK_DEV_DRBD_TCP_TLS
+endif
+
 # ================================================================
 CONFIG_BLK_DEV_DRBD := m
 obj-$(CONFIG_BLK_DEV_DRBD)       += drbd.o

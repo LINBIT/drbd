@@ -295,7 +295,7 @@ static int dtt_recv_short(struct socket *socket, void *buf, size_t size, int fla
 
 	ret = kernel_recvmsg(socket, &msg, &iov, 1, size, flags);
 
-	if (msg.msg_controllen != sizeof(u)) {
+	if (IS_ENABLED(CONFIG_BLK_DEV_DRBD_TCP_TLS) && msg.msg_controllen != sizeof(u)) {
 		u8 level, description;
 
 		switch (tls_get_record_type(socket->sk, &u.cmsg)) {
@@ -652,7 +652,8 @@ static void dtt_socket_free(struct socket **socket)
 	if (!*socket)
 		return;
 
-	tls_handshake_cancel((*socket)->sk);
+	if (IS_ENABLED(CONFIG_BLK_DEV_DRBD_TCP_TLS))
+		tls_handshake_cancel((*socket)->sk);
 	kernel_sock_shutdown(*socket, SHUT_RDWR);
 
 	if ((*socket)->file)
@@ -1409,6 +1410,12 @@ randomize:
 	write_unlock_bh(&csocket->sk->sk_callback_lock);
 
 	if (tls) {
+		/* dtt_net_conf_change() refuses tls without TLS support. */
+		if (!IS_ENABLED(CONFIG_BLK_DEV_DRBD_TCP_TLS)) {
+			err = -EOPNOTSUPP;
+			goto out_release_sockets;
+		}
+
 		csocket_tls_wait.done = COMPLETION_INITIALIZER_ONSTACK(csocket_tls_wait.done);
 		dsocket_tls_wait.done = COMPLETION_INITIALIZER_ONSTACK(dsocket_tls_wait.done);
 
@@ -1527,6 +1534,11 @@ static int dtt_net_conf_change(struct drbd_transport *transport,
 	rcu_read_lock();
 	old_net_conf = rcu_dereference(transport->net_conf);
 	rcu_read_unlock();
+
+	if (new_net_conf->tls && !IS_ENABLED(CONFIG_BLK_DEV_DRBD_TCP_TLS)) {
+		tr_warn(transport, "tls requested, but TLS support is not built in\n");
+		return -EOPNOTSUPP;
+	}
 
 	if (old_net_conf && old_net_conf->tls != new_net_conf->tls &&
 	    (data_socket || control_socket)) {
