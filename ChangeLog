@@ -3,6 +3,29 @@ Latest:
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
 
+9.2.21-rc.2 (api:genl2/proto:86-101,118-125/transport:21)
+--------
+ * Fix a sync source running out of memory when the sync target
+   requests faster than it can read: a target with rs-discard-granularity
+   keeps its requests within max-buffers, and the source allocates the
+   pages of a resync read only when it submits the read
+ * Fix resyncs in opposite directions stopping for good with
+   max-parallel-resyncs: only the requesting side takes a slot
+ * Fix an attaching node waiting in WFBitMapT forever while its peer
+   decided there is nothing to sync
+ * Fix a failed local write-zeroes leaving the old data on a disk that
+   stays UpToDate
+ * Fix auto-promote giving up long before auto-promote-timeout
+ * Fix disconnect: the peer going to NetworkFailure instead of
+   Disconnecting, and "drbdadm disconnect" failing with -18 when the
+   peer tears down first
+ * Fix TLS: two nodes stalling in the handshake until the TLS timeout,
+   and going StandAlone when the peer resets the connection during the
+   handshake
+ * Fix a use-after-free of the rdma control timer on teardown
+ * Fix the build on kernels before 4.17 (RHEL 7) and with Linux 7.4,
+   and the send buffer not growing during a resync on Linux 7.4
+
 9.2.21-rc.1 (api:genl2/proto:86-101,118-125/transport:21)
 --------
  * Fix a resync target staying Inconsistent with nothing left to sync:
