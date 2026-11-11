@@ -1757,6 +1757,40 @@ static int compat84_put_notification_header(struct sk_buff *msg,
 	return drbd_notification_header_to_skb(msg, &nh);
 }
 
+static void compat84_fuse_resource_state(struct drbd_resource *resource,
+					 struct drbd_resource_info *info,
+					 enum drbd_notification_type type)
+{
+	/*
+	 * Fused SIB_STATE_CHANGE DRBD_EVENT, see compat84_event_get(): a
+	 * role/suspend change is resource-wide, but 8.4's wire word is per
+	 * device. Multicast path only; the initial-state replay appends to a
+	 * dump. !info means NOTIFY_DESTROY, which has no transition to report.
+	 */
+	if (info && (type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY) {
+		struct drbd_device *device;
+		int vnr;
+
+		rcu_read_lock();
+		idr_for_each_entry(&resource->devices, device, vnr) {
+			union drbd_state prev, new;
+
+			compat84_event_get(device, &prev, &new);
+			prev.role = info->old_res_role;
+			new.role = info->res_role;
+			prev.susp = info->old_res_susp;
+			new.susp = info->res_susp || info->res_susp_quorum;
+			prev.susp_nod = info->old_res_susp_nod;
+			new.susp_nod = info->res_susp_nod;
+			prev.susp_fen = info->old_res_susp_fen;
+			new.susp_fen = info->res_susp_fen;
+			compat84_event_put(device, prev, new);
+		}
+		rcu_read_unlock();
+	}
+	compat84_event_flush(resource, type);
+}
+
 static int compat84_notify_resource_state(struct sk_buff *skb, unsigned int seq,
 					  struct drbd_resource *resource,
 					  struct drbd_resource_info *info,
@@ -1765,7 +1799,7 @@ static int compat84_notify_resource_state(struct sk_buff *skb, unsigned int seq,
 {
 	struct drbd_resource_statistics resource_statistics;
 	struct drbd_genlmsghdr *dh;
-	bool multicast = false;
+	const bool multicast = !skb;
 	int err;
 
 	/*
@@ -1780,7 +1814,6 @@ static int compat84_notify_resource_state(struct sk_buff *skb, unsigned int seq,
 		err = -ENOMEM;
 		if (!skb)
 			goto failed;
-		multicast = true;
 		seq = atomic_inc_return(&compat84_notify_seq);
 	}
 
@@ -1826,44 +1859,39 @@ static int compat84_notify_resource_state(struct sk_buff *skb, unsigned int seq,
 			goto failed;
 	}
 
-	/*
-	 * Fused SIB_STATE_CHANGE DRBD_EVENT, see compat84_event_get(): a
-	 * role/suspend change is resource-wide, but 8.4's wire word is per
-	 * device. Multicast path only; the initial-state replay appends to a
-	 * dump. !info means NOTIFY_DESTROY, which has no transition to report.
-	 */
-	if (multicast && info && (type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY) {
-		struct drbd_device *device;
-		int vnr;
-
-		rcu_read_lock();
-		idr_for_each_entry(&resource->devices, device, vnr) {
-			union drbd_state prev, new;
-
-			compat84_event_get(device, &prev, &new);
-			prev.role = info->old_res_role;
-			new.role = info->res_role;
-			prev.susp = info->old_res_susp;
-			new.susp = info->res_susp || info->res_susp_quorum;
-			prev.susp_nod = info->old_res_susp_nod;
-			new.susp_nod = info->res_susp_nod;
-			prev.susp_fen = info->old_res_susp_fen;
-			new.susp_fen = info->res_susp_fen;
-			compat84_event_put(device, prev, new);
-		}
-		rcu_read_unlock();
-	}
 	if (multicast)
-		compat84_event_flush(resource, type);
+		compat84_fuse_resource_state(resource, info, type);
 
 	return 0;
 
 nla_put_failure:
 	nlmsg_free(skb);
 failed:
-	drbd_err(resource, "Error %d while broadcasting event. Event seq:%u\n",
-		err, seq);
+	drbd_err_ratelimit(resource, "Error %d while broadcasting event. Event seq:%u\n",
+			   err, seq);
+	/*
+	 * The fused DRBD_EVENT is a message of its own: still send it. A
+	 * failed multicast has reached every other listener anyway.
+	 */
+	if (multicast)
+		compat84_fuse_resource_state(resource, info, type);
 	return err;
+}
+
+static void compat84_fuse_device_state(struct drbd_device *device,
+				       struct drbd_device_info *info,
+				       enum drbd_notification_type type)
+{
+	/* Fused SIB_STATE_CHANGE DRBD_EVENT, see compat84_event_get(). */
+	if (info && (type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY) {
+		union drbd_state prev, new;
+
+		compat84_event_get(device, &prev, &new);
+		prev.disk = drbd_disk_state_84(info->old_dev_disk_state);
+		new.disk = drbd_disk_state_84(info->dev_disk_state);
+		compat84_event_put(device, prev, new);
+	}
+	compat84_event_flush(device->resource, type);
 }
 
 static int compat84_notify_device_state(struct sk_buff *skb, unsigned int seq,
@@ -1874,7 +1902,7 @@ static int compat84_notify_device_state(struct sk_buff *skb, unsigned int seq,
 	struct drbd_device_statistics device_statistics;
 	struct device_statistics statistics_84;
 	struct drbd_genlmsghdr *dh;
-	bool multicast = false;
+	const bool multicast = !skb;
 	int err;
 
 	if (!skb) {
@@ -1882,7 +1910,6 @@ static int compat84_notify_device_state(struct sk_buff *skb, unsigned int seq,
 		err = -ENOMEM;
 		if (!skb)
 			goto failed;
-		multicast = true;
 		seq = atomic_inc_return(&compat84_notify_seq);
 	}
 
@@ -1938,26 +1965,59 @@ static int compat84_notify_device_state(struct sk_buff *skb, unsigned int seq,
 			goto failed;
 	}
 
-	/* Fused SIB_STATE_CHANGE DRBD_EVENT, see compat84_event_get(). */
-	if (multicast && info && (type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY) {
-		union drbd_state prev, new;
-
-		compat84_event_get(device, &prev, &new);
-		prev.disk = drbd_disk_state_84(info->old_dev_disk_state);
-		new.disk = drbd_disk_state_84(info->dev_disk_state);
-		compat84_event_put(device, prev, new);
-	}
 	if (multicast)
-		compat84_event_flush(device->resource, type);
+		compat84_fuse_device_state(device, info, type);
 
 	return 0;
 
 nla_put_failure:
 	nlmsg_free(skb);
 failed:
-	drbd_err(device, "Error %d while broadcasting event. Event seq:%u\n",
-		err, seq);
+	drbd_err_ratelimit(device, "Error %d while broadcasting event. Event seq:%u\n",
+			   err, seq);
+	/*
+	 * The fused DRBD_EVENT is a message of its own: still send it. A
+	 * failed multicast has reached every other listener anyway.
+	 */
+	if (multicast)
+		compat84_fuse_device_state(device, info, type);
 	return err;
+}
+
+static void compat84_fuse_connection_state(struct drbd_connection *connection,
+					   struct drbd_connection_info *info,
+					   enum drbd_notification_type type)
+{
+	/*
+	 * Fused SIB_STATE_CHANGE DRBD_EVENT, see compat84_event_get(), for
+	 * every device behind this connection. state.conn takes the cstate
+	 * only when the peer device is not itself replicating (repl_state <=
+	 * L_OFF), matching combined_conn_state(). A peer-device notification
+	 * in the same state change knows the replication state before and
+	 * after it, so the cstate is recorded for it to decide with.
+	 */
+	if (info && (type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY) {
+		struct drbd_peer_device *peer_device;
+		int vnr;
+
+		rcu_read_lock();
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+			union drbd_state prev, new;
+
+			compat84_event_get(peer_device->device, &prev, &new);
+			prev.peer = info->old_conn_role;
+			new.peer = info->conn_role;
+			if (peer_device->repl_state[NOW] <= L_OFF) {
+				prev.conn = info->old_conn_connection_state;
+				new.conn = info->conn_connection_state;
+			}
+			compat84_event_put(peer_device->device, prev, new);
+			peer_device->device->bcast_cstate_prev_84 = info->old_conn_connection_state;
+			peer_device->device->bcast_cstate_new_84 = info->conn_connection_state;
+		}
+		rcu_read_unlock();
+	}
+	compat84_event_flush(connection->resource, type);
 }
 
 static int compat84_notify_connection_state(struct sk_buff *skb, unsigned int seq,
@@ -1967,7 +2027,7 @@ static int compat84_notify_connection_state(struct sk_buff *skb, unsigned int se
 {
 	struct drbd_connection_statistics connection_statistics;
 	struct drbd_genlmsghdr *dh;
-	bool multicast = false;
+	const bool multicast = !skb;
 	int err;
 
 	if (!skb) {
@@ -1975,7 +2035,6 @@ static int compat84_notify_connection_state(struct sk_buff *skb, unsigned int se
 		err = -ENOMEM;
 		if (!skb)
 			goto failed;
-		multicast = true;
 		seq = atomic_inc_return(&compat84_notify_seq);
 	}
 
@@ -2018,46 +2077,63 @@ static int compat84_notify_connection_state(struct sk_buff *skb, unsigned int se
 			goto failed;
 	}
 
-	/*
-	 * Fused SIB_STATE_CHANGE DRBD_EVENT, see compat84_event_get(), for
-	 * every device behind this connection. state.conn takes the cstate
-	 * only when the peer device is not itself replicating (repl_state <=
-	 * L_OFF), matching combined_conn_state(). A peer-device notification
-	 * in the same state change knows the replication state before and
-	 * after it, so the cstate is recorded for it to decide with.
-	 */
-	if (multicast && info && (type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY) {
-		struct drbd_peer_device *peer_device;
-		int vnr;
-
-		rcu_read_lock();
-		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-			union drbd_state prev, new;
-
-			compat84_event_get(peer_device->device, &prev, &new);
-			prev.peer = info->old_conn_role;
-			new.peer = info->conn_role;
-			if (peer_device->repl_state[NOW] <= L_OFF) {
-				prev.conn = info->old_conn_connection_state;
-				new.conn = info->conn_connection_state;
-			}
-			compat84_event_put(peer_device->device, prev, new);
-			peer_device->device->bcast_cstate_prev_84 = info->old_conn_connection_state;
-			peer_device->device->bcast_cstate_new_84 = info->conn_connection_state;
-		}
-		rcu_read_unlock();
-	}
 	if (multicast)
-		compat84_event_flush(connection->resource, type);
+		compat84_fuse_connection_state(connection, info, type);
 
 	return 0;
 
 nla_put_failure:
 	nlmsg_free(skb);
 failed:
-	drbd_err(connection, "Error %d while broadcasting event. Event seq:%u\n",
-		err, seq);
+	drbd_err_ratelimit(connection, "Error %d while broadcasting event. Event seq:%u\n",
+			   err, seq);
+	/*
+	 * The fused DRBD_EVENT is a message of its own: still send it. A
+	 * failed multicast has reached every other listener anyway.
+	 */
+	if (multicast)
+		compat84_fuse_connection_state(connection, info, type);
 	return err;
+}
+
+static void compat84_fuse_peer_device_state(struct drbd_peer_device *peer_device,
+					    struct drbd_peer_device_info *info,
+					    enum drbd_notification_type type)
+{
+	/*
+	 * Fused SIB_STATE_CHANGE DRBD_EVENT, see compat84_event_get().
+	 * state.conn takes the repl_state while it is actively replicating
+	 * (> L_OFF) and otherwise the cstate the connection hook recorded,
+	 * matching combined_conn_state(). The frequent RS_PROGRESS notifications
+	 * arrive here with old == new and send nothing.
+	 *
+	 * aftr_isp comes from peer_resync_susp_dependency on both sides; see
+	 * peer_device_state_change_to_info() for why the old side is exact.
+	 */
+	if (info && (type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY) {
+		struct drbd_device *device = peer_device->device;
+		union drbd_state prev, new;
+
+		compat84_event_get(device, &prev, &new);
+		prev.pdsk = drbd_disk_state_84(info->old_peer_disk_state);
+		new.pdsk = drbd_disk_state_84(info->peer_disk_state);
+		if (info->old_peer_repl_state > L_OFF)
+			prev.conn = info->old_peer_repl_state;
+		else if (device->bcast_cstate_prev_84 >= 0)
+			prev.conn = device->bcast_cstate_prev_84;
+		if (info->peer_repl_state > L_OFF)
+			new.conn = info->peer_repl_state;
+		else if (device->bcast_cstate_new_84 >= 0)
+			new.conn = device->bcast_cstate_new_84;
+		prev.user_isp = info->old_peer_resync_susp_user;
+		new.user_isp = info->peer_resync_susp_user;
+		prev.peer_isp = info->old_peer_resync_susp_peer;
+		new.peer_isp = info->peer_resync_susp_peer;
+		prev.aftr_isp = info->old_peer_resync_susp_dependency;
+		new.aftr_isp = info->peer_resync_susp_dependency;
+		compat84_event_put(device, prev, new);
+	}
+	compat84_event_flush(peer_device->device->resource, type);
 }
 
 static int compat84_notify_peer_device_state(struct sk_buff *skb, unsigned int seq,
@@ -2069,7 +2145,7 @@ static int compat84_notify_peer_device_state(struct sk_buff *skb, unsigned int s
 	struct peer_device_statistics statistics_84;
 	struct drbd_resource *resource = peer_device->device->resource;
 	struct drbd_genlmsghdr *dh;
-	bool multicast = false;
+	const bool multicast = !skb;
 	int err;
 
 	if (!skb) {
@@ -2077,7 +2153,6 @@ static int compat84_notify_peer_device_state(struct sk_buff *skb, unsigned int s
 		err = -ENOMEM;
 		if (!skb)
 			goto failed;
-		multicast = true;
 		seq = atomic_inc_return(&compat84_notify_seq);
 	}
 
@@ -2132,49 +2207,22 @@ static int compat84_notify_peer_device_state(struct sk_buff *skb, unsigned int s
 			goto failed;
 	}
 
-	/*
-	 * Fused SIB_STATE_CHANGE DRBD_EVENT, see compat84_event_get().
-	 * state.conn takes the repl_state while it is actively replicating
-	 * (> L_OFF) and otherwise the cstate the connection hook recorded,
-	 * matching combined_conn_state(). The frequent RS_PROGRESS notifications
-	 * arrive here with old == new and send nothing.
-	 *
-	 * aftr_isp comes from peer_resync_susp_dependency on both sides; see
-	 * peer_device_state_change_to_info() for why the old side is exact.
-	 */
-	if (multicast && info && (type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY) {
-		struct drbd_device *device = peer_device->device;
-		union drbd_state prev, new;
-
-		compat84_event_get(device, &prev, &new);
-		prev.pdsk = drbd_disk_state_84(info->old_peer_disk_state);
-		new.pdsk = drbd_disk_state_84(info->peer_disk_state);
-		if (info->old_peer_repl_state > L_OFF)
-			prev.conn = info->old_peer_repl_state;
-		else if (device->bcast_cstate_prev_84 >= 0)
-			prev.conn = device->bcast_cstate_prev_84;
-		if (info->peer_repl_state > L_OFF)
-			new.conn = info->peer_repl_state;
-		else if (device->bcast_cstate_new_84 >= 0)
-			new.conn = device->bcast_cstate_new_84;
-		prev.user_isp = info->old_peer_resync_susp_user;
-		new.user_isp = info->peer_resync_susp_user;
-		prev.peer_isp = info->old_peer_resync_susp_peer;
-		new.peer_isp = info->peer_resync_susp_peer;
-		prev.aftr_isp = info->old_peer_resync_susp_dependency;
-		new.aftr_isp = info->peer_resync_susp_dependency;
-		compat84_event_put(device, prev, new);
-	}
 	if (multicast)
-		compat84_event_flush(peer_device->device->resource, type);
+		compat84_fuse_peer_device_state(peer_device, info, type);
 
 	return 0;
 
 nla_put_failure:
 	nlmsg_free(skb);
 failed:
-	drbd_err(peer_device, "Error %d while broadcasting event. Event seq:%u\n",
-		err, seq);
+	drbd_err_ratelimit(peer_device, "Error %d while broadcasting event. Event seq:%u\n",
+			   err, seq);
+	/*
+	 * The fused DRBD_EVENT is a message of its own: still send it. A
+	 * failed multicast has reached every other listener anyway.
+	 */
+	if (multicast)
+		compat84_fuse_peer_device_state(peer_device, info, type);
 	return err;
 }
 
@@ -2185,6 +2233,42 @@ static int compat84_notify_path_state(struct sk_buff *skb, unsigned int seq,
 				      enum drbd_notification_type type)
 {
 	return 0;
+}
+
+/*
+ * Fused SIB_HELPER_PRE/SIB_HELPER_POST DRBD_EVENT: drbd_khelper()
+ * notifies with NOTIFY_CALL before running the helper and
+ * NOTIFY_RESPONSE after, matching mainline's two drbd_bcast_event()
+ * calls. A connection-scoped helper (fence-peer) has no device, so
+ * fan out over every device behind the connection. Never deduped:
+ * every helper invocation is reported.
+ */
+static void compat84_fuse_helper(struct drbd_device *device,
+				 struct drbd_connection *connection,
+				 const char *name, int status,
+				 enum drbd_notification_type type)
+{
+	enum drbd_state_info_bcast_reason reason =
+		(type & ~NOTIFY_FLAGS) == NOTIFY_CALL ? SIB_HELPER_PRE : SIB_HELPER_POST;
+
+	if (device) {
+		compat84_emit_event(device, reason, 0, 0, name, status);
+	} else {
+		struct drbd_peer_device *peer_device;
+		int vnr;
+
+		rcu_read_lock();
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+			struct drbd_device *dev = peer_device->device;
+
+			kref_get(&dev->kref);
+			rcu_read_unlock();
+			compat84_emit_event(dev, reason, 0, 0, name, status);
+			kref_put(&dev->kref, drbd_destroy_device);
+			rcu_read_lock();
+		}
+		rcu_read_unlock();
+	}
 }
 
 /* Helper events are never replayed, so "skb" is always NULL here. */
@@ -2226,44 +2310,16 @@ static int compat84_notify_helper(struct sk_buff *skb, unsigned int seq,
 	if (err && err != -ESRCH)
 		goto fail;
 
-	/*
-	 * Fused SIB_HELPER_PRE/SIB_HELPER_POST DRBD_EVENT: drbd_khelper()
-	 * notifies with NOTIFY_CALL before running the helper and
-	 * NOTIFY_RESPONSE after, matching mainline's two drbd_bcast_event()
-	 * calls. A connection-scoped helper (fence-peer) has no device, so
-	 * fan out over every device behind the connection. Never deduped:
-	 * every helper invocation is reported.
-	 */
-	{
-		enum drbd_state_info_bcast_reason reason =
-			(type & ~NOTIFY_FLAGS) == NOTIFY_CALL ? SIB_HELPER_PRE : SIB_HELPER_POST;
-
-		if (device) {
-			compat84_emit_event(device, reason, 0, 0, name, status);
-		} else {
-			struct drbd_peer_device *peer_device;
-			int vnr;
-
-			rcu_read_lock();
-			idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-				struct drbd_device *dev = peer_device->device;
-
-				kref_get(&dev->kref);
-				rcu_read_unlock();
-				compat84_emit_event(dev, reason, 0, 0, name, status);
-				kref_put(&dev->kref, drbd_destroy_device);
-				rcu_read_lock();
-			}
-			rcu_read_unlock();
-		}
-	}
+	compat84_fuse_helper(device, connection, name, status, type);
 
 	return 0;
 
 fail:
 	nlmsg_free(skb);
-	drbd_err(resource, "Error %d while broadcasting event. Event seq:%u\n",
-		err, seq);
+	drbd_err_ratelimit(resource, "Error %d while broadcasting event. Event seq:%u\n",
+			   err, seq);
+	/* The fused DRBD_EVENTs are messages of their own, still send them. */
+	compat84_fuse_helper(device, connection, name, status, type);
 	return err;
 }
 
@@ -2701,7 +2757,8 @@ static int compat84_emit_event(struct drbd_device *device,
 fail:
 	nlmsg_free(skb);
 failed_sent:
-	drbd_err(device, "Error %d while broadcasting fused event. Reason:%u\n", err, reason);
+	drbd_err_ratelimit(device, "Error %d while broadcasting fused event. Reason:%u\n",
+			   err, reason);
 	return err;
 }
 
