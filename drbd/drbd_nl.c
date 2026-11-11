@@ -3351,7 +3351,7 @@ int drbd_md_decode(struct drbd_adm_ctx *adm_ctx,
 			goto err;
 		}
 		set_bit(LEGACY_84_MD, &device->flags);
-		drbd_md_decode_84(buffer, &bdev->md);
+		drbd_md_decode_84(buffer, &bdev->md, my_node_id);
 		if (bdev->md.bm_block_size != BM_BLOCK_SIZE_4k) {
 			drbd_err_and_skb_info(adm_ctx,
 				"unexpected bm_bytes_per_bit: %u (expected %u)\n",

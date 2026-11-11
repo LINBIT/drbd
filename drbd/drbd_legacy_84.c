@@ -73,10 +73,17 @@ static int seq_print_device_proc_drbd(struct seq_file *m, struct drbd_device *de
 
 atomic_t nr_drbd8_devices;
 
-void drbd_md_decode_84(struct meta_data_on_disk_84 *on_disk, struct drbd_md *md)
+/*
+ * 8.4 meta-data has one peer slot and no node ids. Before the first connect
+ * (my_node_id == -1) decode it into slot 0; drbd_setup_node_ids_84() moves
+ * it to the peer's slot. Once the node ids are set, decode it there right
+ * away, the way drbd_md_encode_84() reads it back (md->peers[!md->node_id]).
+ */
+void drbd_md_decode_84(struct meta_data_on_disk_84 *on_disk, struct drbd_md *md,
+		       int my_node_id)
 {
 	struct drbd_peer_md *peer_md;
-	const int peer_node_id = 0; /* setup_node_ids_84() moves it later */
+	const int peer_node_id = my_node_id == 0 ? 1 : 0;
 	u32 on_disk_flags;
 	unsigned long flags;
 	int i;
@@ -206,14 +213,15 @@ int drbd_setup_node_ids_84(struct drbd_connection *connection, struct drbd_path 
 		peer_device = list_first_entry_or_null(&device->peer_devices,
 						       struct drbd_peer_device, peer_devices);
 		peer_device->node_id = peer_node_id;
-		peer_device->bitmap_index = 0;
 
+		/* A diskless device gets its bitmap index at attach. */
 		if (get_ldev(device)) {
 			const struct drbd_peer_md clear = { .bitmap_index = -1 };
 			struct drbd_md *md = &device->ldev->md;
 			struct drbd_peer_md *to = &md->peers[peer_node_id];
 			int i;
 
+			peer_device->bitmap_index = 0;
 			md->node_id = my_node_id;
 
 			for (i = 0; i < DRBD_NODE_ID_MAX; i++) {

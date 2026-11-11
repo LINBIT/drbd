@@ -45,7 +45,8 @@ struct meta_data_on_disk_84;
 #ifdef CONFIG_DRBD_COMPAT_84
 extern atomic_t nr_drbd8_devices;
 
-void drbd_md_decode_84(struct meta_data_on_disk_84 *on_disk, struct drbd_md *md);
+void drbd_md_decode_84(struct meta_data_on_disk_84 *on_disk, struct drbd_md *md,
+		       int my_node_id);
 void drbd_md_encode_84(struct drbd_device *device, struct meta_data_on_disk_84 *buffer);
 int drbd_setup_node_ids_84(struct drbd_connection *connection, struct drbd_path *path,
 			   unsigned int peer_node_id);
@@ -100,7 +101,8 @@ static inline enum drbd_state_rv drbd_state_rv_84(enum drbd_state_rv rv)
  */
 void compat84_notify_sync_progress(struct drbd_peer_device *peer_device);
 #else
-static inline void drbd_md_decode_84(struct meta_data_on_disk_84 *on_disk, struct drbd_md *md) {};
+static inline void drbd_md_decode_84(struct meta_data_on_disk_84 *on_disk, struct drbd_md *md,
+				     int my_node_id) {};
 static inline void drbd_md_encode_84(struct drbd_device *device,
 	struct meta_data_on_disk_84 *buffer) {};
 static inline int drbd_setup_node_ids_84(struct drbd_connection *connection, struct drbd_path *path,
