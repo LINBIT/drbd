@@ -5017,8 +5017,17 @@ static int adm_new_connection(struct drbd_adm_ctx *adm_ctx)
 			goto unlock_fail_free_connection;
 
 		if (get_ldev(device)) {
+			/*
+			 * Until the first connect of an 8.4 resource has set
+			 * the node ids, the 8.4 peer slot is not yet
+			 * md.peers[peer_node_id].
+			 */
 			struct drbd_peer_md *peer_md =
+				test_bit(LEGACY_84_MD, &device->flags) &&
+				adm_ctx->resource->res_opts.node_id == -1 ?
+				drbd_md_peer_84(&device->ldev->md) :
 				&device->ldev->md.peers[adm_ctx->peer_node_id];
+
 			if (test_bit(__MDF_PEER_OUTDATED, &peer_md->flags))
 				peer_device->disk_state[NOW] = D_OUTDATED;
 			put_ldev(device);
