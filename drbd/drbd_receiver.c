@@ -366,7 +366,7 @@ void drbd_peer_req_strip_bio(struct drbd_peer_request *peer_req)
 }
 
 static struct page *
-__drbd_alloc_pages(struct drbd_connection *connection, gfp_t gfp_mask, int order)
+__drbd_alloc_pages(struct drbd_connection *connection, gfp_t gfp_mask, int order, bool throttle)
 {
 	struct page *page;
 	unsigned int mxb;
@@ -375,7 +375,7 @@ __drbd_alloc_pages(struct drbd_connection *connection, gfp_t gfp_mask, int order
 	mxb = rcu_dereference(connection->transport.net_conf)->max_buffers;
 	rcu_read_unlock();
 
-	if (atomic_read(&connection->pp_in_use) >= mxb)
+	if (throttle && atomic_read(&connection->pp_in_use) >= mxb)
 		schedule_timeout_interruptible(HZ / 10);
 
 	if (order == 0)
@@ -404,21 +404,28 @@ __drbd_alloc_pages(struct drbd_connection *connection, gfp_t gfp_mask, int order
  * (checksum-based) resync, if the max-buffers, socket buffer sizes, and
  * resync-rate settings are mis-configured.
  */
-struct page *drbd_alloc_pages(struct drbd_transport *transport, gfp_t gfp_mask, unsigned int size)
+static struct page *alloc_pages_throttled(struct drbd_connection *connection, gfp_t gfp_mask,
+					  unsigned int size, bool throttle)
 {
-	struct drbd_connection *connection =
-		container_of(transport, struct drbd_connection, transport);
 	int order = max(ilog2(size) - PAGE_SHIFT, 0);
 	struct page *page;
 
 	if (order && drbd_insert_fault_conn(connection, DRBD_FAULT_BIO_TOO_SMALL))
 		order = 0;
 
-	page = __drbd_alloc_pages(connection, gfp_mask | __GFP_NOWARN, order);
+	page = __drbd_alloc_pages(connection, gfp_mask | __GFP_NOWARN, order, throttle);
 	if (!page && order)
-		page = __drbd_alloc_pages(connection, gfp_mask, 0);
+		page = __drbd_alloc_pages(connection, gfp_mask, 0, throttle);
 
 	return page;
+}
+
+struct page *drbd_alloc_pages(struct drbd_transport *transport, gfp_t gfp_mask, unsigned int size)
+{
+	struct drbd_connection *connection =
+		container_of(transport, struct drbd_connection, transport);
+
+	return alloc_pages_throttled(connection, gfp_mask, size, true);
 }
 EXPORT_SYMBOL(drbd_alloc_pages); /* for transports */
 
@@ -517,7 +524,8 @@ void drbd_get_page(struct drbd_transport *transport, struct page *page)
 EXPORT_SYMBOL(drbd_get_page);
 
 static int
-peer_req_alloc_bio(struct drbd_peer_request *peer_req, size_t size, gfp_t gfp_mask, blk_opf_t opf)
+peer_req_alloc_bio(struct drbd_peer_request *peer_req, size_t size, gfp_t gfp_mask, blk_opf_t opf,
+		   bool throttle)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_transport *transport = &peer_device->connection->transport;
@@ -545,7 +553,8 @@ peer_req_alloc_bio(struct drbd_peer_request *peer_req, size_t size, gfp_t gfp_ma
 		while (size) {
 			int len;
 
-			page = drbd_alloc_pages(transport, gfp_mask, size);
+			page = alloc_pages_throttled(peer_device->connection, gfp_mask, size,
+						     throttle);
 			if (!page)
 				goto out_free_pages;
 			len = min(PAGE_SIZE << compound_order(page), size);
@@ -610,7 +619,7 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, gfp_t gfp_mask,
 	if (opf == REQ_NO_BIO)
 		return peer_req;
 
-	err = peer_req_alloc_bio(peer_req, size, gfp_mask, opf);
+	err = peer_req_alloc_bio(peer_req, size, gfp_mask, opf, true);
 	if (err)
 		goto out_free_peer_req;
 
@@ -637,6 +646,8 @@ void drbd_free_peer_req(struct drbd_peer_request *peer_req)
 		spin_unlock_irq(&connection->peer_reqs_lock);
 	}
 	D_ASSERT(peer_device, !(peer_req->flags & EE_ON_SEND_OOS));
+	if (peer_req->flags & EE_RS_READ_HELD)
+		drbd_rs_read_unhold(peer_device, peer_req->i.size);
 	if (peer_req->flags & EE_HAS_DIGEST)
 		kfree(peer_req->digest);
 	D_ASSERT(peer_device, atomic_read(&peer_req->pending_bios) == 0);
@@ -2528,7 +2539,7 @@ static int peer_req_align_bios(struct drbd_peer_request *peer_req, unsigned int 
 	received = peer_req->bios;
 	bio_list_init(&peer_req->bios);
 
-	err = peer_req_alloc_bio(peer_req, size, GFP_NOIO, received.head->bi_opf);
+	err = peer_req_alloc_bio(peer_req, size, GFP_NOIO, received.head->bi_opf, true);
 	if (err)
 		goto out_restore;
 
@@ -2627,7 +2638,7 @@ read_in_block(struct drbd_peer_request *peer_req, struct drbd_peer_request_detai
 	size = d->length - d->digest_size;
 	if (bio_list_empty(&peer_req->bios)) {
 		/* For a checksum resync, the bio was consumed for reading. */
-		err = peer_req_alloc_bio(peer_req, size, GFP_NOIO, REQ_OP_WRITE);
+		err = peer_req_alloc_bio(peer_req, size, GFP_NOIO, REQ_OP_WRITE, true);
 		if (err)
 			return err;
 	}
@@ -5054,6 +5065,16 @@ static void drbd_cleanup_peer_read(
 		wake_up(&connection->ee_wait);
 }
 
+/* A resync read gets its pages at submission, so that a parked read holds none.
+ * No max-buffers delay here: this may run on the conflict submitter.
+ */
+static int peer_read_alloc_pages(struct drbd_peer_request *peer_req)
+{
+	/* ldev_safe: a peer_req has a ldev reference */
+	return peer_req_alloc_bio(peer_req, peer_req->i.size, GFP_TRY & ~__GFP_HIGHMEM,
+				  REQ_OP_READ, false);
+}
+
 void drbd_conflict_submit_peer_read(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
@@ -5095,6 +5116,11 @@ void drbd_conflict_submit_peer_read(struct drbd_peer_request *peer_req)
 		} else {
 			submit = false;
 		}
+		if ((too_deep || submit) && peer_req->i.type == INTERVAL_RESYNC_READ &&
+		    !(peer_req->flags & EE_RS_READ_HELD)) {
+			peer_req->flags |= EE_RS_READ_HELD;
+			atomic_add(peer_req->i.size >> 9, &peer_device->rs_read_sect_held);
+		}
 		spin_unlock_irq(&device->interval_lock);
 	}
 
@@ -5119,12 +5145,17 @@ void drbd_conflict_submit_peer_read(struct drbd_peer_request *peer_req)
 	 * which case we submit it anyway but skip the block if it conflicted. */
 	if (submit) {
 		unsigned int size = drbd_interval_is_resync(&peer_req->i) ? peer_req->i.size : 0;
-		int err;
+		int err = 0;
 
-		drbd_rs_depth_queued(device, size >> 9);
-		err = drbd_submit_peer_request(peer_req);
+		if (bio_list_empty(&peer_req->bios))
+			err = peer_read_alloc_pages(peer_req);
+		if (!err) {
+			drbd_rs_depth_queued(device, size >> 9);
+			err = drbd_submit_peer_request(peer_req);
+			if (err)
+				atomic_sub(size >> 9, &device->rs_sect_queued);
+		}
 		if (err) {
-			atomic_sub(size >> 9, &device->rs_sect_queued);
 			if (drbd_ratelimit())
 				drbd_err(peer_device, "submit failed, triggering re-connect\n");
 
@@ -5354,6 +5385,55 @@ static int receive_digest(struct drbd_peer_request *peer_req, int digest_size)
 	return drbd_recv_into(peer_req->peer_device->connection, di->digest, digest_size);
 }
 
+static bool is_resync_read_request(enum drbd_packet cmd)
+{
+	switch (cmd) {
+	case P_RS_DATA_REQUEST:
+	case P_RS_DAGTAG_REQ:
+	case P_CSUM_RS_REQUEST:
+	case P_RS_CSUM_DAGTAG_REQ:
+	case P_RS_THIN_REQ:
+	case P_RS_THIN_DAGTAG_REQ:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static bool rs_read_room(struct drbd_peer_device *peer_device, int size)
+{
+	unsigned int held = atomic_read(&peer_device->rs_read_sect_held);
+	unsigned int mxb;
+
+	if (!held)
+		return true;
+
+	rcu_read_lock();
+	mxb = rcu_dereference(peer_device->connection->transport.net_conf)->max_buffers;
+	rcu_read_unlock();
+
+	return (u64)held + (size >> 9) <= (u64)mxb << (PAGE_SHIFT - 9);
+}
+
+/* Above max-buffers of held resync reads, the peer requests faster than this
+ * node reads or sends: wait. A target within its own max-buffers never does.
+ */
+static int wait_for_rs_read_room(struct drbd_peer_device *peer_device, int size)
+{
+	struct drbd_connection *connection = peer_device->connection;
+	long t;
+
+	while (!rs_read_room(peer_device, size)) {
+		if (connection->cstate[NOW] < C_CONNECTED)
+			return -EIO;
+		t = wait_event_interruptible_timeout(connection->ee_wait,
+				rs_read_room(peer_device, size), HZ);
+		if (t < 0)
+			return t;
+	}
+	return 0;
+}
+
 static int receive_common_data_request(struct drbd_connection *connection, struct packet_info *pi,
 		struct p_block_req_common *p,
 		unsigned int depend_dagtag_node_id, u64 depend_dagtag)
@@ -5383,6 +5463,12 @@ static int receive_common_data_request(struct drbd_connection *connection, struc
 		drbd_err(peer_device, "%s:%d: sector: %llus, size: %u\n", __FILE__, __LINE__,
 				(unsigned long long)sector, size);
 		return -EINVAL;
+	}
+
+	if (is_resync_read_request(pi->cmd)) {
+		err = wait_for_rs_read_room(peer_device, size);
+		if (err)
+			return err;
 	}
 
 	/* Tell target to have a retry, waiting for the rescheduled
@@ -5481,7 +5567,8 @@ static int receive_common_data_request(struct drbd_connection *connection, struc
 
 	inc_unacked(peer_device);
 
-	peer_req = drbd_alloc_peer_req(peer_device, GFP_TRY, size, REQ_OP_READ);
+	peer_req = drbd_alloc_peer_req(peer_device, GFP_TRY, size,
+				       is_resync_read_request(pi->cmd) ? REQ_NO_BIO : REQ_OP_READ);
 	err = -ENOMEM;
 	if (!peer_req)
 		goto fail;
@@ -5713,7 +5800,7 @@ static int receive_common_ov_reply(struct drbd_connection *connection, struct pa
 
 	set_bit(INTERVAL_RECEIVED, &peer_req->i.flags);
 
-	err = peer_req_alloc_bio(peer_req, size, GFP_NOIO, REQ_OP_READ);
+	err = peer_req_alloc_bio(peer_req, size, GFP_NOIO, REQ_OP_READ, true);
 	if (err)
 		goto fail;
 
