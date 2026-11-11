@@ -81,6 +81,8 @@ attribute name __ro_after_init;
 +	[DRBD_NLA_RENAME_RESOURCE_INFO]	= { .type = NLA_NESTED },
 +	[DRBD_NLA_INVAL_PEER_PARAMS]	= { .type = NLA_NESTED },
 +	[DRBD_NLA_SUSPEND_IO_PARAMS]	= { .type = NLA_NESTED },
++	[DRBD_NLA_CBT_START_PARMS]	= { .type = NLA_NESTED },
++	[DRBD_NLA_CBT_INFO]		= { .type = NLA_NESTED },
 +};
 +
   struct genl_family drbd_nl_family __ro_after_init = {

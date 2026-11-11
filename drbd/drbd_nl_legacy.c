@@ -179,6 +179,10 @@ static const unsigned int drbd_genl_cmd_flags[] = {
 	[DRBD_ADM_DEL_PATH]        = DRBD_ADM_NEED_CONNECTION,
 	[DRBD_ADM_RENAME_RESOURCE] = DRBD_ADM_NEED_RESOURCE,
 	[DRBD_ADM_GET_PATHS]       = 0,
+	[DRBD_ADM_CBT_FLUSH]       = DRBD_ADM_NEED_MINOR,
+	[DRBD_ADM_CBT_START]       = DRBD_ADM_NEED_MINOR,
+	[DRBD_ADM_CBT_STOP]        = DRBD_ADM_NEED_MINOR,
+	[DRBD_ADM_CBT_STATUS]      = DRBD_ADM_NEED_MINOR,
 };
 
 /*
@@ -221,6 +225,8 @@ static const u16 drbd_tla_nested_max[__DRBD_NLA_MAX] = {
 	[DRBD_NLA_RENAME_RESOURCE_INFO]		= DRBD_A_RENAME_RESOURCE_INFO_MAX,
 	[DRBD_NLA_INVAL_PEER_PARAMS]		= DRBD_A_INVALIDATE_PEER_PARMS_MAX,
 	[DRBD_NLA_SUSPEND_IO_PARAMS]		= DRBD_A_SUSPEND_IO_PARMS_MAX,
+	[DRBD_NLA_CBT_START_PARMS]		= DRBD_A_CBT_START_PARMS_MAX,
+	[DRBD_NLA_CBT_INFO]			= DRBD_A_CBT_INFO_MAX,
 };
 
 /* Strip DRBD_GENLA_F_MANDATORY from nested attrs before standard parsing.
@@ -416,6 +422,7 @@ static bool legacy_has_set(struct drbd_adm_ctx *ctx, enum drbd_nl_attr_set set)
 		[DRBD_NL_SET_PATH_PARMS]		= DRBD_NLA_PATH_PARMS,
 		[DRBD_NL_SET_RENAME_RESOURCE_PARMS]	= DRBD_NLA_RENAME_RESOURCE_PARMS,
 		[DRBD_NL_SET_SUSPEND_IO_PARMS]		= DRBD_NLA_SUSPEND_IO_PARAMS,
+		[DRBD_NL_SET_CBT_START_PARMS]		= DRBD_NLA_CBT_START_PARMS,
 	};
 
 	return legacy_req(ctx)->info->attrs[tla[set]] != NULL;
@@ -444,7 +451,7 @@ static int legacy_overlay(struct drbd_adm_ctx *ctx, enum drbd_nl_attr_set set, v
 	case DRBD_NL_SET_PATH_PARMS:		return path_parms_from_attrs(dst, info);
 	case DRBD_NL_SET_RENAME_RESOURCE_PARMS:	return rename_resource_parms_from_attrs(dst, info);
 	case DRBD_NL_SET_SUSPEND_IO_PARMS:	return suspend_io_parms_from_attrs(dst, info);
-	case DRBD_NL_SET_CBT_START_PARMS:	/* not in this family */
+	case DRBD_NL_SET_CBT_START_PARMS:	return cbt_start_parms_from_attrs(dst, info);
 	case __DRBD_NL_SET_MAX:
 		break;
 	}
@@ -508,6 +515,20 @@ static int legacy_put_timeout_type(struct drbd_adm_ctx *ctx, enum drbd_timeout_f
 	int err;
 
 	err = timeout_parms_to_skb(req->reply_skb, &tp);
+	if (err) {
+		nlmsg_free(req->reply_skb);
+		req->reply_skb = NULL;
+		return err;
+	}
+	return NO_ERROR;
+}
+
+static int legacy_put_cbt_info(struct drbd_adm_ctx *ctx, struct drbd_cbt_info *ci)
+{
+	struct legacy_req *req = legacy_req(ctx);
+	int err;
+
+	err = cbt_info_to_skb(req->reply_skb, ci);
 	if (err) {
 		nlmsg_free(req->reply_skb);
 		req->reply_skb = NULL;
@@ -812,6 +833,43 @@ int drbd_nl_get_timeout_type_doit(struct sk_buff *skb, struct genl_info *info)
 	if (!legacy_req(ctx)->reply_skb)
 		return 0;
 	return drbd_adm_get_timeout_type(ctx);
+}
+
+int drbd_nl_cbt_flush_doit(struct sk_buff *skb, struct genl_info *info)
+{
+	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+
+	if (!legacy_req(ctx)->reply_skb)
+		return 0;
+	return drbd_adm_cbt_flush(ctx);
+}
+
+int drbd_nl_cbt_start_doit(struct sk_buff *skb, struct genl_info *info)
+{
+	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+
+	if (!legacy_req(ctx)->reply_skb)
+		return 0;
+	return drbd_adm_cbt_start(ctx);
+}
+
+int drbd_nl_cbt_stop_doit(struct sk_buff *skb, struct genl_info *info)
+{
+	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+
+	if (!legacy_req(ctx)->reply_skb)
+		return 0;
+	return drbd_adm_cbt_stop(ctx);
+}
+
+/* Like get-timeout-type, this one puts a payload into the reply. */
+int drbd_nl_cbt_status_doit(struct sk_buff *skb, struct genl_info *info)
+{
+	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+
+	if (!legacy_req(ctx)->reply_skb)
+		return 0;
+	return drbd_adm_cbt_status(ctx);
 }
 
 /*
@@ -1561,6 +1619,7 @@ static const struct drbd_nl_dialect drbd_nl_legacy_dialect = {
 	.overlay = legacy_overlay,
 	.attr_present = legacy_attr_present,
 	.put_timeout_type = legacy_put_timeout_type,
+	.put_cbt_info = legacy_put_cbt_info,
 	.emit_resource = legacy_emit_resource,
 	.emit_device = legacy_emit_device,
 	.emit_connection = legacy_emit_connection,
