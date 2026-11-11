@@ -3366,7 +3366,21 @@ int drbd_nl_connect_doit(struct sk_buff *skb, struct genl_info *info)
 	}
 	reused = reused_id >= 0;
 	if (reused) {
+		u32 derived_id;
+
+		/*
+		 * The node ids stay until down: the metadata slots depend on
+		 * them. If the addresses changed so that they now give other
+		 * ids, a peer that started with these addresses uses those,
+		 * and the protocol 110 handshake fails on every attempt with
+		 * "Peer presented a node_id ...". Say what helps.
+		 */
 		peer_node_id = reused_id;
+		if (!compat84_connect_peer_node_id(req, &derived_id) &&
+		    derived_id != peer_node_id)
+			drbd_warn(ctx->resource,
+				  "these addresses give peer node id %u, keeping %u until down; if the peer started with them, run down and up here\n",
+				  derived_id, peer_node_id);
 	} else if (compat84_connect_peer_node_id(req, &peer_node_id)) {
 		drbd_adm_msg(ctx, "%s",
 			     "could not determine a peer node id from the given addresses");
