@@ -485,6 +485,25 @@ static void compat84_resolve_peer_node_id(struct drbd_adm_ctx *adm_ctx)
 }
 
 /*
+ * The minor does not exist, or its resource has no connection yet. Only
+ * then do the peer-device commands fall back to the minor; a request that
+ * names a connected resource in some other way keeps failing as before.
+ */
+static bool compat84_minor_unconnected(struct drbd_adm_ctx *adm_ctx)
+{
+	struct drbd_device *device;
+	bool unconnected;
+
+	rcu_read_lock();
+	device = minor_to_device(adm_ctx->minor);
+	unconnected = !device ||
+		!list_first_or_null_rcu(&device->resource->connections,
+					struct drbd_connection, connections);
+	rcu_read_unlock();
+	return unconnected;
+}
+
+/*
  * Every resource this dialect creates is in DRBD 8.4 compatibility mode.
  * A native DRBD 9 resource (from the drbd2 family) is not one 8.4
  * userland can drive, whether it is named by resource or by minor.
@@ -616,6 +635,16 @@ int drbd_pre_doit(const struct genl_split_ops *ops, struct sk_buff *skb,
 	 */
 	if (flags & (DRBD_ADM_NEED_CONNECTION | DRBD_ADM_NEED_PEER_DEVICE))
 		compat84_resolve_peer_node_id(adm_ctx);
+	/*
+	 * The peer-device commands address a minor, and 8.4 had a
+	 * connection object from new-minor on. Before the first connect
+	 * there is none: resolve the minor only, so that an unknown minor
+	 * gets ERR_MINOR_INVALID, and let the handler answer without a peer
+	 * device.
+	 */
+	if ((flags & DRBD_ADM_NEED_PEER_DEVICE) && !adm_ctx->resource &&
+	    compat84_minor_unconnected(adm_ctx))
+		flags = DRBD_ADM_NEED_MINOR;
 
 	if (drbd_adm_ctx_resolve(adm_ctx, flags) != NO_ERROR ||
 	    compat84_reject_native(adm_ctx)) {
@@ -3339,6 +3368,33 @@ static void compat84_reset_net_opts(struct drbd_adm_ctx *ctx)
 	ctx->set_defaults = orig_set_defaults;
 }
 
+/*
+ * The pause-sync stashed before the first connect (see
+ * compat84_pause_sync_unconnected()): apply it to the new peer devices
+ * before the path is added, so that the first resync cannot start
+ * unpaused. The stash is cleared only once the connect succeeded, so a
+ * failed connect keeps it for the next one.
+ */
+static void compat84_pending_pause(struct drbd_adm_ctx *ctx, bool clear)
+{
+	struct drbd_peer_device *peer_device;
+	int vnr;
+
+	mutex_lock(&ctx->resource->adm_mutex);
+	idr_for_each_entry(&ctx->connection->peer_devices, peer_device, vnr) {
+		struct drbd_device *device = peer_device->device;
+
+		if (!device->pending_resync_susp_user_84)
+			continue;
+		if (clear)
+			device->pending_resync_susp_user_84 = false;
+		else
+			change_resync_susp_user(peer_device, true,
+						CS_VERBOSE | CS_SERIALIZE);
+	}
+	mutex_unlock(&ctx->resource->adm_mutex);
+}
+
 int drbd_nl_connect_doit(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_adm_ctx *ctx = info->user_ptr[0];
@@ -3416,6 +3472,8 @@ int drbd_nl_connect_doit(struct sk_buff *skb, struct genl_info *info)
 		compat84_del_old_path(ctx);
 		if (compat84_result_ok(ctx->result))
 			compat84_reset_net_opts(ctx);
+	} else {
+		compat84_pending_pause(ctx, false);
 	}
 	if (compat84_result_ok(ctx->result)) {
 		drbd_adm_new_path(ctx);
@@ -3459,6 +3517,8 @@ int drbd_nl_connect_doit(struct sk_buff *skb, struct genl_info *info)
 	 * compat84_apply_pending_stash() writes its own outcomes to
 	 * ctx->result.
 	 */
+	if (!reused)
+		compat84_pending_pause(ctx, true);
 	compat84_apply_pending_stash(ctx);
 	ctx->result = NO_ERROR;
 	return 0;
@@ -3537,6 +3597,11 @@ int drbd_nl_start_ov_doit(struct sk_buff *skb, struct genl_info *info)
 
 	if (!compat84_req(ctx)->reply_skb)
 		return 0;
+	if (!ctx->peer_device) {
+		/* What 8.4 returned without a connection. */
+		ctx->result = SS_NEED_CONNECTION;
+		return 0;
+	}
 	return drbd_adm_start_ov(ctx);
 }
 
@@ -3597,13 +3662,137 @@ int drbd_nl_invalidate_doit(struct sk_buff *skb, struct genl_info *info)
 	return drbd_adm_invalidate(ctx);
 }
 
+/*
+ * drbd_bmio_set_n_write() for the 8.4 peer slot, which has no peer device
+ * yet: record the full sync in the meta-data first, so that a crash before
+ * the bitmap is written does not lose it. 8.4 meta-data has exactly one
+ * bitmap slot and no changed-block-tracking slot, so "all bits" is that
+ * slot.
+ */
+static int compat84_bmio_set_n_write(struct drbd_device *device,
+				     struct drbd_peer_device *peer_device)
+{
+	struct drbd_peer_md *peer_md = drbd_md_peer_84(&device->ldev->md);
+	int rv;
+
+	if (!test_and_set_bit(__MDF_PEER_FULL_SYNC, &peer_md->flags))
+		drbd_md_mark_dirty(device);
+	drbd_md_sync(device);
+	drbd_bm_set_all(device);
+
+	rv = drbd_bm_write(device, NULL);
+	if (!rv) {
+		if (test_and_clear_bit(__MDF_PEER_FULL_SYNC, &peer_md->flags))
+			drbd_md_mark_dirty(device);
+		drbd_md_sync(device);
+	}
+	return rv;
+}
+
+/*
+ * The bits set by compat84_invalidate_peer_unconnected() survive the
+ * connect only if the handshake decides on a bitmap-based resync. 8.4
+ * created a new current UUID as soon as a Primary lost its peer; DRBD 9
+ * defers that to the first write. On an idle Primary both sides would
+ * still have the same current UUID, the handshake would find nothing to
+ * sync and clear the bitmap. Mint the generation the first write would
+ * mint, so that the old current UUID becomes the peer slot's bitmap UUID.
+ * MINT_UNNECESSARY means a former mint already recorded the divergence.
+ */
+static bool compat84_mint_for_invalidate_peer(struct drbd_device *device)
+{
+	enum drbd_mint_outcome outcome;
+	bool through_executor;
+
+	through_executor = drbd_gen_obligation_mint_start(device);
+	outcome = drbd_uuid_new_current(device, false);
+	if (through_executor) {
+		drbd_gen_obligation_mint_done(device, outcome);
+		wake_up(&device->misc_wait);
+	}
+	return outcome == MINT_MINTED || outcome == MINT_UNNECESSARY;
+}
+
+/*
+ * invalidate-remote before the first connect. Like 8.4 on a StandAlone
+ * device: a Primary marks everything out of sync, so the resync it gets on
+ * connect anyway becomes a full one; a Secondary needs a connection. With
+ * DRBD 9 meta-data the peer's slot is not known before the connect.
+ */
+static int compat84_invalidate_peer_unconnected(struct drbd_adm_ctx *ctx)
+{
+	struct drbd_device *device = ctx->device;
+	struct drbd_resource *resource = device->resource;
+	int retcode; /* enum drbd_ret_code rsp. enum drbd_state_rv */
+
+	if (!get_ldev(device)) {
+		ctx->result = ERR_NO_DISK;
+		return 0;
+	}
+	if (mutex_lock_interruptible(&resource->adm_mutex)) {
+		retcode = ERR_INTR;
+		goto out;
+	}
+	if (!list_empty(&device->peer_devices)) {
+		/* A connect came in since the request was resolved. */
+		retcode = SS_IN_TRANSIENT_STATE;
+	} else if (resource->role[NOW] != R_PRIMARY ||
+		   !test_bit(LEGACY_84_MD, &device->flags) || !device->bitmap) {
+		retcode = SS_NEED_CONNECTION;
+	} else {
+		drbd_suspend_io(device, READ_AND_WRITE);
+		wait_event(device->misc_wait, !atomic_read(&device->pending_bitmap_work.n));
+		retcode = SS_SUCCESS;
+		if (drbd_bitmap_io(device, &compat84_bmio_set_n_write,
+				   "set_n_write from invalidate_peer", BM_LOCK_ALL, NULL) ||
+		    !compat84_mint_for_invalidate_peer(device))
+			retcode = ERR_IO_MD_DISK;
+		drbd_resume_io(device);
+	}
+	mutex_unlock(&resource->adm_mutex);
+out:
+	put_ldev(device);
+	ctx->result = retcode;
+	return 0;
+}
+
 int drbd_nl_inval_peer_doit(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_adm_ctx *ctx = info->user_ptr[0];
 
 	if (!compat84_req(ctx)->reply_skb)
 		return 0;
+	if (!ctx->peer_device)
+		return compat84_invalidate_peer_unconnected(ctx);
 	return drbd_adm_invalidate_peer(ctx);
+}
+
+/*
+ * pause-sync and resume-sync before the first connect. 8.4 kept the pause
+ * flag on the device, so a resync after the first connect started paused.
+ * Stash it; drbd_nl_connect_doit() applies it to the new peer device
+ * before connecting.
+ */
+static int compat84_pause_sync_unconnected(struct drbd_adm_ctx *ctx, bool pause)
+{
+	struct drbd_device *device = ctx->device;
+	struct drbd_resource *resource = device->resource;
+	int retcode = NO_ERROR; /* enum drbd_ret_code rsp. enum drbd_state_rv */
+
+	if (mutex_lock_interruptible(&resource->adm_mutex)) {
+		ctx->result = ERR_INTR;
+		return 0;
+	}
+	if (!list_empty(&device->peer_devices))
+		/* A connect came in since the request was resolved. */
+		retcode = SS_IN_TRANSIENT_STATE;
+	else if (device->pending_resync_susp_user_84 == pause)
+		retcode = pause ? ERR_PAUSE_IS_SET : ERR_PAUSE_IS_CLEAR;
+	else
+		device->pending_resync_susp_user_84 = pause;
+	mutex_unlock(&resource->adm_mutex);
+	ctx->result = retcode;
+	return 0;
 }
 
 int drbd_nl_pause_sync_doit(struct sk_buff *skb, struct genl_info *info)
@@ -3612,6 +3801,8 @@ int drbd_nl_pause_sync_doit(struct sk_buff *skb, struct genl_info *info)
 
 	if (!compat84_req(ctx)->reply_skb)
 		return 0;
+	if (!ctx->peer_device)
+		return compat84_pause_sync_unconnected(ctx, true);
 	return drbd_adm_pause_sync(ctx);
 }
 
@@ -3621,6 +3812,8 @@ int drbd_nl_resume_sync_doit(struct sk_buff *skb, struct genl_info *info)
 
 	if (!compat84_req(ctx)->reply_skb)
 		return 0;
+	if (!ctx->peer_device)
+		return compat84_pause_sync_unconnected(ctx, false);
 	return drbd_adm_resume_sync(ctx);
 }
 
@@ -3654,10 +3847,30 @@ int drbd_nl_outdate_doit(struct sk_buff *skb, struct genl_info *info)
 int drbd_nl_get_timeout_type_doit(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_adm_ctx *ctx = info->user_ptr[0];
+	struct drbd_device *device = ctx->device;
+	enum drbd_timeout_flag type = UT_DEFAULT;
 
 	if (!compat84_req(ctx)->reply_skb)
 		return 0;
-	return drbd_adm_get_timeout_type(ctx);
+	if (ctx->peer_device)
+		return drbd_adm_get_timeout_type(ctx);
+
+	/*
+	 * No peer device before the first connect: answer from what
+	 * adm_new_connection() will start it with, as 8.4 answered from
+	 * the device.
+	 */
+	if (get_ldev(device)) {
+		if (test_bit(LEGACY_84_MD, &device->flags) &&
+		    test_bit(__MDF_PEER_OUTDATED,
+			     &drbd_md_peer_84(&device->ldev->md)->flags))
+			type = UT_PEER_OUTDATED;
+		put_ldev(device);
+	}
+	if (type == UT_DEFAULT && test_bit(DEGR_WFC_T_84, &device->flags))
+		type = UT_DEGRADED;
+	ctx->result = ctx->d->put_timeout_type(ctx, type);
+	return 0;
 }
 
 int drbd_nl_down_doit(struct sk_buff *skb, struct genl_info *info)

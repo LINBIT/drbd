@@ -1984,6 +1984,12 @@ struct drbd_device {
 		bool has_c_min_rate;
 		u32 c_min_rate;
 	} pending_peer_device_conf_84;
+	/*
+	 * pause-sync before the first connect (drbd_nl_84.c). Not part of
+	 * the stash above: like 8.4's user_isp it survives a detach.
+	 * Protected by resource->adm_mutex.
+	 */
+	bool pending_resync_susp_user_84;
 
 	/*
 	 * The fused SIB_STATE_CHANGE DRBD_EVENT (drbd_nl_84.c) this device owes
