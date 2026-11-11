@@ -692,6 +692,242 @@ static bool compat84_has_set(struct drbd_adm_ctx *ctx, enum drbd_nl_attr_set set
 	return compat84_req(ctx)->info->attrs[tla[set]] != NULL;
 }
 
+/* Separate from compat84_overlay() so their large v1 structs do not share one frame. */
+static noinline_for_stack int
+compat84_overlay_disk_conf(struct drbd_adm_ctx *ctx, struct drbd_disk_conf *d)
+{
+	struct compat84_req *req = compat84_req(ctx);
+	struct genl_info *info = req->info;
+	struct disk_conf c = {
+		.meta_dev_idx			= d->meta_dev_idx,
+		.disk_size			= d->disk_size,
+		.on_io_error			= d->on_io_error,
+		.resync_after			= d->resync_after,
+		.al_extents			= d->al_extents,
+		.disk_barrier			= d->disk_barrier,
+		.disk_flushes			= d->disk_flushes,
+		.disk_drain			= d->disk_drain,
+		.md_flushes			= d->md_flushes,
+		.disk_timeout			= d->disk_timeout,
+		.read_balancing			= d->read_balancing,
+		.al_updates			= d->al_updates,
+		.discard_zeroes_if_aligned	= d->discard_zeroes_if_aligned,
+		.rs_discard_granularity		= d->rs_discard_granularity,
+		.disable_write_same		= d->disable_write_same,
+	};
+	struct nlattr **ntb;
+	int err, ntb_err;
+
+	memcpy(c.backing_dev, d->backing_dev, sizeof(c.backing_dev));
+	c.backing_dev_len = d->backing_dev_len;
+	memcpy(c.meta_dev, d->meta_dev, sizeof(c.meta_dev));
+	c.meta_dev_len = d->meta_dev_len;
+
+	err = disk_conf_from_attrs(&c, info);
+
+	/*
+	 * Copy back and stash before returning err: -ENOMSG from a
+	 * plain disk-options call (see above) must not discard the
+	 * fields it did send. Any other error leaves c at its
+	 * pre-seeded values, so copying back is a no-op.
+	 */
+	memcpy(d->backing_dev, c.backing_dev, sizeof(d->backing_dev));
+	d->backing_dev_len = c.backing_dev_len;
+	memcpy(d->meta_dev, c.meta_dev, sizeof(d->meta_dev));
+	d->meta_dev_len = c.meta_dev_len;
+	d->meta_dev_idx = c.meta_dev_idx;
+	d->disk_size = c.disk_size;
+	d->on_io_error = c.on_io_error;
+	d->resync_after = c.resync_after;
+	d->al_extents = c.al_extents;
+	d->disk_barrier = c.disk_barrier;
+	d->disk_flushes = c.disk_flushes;
+	d->disk_drain = c.disk_drain;
+	d->md_flushes = c.md_flushes;
+	d->disk_timeout = c.disk_timeout;
+	d->read_balancing = c.read_balancing;
+	d->al_updates = c.al_updates;
+	d->discard_zeroes_if_aligned = c.discard_zeroes_if_aligned;
+	d->rs_discard_granularity = c.rs_discard_granularity;
+	d->disable_write_same = c.disable_write_same;
+	/* max_bio_bvecs: no DRBD 9 equivalent, dropped. */
+
+	/*
+	 * The resync-tuning fields belong to struct drbd_peer_device_conf,
+	 * fencing to net_conf.fencing_policy; neither is reachable
+	 * through this dst. Re-parse the nested table for per-field
+	 * presence and stash them for the attach/disk-options
+	 * handlers.
+	 */
+	ntb_err = disk_conf_ntb_from_attrs(&ntb, info);
+	if ((!ntb_err || ntb_err == -ENOMSG) && ntb) {
+		req->peer_device_conf_84.resync_rate = c.resync_rate;
+		req->peer_device_conf_84.has_resync_rate =
+			ntb[DRBD_A_DISK_CONF_RESYNC_RATE] != NULL;
+		req->peer_device_conf_84.c_plan_ahead = c.c_plan_ahead;
+		req->peer_device_conf_84.has_c_plan_ahead =
+			ntb[DRBD_A_DISK_CONF_C_PLAN_AHEAD] != NULL;
+		req->peer_device_conf_84.c_delay_target = c.c_delay_target;
+		req->peer_device_conf_84.has_c_delay_target =
+			ntb[DRBD_A_DISK_CONF_C_DELAY_TARGET] != NULL;
+		req->peer_device_conf_84.c_fill_target = c.c_fill_target;
+		req->peer_device_conf_84.has_c_fill_target =
+			ntb[DRBD_A_DISK_CONF_C_FILL_TARGET] != NULL;
+		req->peer_device_conf_84.c_max_rate = c.c_max_rate;
+		req->peer_device_conf_84.has_c_max_rate =
+			ntb[DRBD_A_DISK_CONF_C_MAX_RATE] != NULL;
+		req->peer_device_conf_84.c_min_rate = c.c_min_rate;
+		req->peer_device_conf_84.has_c_min_rate =
+			ntb[DRBD_A_DISK_CONF_C_MIN_RATE] != NULL;
+
+		req->fencing_policy_84 = c.fencing;
+		req->has_fencing_policy_84 =
+			ntb[DRBD_A_DISK_CONF_FENCING] != NULL;
+	}
+	kfree(ntb);
+
+	return err;
+}
+
+static noinline_for_stack int
+compat84_overlay_net_conf(struct drbd_adm_ctx *ctx, struct drbd_net_conf *d)
+{
+	struct compat84_req *req = compat84_req(ctx);
+	struct genl_info *info = req->info;
+	struct net_conf c = {
+		.wire_protocol			= d->wire_protocol,
+		.connect_int			= d->connect_int,
+		.timeout			= d->timeout,
+		.ping_int			= d->ping_int,
+		.ping_timeo			= d->ping_timeo,
+		.sndbuf_size			= d->sndbuf_size,
+		.rcvbuf_size			= d->rcvbuf_size,
+		.ko_count			= d->ko_count,
+		.max_buffers			= d->max_buffers,
+		.max_epoch_size			= d->max_epoch_size,
+		.after_sb_0p			= d->after_sb_0p,
+		.after_sb_1p			= d->after_sb_1p,
+		.after_sb_2p			= d->after_sb_2p,
+		.rr_conflict			= d->rr_conflict,
+		.on_congestion			= d->on_congestion,
+		.cong_fill			= d->cong_fill,
+		.cong_extents			= d->cong_extents,
+		.two_primaries			= d->two_primaries,
+		.tcp_cork			= d->tcp_cork,
+		.always_asbp			= d->always_asbp,
+		.use_rle			= d->use_rle,
+		.csums_after_crash_only		= d->csums_after_crash_only,
+		.sock_check_timeo		= d->sock_check_timeo,
+	};
+	struct nlattr **ntb;
+	int err, ntb_err;
+
+	memcpy(c.shared_secret, d->shared_secret, sizeof(c.shared_secret));
+	c.shared_secret_len = d->shared_secret_len;
+	memcpy(c.cram_hmac_alg, d->cram_hmac_alg, sizeof(c.cram_hmac_alg));
+	c.cram_hmac_alg_len = d->cram_hmac_alg_len;
+	memcpy(c.integrity_alg, d->integrity_alg, sizeof(c.integrity_alg));
+	c.integrity_alg_len = d->integrity_alg_len;
+	memcpy(c.verify_alg, d->verify_alg, sizeof(c.verify_alg));
+	c.verify_alg_len = d->verify_alg_len;
+	memcpy(c.csums_alg, d->csums_alg, sizeof(c.csums_alg));
+	c.csums_alg_len = d->csums_alg_len;
+
+	err = net_conf_from_attrs(&c, info);
+
+	/* Copy back and stash before returning err, as for DISK_CONF. */
+	memcpy(d->shared_secret, c.shared_secret, sizeof(d->shared_secret));
+	d->shared_secret_len = c.shared_secret_len;
+	memcpy(d->cram_hmac_alg, c.cram_hmac_alg, sizeof(d->cram_hmac_alg));
+	d->cram_hmac_alg_len = c.cram_hmac_alg_len;
+	memcpy(d->integrity_alg, c.integrity_alg, sizeof(d->integrity_alg));
+	d->integrity_alg_len = c.integrity_alg_len;
+	memcpy(d->verify_alg, c.verify_alg, sizeof(d->verify_alg));
+	d->verify_alg_len = c.verify_alg_len;
+	memcpy(d->csums_alg, c.csums_alg, sizeof(d->csums_alg));
+	d->csums_alg_len = c.csums_alg_len;
+	d->wire_protocol = c.wire_protocol;
+	d->connect_int = c.connect_int;
+	d->timeout = c.timeout;
+	d->ping_int = c.ping_int;
+	d->ping_timeo = c.ping_timeo;
+	d->sndbuf_size = c.sndbuf_size;
+	d->rcvbuf_size = c.rcvbuf_size;
+	d->ko_count = c.ko_count;
+	d->max_buffers = c.max_buffers;
+	d->max_epoch_size = c.max_epoch_size;
+	d->after_sb_0p = c.after_sb_0p;
+	d->after_sb_1p = c.after_sb_1p;
+	d->after_sb_2p = c.after_sb_2p;
+	d->rr_conflict = c.rr_conflict;
+	d->on_congestion = c.on_congestion;
+	d->cong_fill = c.cong_fill;
+	d->cong_extents = c.cong_extents;
+	d->two_primaries = c.two_primaries;
+	d->tcp_cork = c.tcp_cork;
+	d->always_asbp = c.always_asbp;
+	d->use_rle = c.use_rle;
+	d->csums_after_crash_only = c.csums_after_crash_only;
+	d->sock_check_timeo = c.sock_check_timeo;
+
+	/*
+	 * fencing is a disk option in 8.4, so "net-options
+	 * --set-defaults" must not reset it: keep the live value.
+	 * drbd_adm_net_opts() holds conf_update.
+	 */
+	if (ctx->set_defaults && ctx->connection) {
+		struct drbd_net_conf *old;
+
+		rcu_read_lock();
+		old = rcu_dereference(ctx->connection->transport.net_conf);
+		if (old)
+			d->fencing_policy = old->fencing_policy;
+		rcu_read_unlock();
+	}
+
+	/*
+	 * unplug_watermark is dropped: no DRBD 9 code reads it, and
+	 * net_conf is connection-scoped while disk_conf, its DRBD 9
+	 * home, is per device. discard_my_data/tentative belong to
+	 * struct drbd_connect_parms; stash them for the connect handler.
+	 */
+	ntb_err = net_conf_ntb_from_attrs(&ntb, info);
+	if ((!ntb_err || ntb_err == -ENOMSG) && ntb) {
+		req->connect_parms_84.discard_my_data = c.discard_my_data;
+		req->connect_parms_84.has_discard_my_data =
+			ntb[DRBD_A_NET_CONF_DISCARD_MY_DATA] != NULL;
+		req->connect_parms_84.tentative = c.tentative;
+		req->connect_parms_84.has_tentative =
+			ntb[DRBD_A_NET_CONF_TENTATIVE] != NULL;
+	}
+	kfree(ntb);
+
+	/*
+	 * fencing lives in the v1 disk_conf on the wire but in
+	 * drbd_net_conf.fencing_policy on DRBD 9. The attach/disk-options
+	 * handler stashed it while parsing disk_conf and re-enters
+	 * this overlay for NET_CONF once it has the connection. A
+	 * real NET_CONF request never has this flag set.
+	 */
+	if (req->has_fencing_policy_84)
+		d->fencing_policy = req->fencing_policy_84;
+
+	/*
+	 * DRBD 9 requires a connection name; v1 has no such concept.
+	 * Default it only for a freshly created connection (name_len
+	 * == 0), matching the name drbd9 drbdsetup's own compat84 shim
+	 * passes (--_name=remote).
+	 */
+	if (!d->name_len) {
+		static const char v1_conn_name[] = "remote";
+
+		strscpy(d->name, v1_conn_name, sizeof(d->name));
+		d->name_len = strlen(v1_conn_name);
+	}
+
+	return err;
+}
+
 /*
  * The generated *_from_attrs() parsers fill the vendored v1 wire
  * structs (struct disk_conf, struct net_conf, ...), whose field sets
@@ -719,233 +955,10 @@ static int compat84_overlay(struct drbd_adm_ctx *ctx, enum drbd_nl_attr_set set,
 	struct compat84_req *req = compat84_req(ctx);
 
 	switch (set) {
-	case DRBD_NL_SET_DISK_CONF: {
-		struct drbd_disk_conf *d = dst;
-		struct disk_conf c = {
-			.meta_dev_idx			= d->meta_dev_idx,
-			.disk_size			= d->disk_size,
-			.on_io_error			= d->on_io_error,
-			.resync_after			= d->resync_after,
-			.al_extents			= d->al_extents,
-			.disk_barrier			= d->disk_barrier,
-			.disk_flushes			= d->disk_flushes,
-			.disk_drain			= d->disk_drain,
-			.md_flushes			= d->md_flushes,
-			.disk_timeout			= d->disk_timeout,
-			.read_balancing			= d->read_balancing,
-			.al_updates			= d->al_updates,
-			.discard_zeroes_if_aligned	= d->discard_zeroes_if_aligned,
-			.rs_discard_granularity		= d->rs_discard_granularity,
-			.disable_write_same		= d->disable_write_same,
-		};
-		struct nlattr **ntb;
-		int err, ntb_err;
-
-		memcpy(c.backing_dev, d->backing_dev, sizeof(c.backing_dev));
-		c.backing_dev_len = d->backing_dev_len;
-		memcpy(c.meta_dev, d->meta_dev, sizeof(c.meta_dev));
-		c.meta_dev_len = d->meta_dev_len;
-
-		err = disk_conf_from_attrs(&c, info);
-
-		/*
-		 * Copy back and stash before returning err: -ENOMSG from a
-		 * plain disk-options call (see above) must not discard the
-		 * fields it did send. Any other error leaves c at its
-		 * pre-seeded values, so copying back is a no-op.
-		 */
-		memcpy(d->backing_dev, c.backing_dev, sizeof(d->backing_dev));
-		d->backing_dev_len = c.backing_dev_len;
-		memcpy(d->meta_dev, c.meta_dev, sizeof(d->meta_dev));
-		d->meta_dev_len = c.meta_dev_len;
-		d->meta_dev_idx = c.meta_dev_idx;
-		d->disk_size = c.disk_size;
-		d->on_io_error = c.on_io_error;
-		d->resync_after = c.resync_after;
-		d->al_extents = c.al_extents;
-		d->disk_barrier = c.disk_barrier;
-		d->disk_flushes = c.disk_flushes;
-		d->disk_drain = c.disk_drain;
-		d->md_flushes = c.md_flushes;
-		d->disk_timeout = c.disk_timeout;
-		d->read_balancing = c.read_balancing;
-		d->al_updates = c.al_updates;
-		d->discard_zeroes_if_aligned = c.discard_zeroes_if_aligned;
-		d->rs_discard_granularity = c.rs_discard_granularity;
-		d->disable_write_same = c.disable_write_same;
-		/* max_bio_bvecs: no DRBD 9 equivalent, dropped. */
-
-		/*
-		 * The resync-tuning fields belong to struct drbd_peer_device_conf,
-		 * fencing to net_conf.fencing_policy; neither is reachable
-		 * through this dst. Re-parse the nested table for per-field
-		 * presence and stash them for the attach/disk-options
-		 * handlers.
-		 */
-		ntb_err = disk_conf_ntb_from_attrs(&ntb, info);
-		if ((!ntb_err || ntb_err == -ENOMSG) && ntb) {
-			req->peer_device_conf_84.resync_rate = c.resync_rate;
-			req->peer_device_conf_84.has_resync_rate =
-				ntb[DRBD_A_DISK_CONF_RESYNC_RATE] != NULL;
-			req->peer_device_conf_84.c_plan_ahead = c.c_plan_ahead;
-			req->peer_device_conf_84.has_c_plan_ahead =
-				ntb[DRBD_A_DISK_CONF_C_PLAN_AHEAD] != NULL;
-			req->peer_device_conf_84.c_delay_target = c.c_delay_target;
-			req->peer_device_conf_84.has_c_delay_target =
-				ntb[DRBD_A_DISK_CONF_C_DELAY_TARGET] != NULL;
-			req->peer_device_conf_84.c_fill_target = c.c_fill_target;
-			req->peer_device_conf_84.has_c_fill_target =
-				ntb[DRBD_A_DISK_CONF_C_FILL_TARGET] != NULL;
-			req->peer_device_conf_84.c_max_rate = c.c_max_rate;
-			req->peer_device_conf_84.has_c_max_rate =
-				ntb[DRBD_A_DISK_CONF_C_MAX_RATE] != NULL;
-			req->peer_device_conf_84.c_min_rate = c.c_min_rate;
-			req->peer_device_conf_84.has_c_min_rate =
-				ntb[DRBD_A_DISK_CONF_C_MIN_RATE] != NULL;
-
-			req->fencing_policy_84 = c.fencing;
-			req->has_fencing_policy_84 =
-				ntb[DRBD_A_DISK_CONF_FENCING] != NULL;
-		}
-		kfree(ntb);
-
-		return err;
-	}
-	case DRBD_NL_SET_NET_CONF: {
-		struct drbd_net_conf *d = dst;
-		struct net_conf c = {
-			.wire_protocol			= d->wire_protocol,
-			.connect_int			= d->connect_int,
-			.timeout			= d->timeout,
-			.ping_int			= d->ping_int,
-			.ping_timeo			= d->ping_timeo,
-			.sndbuf_size			= d->sndbuf_size,
-			.rcvbuf_size			= d->rcvbuf_size,
-			.ko_count			= d->ko_count,
-			.max_buffers			= d->max_buffers,
-			.max_epoch_size			= d->max_epoch_size,
-			.after_sb_0p			= d->after_sb_0p,
-			.after_sb_1p			= d->after_sb_1p,
-			.after_sb_2p			= d->after_sb_2p,
-			.rr_conflict			= d->rr_conflict,
-			.on_congestion			= d->on_congestion,
-			.cong_fill			= d->cong_fill,
-			.cong_extents			= d->cong_extents,
-			.two_primaries			= d->two_primaries,
-			.tcp_cork			= d->tcp_cork,
-			.always_asbp			= d->always_asbp,
-			.use_rle			= d->use_rle,
-			.csums_after_crash_only		= d->csums_after_crash_only,
-			.sock_check_timeo		= d->sock_check_timeo,
-		};
-		struct nlattr **ntb;
-		int err, ntb_err;
-
-		memcpy(c.shared_secret, d->shared_secret, sizeof(c.shared_secret));
-		c.shared_secret_len = d->shared_secret_len;
-		memcpy(c.cram_hmac_alg, d->cram_hmac_alg, sizeof(c.cram_hmac_alg));
-		c.cram_hmac_alg_len = d->cram_hmac_alg_len;
-		memcpy(c.integrity_alg, d->integrity_alg, sizeof(c.integrity_alg));
-		c.integrity_alg_len = d->integrity_alg_len;
-		memcpy(c.verify_alg, d->verify_alg, sizeof(c.verify_alg));
-		c.verify_alg_len = d->verify_alg_len;
-		memcpy(c.csums_alg, d->csums_alg, sizeof(c.csums_alg));
-		c.csums_alg_len = d->csums_alg_len;
-
-		err = net_conf_from_attrs(&c, info);
-
-		/* Copy back and stash before returning err, as for DISK_CONF. */
-		memcpy(d->shared_secret, c.shared_secret, sizeof(d->shared_secret));
-		d->shared_secret_len = c.shared_secret_len;
-		memcpy(d->cram_hmac_alg, c.cram_hmac_alg, sizeof(d->cram_hmac_alg));
-		d->cram_hmac_alg_len = c.cram_hmac_alg_len;
-		memcpy(d->integrity_alg, c.integrity_alg, sizeof(d->integrity_alg));
-		d->integrity_alg_len = c.integrity_alg_len;
-		memcpy(d->verify_alg, c.verify_alg, sizeof(d->verify_alg));
-		d->verify_alg_len = c.verify_alg_len;
-		memcpy(d->csums_alg, c.csums_alg, sizeof(d->csums_alg));
-		d->csums_alg_len = c.csums_alg_len;
-		d->wire_protocol = c.wire_protocol;
-		d->connect_int = c.connect_int;
-		d->timeout = c.timeout;
-		d->ping_int = c.ping_int;
-		d->ping_timeo = c.ping_timeo;
-		d->sndbuf_size = c.sndbuf_size;
-		d->rcvbuf_size = c.rcvbuf_size;
-		d->ko_count = c.ko_count;
-		d->max_buffers = c.max_buffers;
-		d->max_epoch_size = c.max_epoch_size;
-		d->after_sb_0p = c.after_sb_0p;
-		d->after_sb_1p = c.after_sb_1p;
-		d->after_sb_2p = c.after_sb_2p;
-		d->rr_conflict = c.rr_conflict;
-		d->on_congestion = c.on_congestion;
-		d->cong_fill = c.cong_fill;
-		d->cong_extents = c.cong_extents;
-		d->two_primaries = c.two_primaries;
-		d->tcp_cork = c.tcp_cork;
-		d->always_asbp = c.always_asbp;
-		d->use_rle = c.use_rle;
-		d->csums_after_crash_only = c.csums_after_crash_only;
-		d->sock_check_timeo = c.sock_check_timeo;
-
-		/*
-		 * fencing is a disk option in 8.4, so "net-options
-		 * --set-defaults" must not reset it: keep the live value.
-		 * drbd_adm_net_opts() holds conf_update.
-		 */
-		if (ctx->set_defaults && ctx->connection) {
-			struct drbd_net_conf *old;
-
-			rcu_read_lock();
-			old = rcu_dereference(ctx->connection->transport.net_conf);
-			if (old)
-				d->fencing_policy = old->fencing_policy;
-			rcu_read_unlock();
-		}
-
-		/*
-		 * unplug_watermark is dropped: no DRBD 9 code reads it, and
-		 * net_conf is connection-scoped while disk_conf, its DRBD 9
-		 * home, is per device. discard_my_data/tentative belong to
-		 * struct drbd_connect_parms; stash them for the connect handler.
-		 */
-		ntb_err = net_conf_ntb_from_attrs(&ntb, info);
-		if ((!ntb_err || ntb_err == -ENOMSG) && ntb) {
-			req->connect_parms_84.discard_my_data = c.discard_my_data;
-			req->connect_parms_84.has_discard_my_data =
-				ntb[DRBD_A_NET_CONF_DISCARD_MY_DATA] != NULL;
-			req->connect_parms_84.tentative = c.tentative;
-			req->connect_parms_84.has_tentative =
-				ntb[DRBD_A_NET_CONF_TENTATIVE] != NULL;
-		}
-		kfree(ntb);
-
-		/*
-		 * fencing lives in the v1 disk_conf on the wire but in
-		 * drbd_net_conf.fencing_policy on DRBD 9. The attach/disk-options
-		 * handler stashed it while parsing disk_conf and re-enters
-		 * this overlay for NET_CONF once it has the connection. A
-		 * real NET_CONF request never has this flag set.
-		 */
-		if (req->has_fencing_policy_84)
-			d->fencing_policy = req->fencing_policy_84;
-
-		/*
-		 * DRBD 9 requires a connection name; v1 has no such concept.
-		 * Default it only for a freshly created connection (name_len
-		 * == 0), matching the name drbd9 drbdsetup's own compat84 shim
-		 * passes (--_name=remote).
-		 */
-		if (!d->name_len) {
-			static const char v1_conn_name[] = "remote";
-
-			strscpy(d->name, v1_conn_name, sizeof(d->name));
-			d->name_len = strlen(v1_conn_name);
-		}
-
-		return err;
-	}
+	case DRBD_NL_SET_DISK_CONF:
+		return compat84_overlay_disk_conf(ctx, dst);
+	case DRBD_NL_SET_NET_CONF:
+		return compat84_overlay_net_conf(ctx, dst);
 	case DRBD_NL_SET_RES_OPTS: {
 		struct drbd_res_opts *d = dst;
 		struct res_opts c = {
