@@ -415,8 +415,16 @@ static int drbd2_put_context(struct sk_buff *skb, int attrtype,
 
 	if (!nla)
 		return -EMSGSIZE;
-	if (resource && nla_put_string(skb, DRBD2_A_CONTEXT_RESOURCE_NAME, resource->name))
-		goto fail;
+	if (resource) {
+		int err;
+
+		/* rename frees the old name after an RCU grace period */
+		rcu_read_lock();
+		err = nla_put_string(skb, DRBD2_A_CONTEXT_RESOURCE_NAME, resource->name);
+		rcu_read_unlock();
+		if (err)
+			goto fail;
+	}
 	if (device &&
 	    (nla_put_u32(skb, DRBD2_A_CONTEXT_VOLUME, device->vnr) ||
 	     nla_put_u32(skb, DRBD2_A_CONTEXT_MINOR, device->minor)))
