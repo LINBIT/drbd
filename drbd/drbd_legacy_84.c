@@ -552,6 +552,7 @@ static int seq_print_device_proc_drbd(struct seq_file *m, struct drbd_device *de
 	union drbd_state state;
 	const char *sn;
 	bool have_ldev;
+	int local_cnt;
 	char wp;
 
 	/*
@@ -586,6 +587,8 @@ static int seq_print_device_proc_drbd(struct seq_file *m, struct drbd_device *de
 	}
 
 	sn = drbd_conn_str_84(state.conn);
+	/* Read before taking our own reference, which lo: must not count. */
+	local_cnt = atomic_read(&device->local_cnt);
 	have_ldev = get_ldev_if_state(device, D_FAILED);
 
 	if (state.conn == C_STANDALONE &&
@@ -615,7 +618,7 @@ static int seq_print_device_proc_drbd(struct seq_file *m, struct drbd_device *de
 			   device->read_cnt/2,
 			   device->al_writ_cnt,
 			   device->bm_writ_cnt,
-			   atomic_read(&device->local_cnt),
+			   local_cnt,
 			   pending_cnt,
 			   unacked_cnt,
 			   atomic_read(&device->ap_bio_cnt[WRITE]) +
