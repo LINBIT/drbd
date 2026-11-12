@@ -1716,7 +1716,12 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 	 * Move is not exactly correct, btw, currently we have all our meta
 	 * data in core memory, to "move" it we just write it all out, there
 	 * are no reads. */
-	drbd_suspend_io(device, READ_AND_WRITE);
+	__drbd_suspend_io(device);
+	/* The resize 2PC already suspended I/O and waited, bounded, for it. Here a
+	 * participant is its receiver, which completes requests pending on the peer.
+	 */
+	if (!test_bit(TWOPC_IO_SUSPENDED, &device->flags))
+		wait_event(device->misc_wait, ap_bio_drained(device, READ_AND_WRITE));
 
 	/* Take the AL transaction lock before the md_buffer to avoid an
 	 * AB-BA deadlock against al_write_transaction().
