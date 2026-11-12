@@ -8622,7 +8622,10 @@ static void resync_from_primary_after_abort(struct drbd_peer_device *primary_pd,
 		return;
 	}
 
-	drbd_suspend_io(device, WRITE_ONLY);
+	if (drbd_suspend_io_receiver(primary_pd)) {
+		put_ldev(device);
+		return;
+	}
 	drbd_bm_slot_lock(primary_pd, "or_slot after resync abort", BM_LOCK_BULK);
 	drbd_bm_or_slot(device, weak_pd->bitmap_index, primary_pd->bitmap_index);
 	drbd_bm_write(device, NULL);
