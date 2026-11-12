@@ -6,7 +6,7 @@
 expression E;
 symbol order;
 @@
- drbd_alloc_pages(...)
+ alloc_pages_throttled(...)
  {
   ...
   order =
