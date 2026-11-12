@@ -2318,9 +2318,14 @@ static int drbd2_notify_resource_state(struct sk_buff *skb, unsigned int seq,
 	return 0;
 
 nla_put_failure:
-	nlmsg_free(skb);
+	/* A replayed message goes into the dump skb, which is not ours. */
+	if (multicast)
+		nlmsg_free(skb);
+	else if (dh)
+		genlmsg_cancel(skb, dh);
 failed:
-	drbd_err(resource, "Error %d while broadcasting event. Event seq:%u\n", err, seq);
+	drbd_err_ratelimit(resource, "Error %d while broadcasting event. Event seq:%u\n",
+			   err, seq);
 	return err;
 }
 
@@ -2360,9 +2365,14 @@ static int drbd2_notify_device_state(struct sk_buff *skb, unsigned int seq,
 	return 0;
 
 nla_put_failure:
-	nlmsg_free(skb);
+	/* A replayed message goes into the dump skb, which is not ours. */
+	if (multicast)
+		nlmsg_free(skb);
+	else if (dh)
+		genlmsg_cancel(skb, dh);
 failed:
-	drbd_err(device, "Error %d while broadcasting event. Event seq:%u\n", err, seq);
+	drbd_err_ratelimit(device, "Error %d while broadcasting event. Event seq:%u\n",
+			   err, seq);
 	return err;
 }
 
@@ -2403,9 +2413,14 @@ static int drbd2_notify_connection_state(struct sk_buff *skb, unsigned int seq,
 	return 0;
 
 nla_put_failure:
-	nlmsg_free(skb);
+	/* A replayed message goes into the dump skb, which is not ours. */
+	if (multicast)
+		nlmsg_free(skb);
+	else if (dh)
+		genlmsg_cancel(skb, dh);
 failed:
-	drbd_err(connection, "Error %d while broadcasting event. Event seq:%u\n", err, seq);
+	drbd_err_ratelimit(connection, "Error %d while broadcasting event. Event seq:%u\n",
+			   err, seq);
 	return err;
 }
 
@@ -2445,9 +2460,14 @@ static int drbd2_notify_peer_device_state(struct sk_buff *skb, unsigned int seq,
 	return 0;
 
 nla_put_failure:
-	nlmsg_free(skb);
+	/* A replayed message goes into the dump skb, which is not ours. */
+	if (multicast)
+		nlmsg_free(skb);
+	else if (dh)
+		genlmsg_cancel(skb, dh);
 failed:
-	drbd_err(peer_device, "Error %d while broadcasting event. Event seq:%u\n", err, seq);
+	drbd_err_ratelimit(peer_device, "Error %d while broadcasting event. Event seq:%u\n",
+			   err, seq);
 	return err;
 }
 
@@ -2488,11 +2508,15 @@ static int drbd2_notify_path_state(struct sk_buff *skb, unsigned int seq,
 	return 0;
 
 nla_put_failure:
-	nlmsg_free(skb);
+	/* A replayed message goes into the dump skb, which is not ours. */
+	if (multicast)
+		nlmsg_free(skb);
+	else if (dh)
+		genlmsg_cancel(skb, dh);
 failed:
 	/* FIXME add path specifics to our drbd_polymorph_printk.h */
-	drbd_err(connection, "path: Error %d while broadcasting event. Event seq:%u\n",
-		 err, seq);
+	drbd_err_ratelimit(connection, "path: Error %d while broadcasting event. Event seq:%u\n",
+			   err, seq);
 	return err;
 }
 
