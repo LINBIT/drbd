@@ -8013,6 +8013,17 @@ int drbd_adm_new_resource(struct drbd_adm_ctx *adm_ctx)
 	if (res_opts.explicit_drbd8_compat)
 		res_opts.drbd8_compat_mode = true;
 
+	/*
+	 * In compat mode, node_id may also be -1: the node ids are then set
+	 * up from the peer node id of the first path (adm_add_path()).
+	 */
+	if (res_opts.node_id >= DRBD_NODE_ID_MAX &&
+	    !(res_opts.drbd8_compat_mode && res_opts.node_id == -1)) {
+		pr_err("drbd: invalid node id (%u)\n", res_opts.node_id);
+		retcode = ERR_INVALID_REQUEST;
+		goto out;
+	}
+
 	if (res_opts.drbd8_compat_mode) {
 #ifdef CONFIG_DRBD_COMPAT_84
 		pr_info("drbd: running in DRBD 8 compatibility mode.\n");
@@ -8027,10 +8038,6 @@ int drbd_adm_new_resource(struct drbd_adm_ctx *adm_ctx)
 		drbd_adm_msg(adm_ctx, "%s", "CONFIG_DRBD_COMPAT_84 not enabled");
 		goto out;
 #endif
-	} else if (res_opts.node_id >= DRBD_NODE_ID_MAX) {
-		pr_err("drbd: invalid node id (%d)\n", res_opts.node_id);
-		retcode = ERR_INVALID_REQUEST;
-		goto out;
 	}
 
 	if (!try_module_get(THIS_MODULE)) {
