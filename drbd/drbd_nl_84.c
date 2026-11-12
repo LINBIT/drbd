@@ -753,6 +753,14 @@ compat84_overlay_disk_conf(struct drbd_adm_ctx *ctx, struct drbd_disk_conf *d)
 	c.meta_dev_len = d->meta_dev_len;
 
 	err = disk_conf_from_attrs(&c, info);
+	/*
+	 * The vendored v1 policies admit a string as long as its buffer, which
+	 * the genl_magic policies of DRBD 8.4 rejected; reject it here, before
+	 * the truncated string and its bogus length reach dst.
+	 */
+	if (drbd_nl_str_truncated(c.backing_dev_len, sizeof(c.backing_dev)) ||
+	    drbd_nl_str_truncated(c.meta_dev_len, sizeof(c.meta_dev)))
+		return -E2BIG;
 
 	/*
 	 * Copy back and stash before returning err: -ENOMSG from a
@@ -863,6 +871,12 @@ compat84_overlay_net_conf(struct drbd_adm_ctx *ctx, struct drbd_net_conf *d)
 	c.csums_alg_len = d->csums_alg_len;
 
 	err = net_conf_from_attrs(&c, info);
+	if (drbd_nl_str_truncated(c.shared_secret_len, sizeof(c.shared_secret)) ||
+	    drbd_nl_str_truncated(c.cram_hmac_alg_len, sizeof(c.cram_hmac_alg)) ||
+	    drbd_nl_str_truncated(c.integrity_alg_len, sizeof(c.integrity_alg)) ||
+	    drbd_nl_str_truncated(c.verify_alg_len, sizeof(c.verify_alg)) ||
+	    drbd_nl_str_truncated(c.csums_alg_len, sizeof(c.csums_alg)))
+		return -E2BIG;
 
 	/* Copy back and stash before returning err, as for DISK_CONF. */
 	memcpy(d->shared_secret, c.shared_secret, sizeof(d->shared_secret));
@@ -1008,6 +1022,8 @@ static int compat84_overlay(struct drbd_adm_ctx *ctx, enum drbd_nl_attr_set set,
 		c.cpu_mask_len = d->cpu_mask_len;
 
 		err = res_opts_from_attrs(&c, info);
+		if (drbd_nl_str_truncated(c.cpu_mask_len, sizeof(c.cpu_mask)))
+			return -E2BIG;
 
 		/*
 		 * The other fourteen DRBD 9 res_opts fields have no v1

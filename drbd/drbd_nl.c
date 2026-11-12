@@ -4511,7 +4511,7 @@ int drbd_adm_net_opts(struct drbd_adm_ctx *adm_ctx)
 
 	/* The transport_name is immutable taking precedence over drbd_set_net_conf_defaults() */
 	memcpy(new_net_conf->transport_name, old_net_conf->transport_name,
-	       old_net_conf->transport_name_len);
+	       sizeof(new_net_conf->transport_name));
 	new_net_conf->transport_name_len = old_net_conf->transport_name_len;
 	new_net_conf->load_balance_paths = old_net_conf->load_balance_paths;
 

@@ -211,6 +211,20 @@ static inline void drbd_nl_legacy_exit(void) { }
 int drbd_nl_drbd2_init(void);
 void drbd_nl_drbd2_exit(void);
 
+/*
+ * The generated parsers of the "drbd" family store the return value of
+ * nla_strscpy() as a string's length. Their policies admit a string as
+ * long as its buffer, which nla_strscpy() truncates, returning -E2BIG.
+ * That is the only way a stored length can exceed the buffer size; a
+ * length equal to it is legitimate (the receiver stores strlen() + 1 of
+ * the peer's verify and csums algorithms), so only a just parsed
+ * attribute can trip this.
+ */
+static inline bool drbd_nl_str_truncated(u32 len, size_t size)
+{
+	return len > size;
+}
+
 static inline int drbd_adm_overlay_disk_conf(struct drbd_adm_ctx *ctx, struct drbd_disk_conf *c)
 { return ctx->d->overlay(ctx, DRBD_NL_SET_DISK_CONF, c); }
 

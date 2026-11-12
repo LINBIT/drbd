@@ -428,7 +428,7 @@ static bool legacy_has_set(struct drbd_adm_ctx *ctx, enum drbd_nl_attr_set set)
 	return legacy_req(ctx)->info->attrs[tla[set]] != NULL;
 }
 
-static int legacy_overlay(struct drbd_adm_ctx *ctx, enum drbd_nl_attr_set set, void *dst)
+static int __legacy_overlay(struct drbd_adm_ctx *ctx, enum drbd_nl_attr_set set, void *dst)
 {
 	struct genl_info *info = legacy_req(ctx)->info;
 
@@ -456,6 +456,58 @@ static int legacy_overlay(struct drbd_adm_ctx *ctx, enum drbd_nl_attr_set set, v
 		break;
 	}
 	return -EINVAL;
+}
+
+/* Did __legacy_overlay() truncate a string attribute of dst? */
+static bool legacy_str_truncated(enum drbd_nl_attr_set set, void *dst)
+{
+	switch (set) {
+	case DRBD_NL_SET_DISK_CONF: {
+		struct drbd_disk_conf *c = dst;
+
+		return drbd_nl_str_truncated(c->backing_dev_len, sizeof(c->backing_dev)) ||
+			drbd_nl_str_truncated(c->meta_dev_len, sizeof(c->meta_dev));
+	}
+	case DRBD_NL_SET_NET_CONF: {
+		struct drbd_net_conf *c = dst;
+
+		return drbd_nl_str_truncated(c->shared_secret_len, sizeof(c->shared_secret)) ||
+			drbd_nl_str_truncated(c->cram_hmac_alg_len, sizeof(c->cram_hmac_alg)) ||
+			drbd_nl_str_truncated(c->integrity_alg_len, sizeof(c->integrity_alg)) ||
+			drbd_nl_str_truncated(c->verify_alg_len, sizeof(c->verify_alg)) ||
+			drbd_nl_str_truncated(c->csums_alg_len, sizeof(c->csums_alg)) ||
+			drbd_nl_str_truncated(c->name_len, sizeof(c->name)) ||
+			drbd_nl_str_truncated(c->transport_name_len, sizeof(c->transport_name));
+	}
+	case DRBD_NL_SET_RES_OPTS: {
+		struct drbd_res_opts *c = dst;
+
+		return drbd_nl_str_truncated(c->cpu_mask_len, sizeof(c->cpu_mask));
+	}
+	case DRBD_NL_SET_RENAME_RESOURCE_PARMS: {
+		struct drbd_rename_resource_parms *c = dst;
+
+		return drbd_nl_str_truncated(c->new_resource_name_len,
+					     sizeof(c->new_resource_name));
+	}
+	default:
+		return false;
+	}
+}
+
+/*
+ * The generated parsers fill dst directly, and their policies admit a
+ * string as long as its buffer. Fail such a request: the callers then
+ * discard dst, so the truncated string and its length -E2BIG never
+ * reach the configuration.
+ */
+static int legacy_overlay(struct drbd_adm_ctx *ctx, enum drbd_nl_attr_set set, void *dst)
+{
+	int err = __legacy_overlay(ctx, set, dst);
+
+	if (legacy_str_truncated(set, dst))
+		return -E2BIG;
+	return err;
 }
 
 /*

@@ -1299,6 +1299,29 @@ static int drbd2_parse_set(struct drbd_adm_ctx *ctx, int attrtype, int maxtype,
 	drbd2_parse_set((ctx), DRBD2_A_##NAME, ARRAY_SIZE(tb) - 1,	\
 			drbd2_##name##_nl_policy, (tb))
 
+/*
+ * Copy the string attribute "nla", if present, into the buffer "dst" of
+ * "size" bytes and store its length in "len". The policies admit a
+ * string of "size" characters, which leaves no room for the terminating
+ * NUL; reject it instead of truncating it and storing nla_strscpy()'s
+ * error as the length.
+ */
+static int drbd2_get_str(struct drbd_adm_ctx *ctx, const struct nlattr *nla,
+			 char *dst, size_t size, __u32 *len)
+{
+	ssize_t ret;
+
+	if (!nla)
+		return 0;
+	ret = nla_strscpy(dst, nla, size);
+	if (ret < 0) {
+		NL_SET_BAD_ATTR(drbd2_req(ctx)->info->extack, nla);
+		return ret;
+	}
+	*len = ret;
+	return 0;
+}
+
 static int drbd2_overlay_disk_conf(struct drbd_adm_ctx *ctx, struct drbd_disk_conf *s)
 {
 	struct nlattr *tb[DRBD2_A_DISK_CONF_BITMAP + 1];
@@ -1313,13 +1336,11 @@ static int drbd2_overlay_disk_conf(struct drbd_adm_ctx *ctx, struct drbd_disk_co
 	    !tb[DRBD2_A_DISK_CONF_META_DEV_IDX])
 		err = -ENOMSG;
 
-	if (tb[DRBD2_A_DISK_CONF_BACKING_DEV])
-		s->backing_dev_len = nla_strscpy(s->backing_dev,
-						 tb[DRBD2_A_DISK_CONF_BACKING_DEV],
-						 sizeof(s->backing_dev));
-	if (tb[DRBD2_A_DISK_CONF_META_DEV])
-		s->meta_dev_len = nla_strscpy(s->meta_dev, tb[DRBD2_A_DISK_CONF_META_DEV],
-					      sizeof(s->meta_dev));
+	if (drbd2_get_str(ctx, tb[DRBD2_A_DISK_CONF_BACKING_DEV], s->backing_dev,
+			  sizeof(s->backing_dev), &s->backing_dev_len) ||
+	    drbd2_get_str(ctx, tb[DRBD2_A_DISK_CONF_META_DEV], s->meta_dev,
+			  sizeof(s->meta_dev), &s->meta_dev_len))
+		return -E2BIG;
 	if (tb[DRBD2_A_DISK_CONF_META_DEV_IDX])
 		s->meta_dev_idx = nla_get_s32(tb[DRBD2_A_DISK_CONF_META_DEV_IDX]);
 	if (tb[DRBD2_A_DISK_CONF_SIZE])
@@ -1372,9 +1393,9 @@ static int drbd2_overlay_res_opts(struct drbd_adm_ctx *ctx, struct drbd_res_opts
 	if (!tb[DRBD2_A_RESOURCE_OPTS_NODE_ID])
 		err = -ENOMSG;
 
-	if (tb[DRBD2_A_RESOURCE_OPTS_CPU_MASK])
-		s->cpu_mask_len = nla_strscpy(s->cpu_mask, tb[DRBD2_A_RESOURCE_OPTS_CPU_MASK],
-					      sizeof(s->cpu_mask));
+	if (drbd2_get_str(ctx, tb[DRBD2_A_RESOURCE_OPTS_CPU_MASK], s->cpu_mask,
+			  sizeof(s->cpu_mask), &s->cpu_mask_len))
+		return -E2BIG;
 	if (tb[DRBD2_A_RESOURCE_OPTS_ON_NO_DATA_ACCESSIBLE])
 		s->on_no_data = nla_get_u32(tb[DRBD2_A_RESOURCE_OPTS_ON_NO_DATA_ACCESSIBLE]);
 	if (tb[DRBD2_A_RESOURCE_OPTS_AUTO_PROMOTE])
@@ -1422,25 +1443,21 @@ static int drbd2_overlay_net_conf(struct drbd_adm_ctx *ctx, struct drbd_net_conf
 	if (err)
 		return err;
 
-	if (tb[DRBD2_A_NET_CONF_SHARED_SECRET])
-		s->shared_secret_len = nla_strscpy(s->shared_secret,
-						   tb[DRBD2_A_NET_CONF_SHARED_SECRET],
-						   sizeof(s->shared_secret));
-	if (tb[DRBD2_A_NET_CONF_CRAM_HMAC_ALG])
-		s->cram_hmac_alg_len = nla_strscpy(s->cram_hmac_alg,
-						   tb[DRBD2_A_NET_CONF_CRAM_HMAC_ALG],
-						   sizeof(s->cram_hmac_alg));
-	if (tb[DRBD2_A_NET_CONF_INTEGRITY_ALG])
-		s->integrity_alg_len = nla_strscpy(s->integrity_alg,
-						   tb[DRBD2_A_NET_CONF_INTEGRITY_ALG],
-						   sizeof(s->integrity_alg));
-	if (tb[DRBD2_A_NET_CONF_VERIFY_ALG])
-		s->verify_alg_len = nla_strscpy(s->verify_alg,
-						tb[DRBD2_A_NET_CONF_VERIFY_ALG],
-						sizeof(s->verify_alg));
-	if (tb[DRBD2_A_NET_CONF_CSUMS_ALG])
-		s->csums_alg_len = nla_strscpy(s->csums_alg, tb[DRBD2_A_NET_CONF_CSUMS_ALG],
-					       sizeof(s->csums_alg));
+	if (drbd2_get_str(ctx, tb[DRBD2_A_NET_CONF_SHARED_SECRET], s->shared_secret,
+			  sizeof(s->shared_secret), &s->shared_secret_len) ||
+	    drbd2_get_str(ctx, tb[DRBD2_A_NET_CONF_CRAM_HMAC_ALG], s->cram_hmac_alg,
+			  sizeof(s->cram_hmac_alg), &s->cram_hmac_alg_len) ||
+	    drbd2_get_str(ctx, tb[DRBD2_A_NET_CONF_INTEGRITY_ALG], s->integrity_alg,
+			  sizeof(s->integrity_alg), &s->integrity_alg_len) ||
+	    drbd2_get_str(ctx, tb[DRBD2_A_NET_CONF_VERIFY_ALG], s->verify_alg,
+			  sizeof(s->verify_alg), &s->verify_alg_len) ||
+	    drbd2_get_str(ctx, tb[DRBD2_A_NET_CONF_CSUMS_ALG], s->csums_alg,
+			  sizeof(s->csums_alg), &s->csums_alg_len) ||
+	    drbd2_get_str(ctx, tb[DRBD2_A_NET_CONF_CONNECTION_NAME], s->name,
+			  sizeof(s->name), &s->name_len) ||
+	    drbd2_get_str(ctx, tb[DRBD2_A_NET_CONF_TRANSPORT_NAME], s->transport_name,
+			  sizeof(s->transport_name), &s->transport_name_len))
+		return -E2BIG;
 	if (tb[DRBD2_A_NET_CONF_PROTOCOL])
 		s->wire_protocol = nla_get_u32(tb[DRBD2_A_NET_CONF_PROTOCOL]);
 	if (tb[DRBD2_A_NET_CONF_CONNECT_INT])
@@ -1483,18 +1500,11 @@ static int drbd2_overlay_net_conf(struct drbd_adm_ctx *ctx, struct drbd_net_conf
 		s->use_rle = nla_get_u8(tb[DRBD2_A_NET_CONF_USE_RLE]);
 	if (tb[DRBD2_A_NET_CONF_FENCING])
 		s->fencing_policy = nla_get_u32(tb[DRBD2_A_NET_CONF_FENCING]);
-	if (tb[DRBD2_A_NET_CONF_CONNECTION_NAME])
-		s->name_len = nla_strscpy(s->name, tb[DRBD2_A_NET_CONF_CONNECTION_NAME],
-					  sizeof(s->name));
 	if (tb[DRBD2_A_NET_CONF_CSUMS_AFTER_CRASH_ONLY])
 		s->csums_after_crash_only =
 			nla_get_u8(tb[DRBD2_A_NET_CONF_CSUMS_AFTER_CRASH_ONLY]);
 	if (tb[DRBD2_A_NET_CONF_SOCK_CHECK_TIMEO])
 		s->sock_check_timeo = nla_get_u32(tb[DRBD2_A_NET_CONF_SOCK_CHECK_TIMEO]);
-	if (tb[DRBD2_A_NET_CONF_TRANSPORT_NAME])
-		s->transport_name_len = nla_strscpy(s->transport_name,
-						    tb[DRBD2_A_NET_CONF_TRANSPORT_NAME],
-						    sizeof(s->transport_name));
 	if (tb[DRBD2_A_NET_CONF_MAX_BUFFERS])
 		s->max_buffers = nla_get_u32(tb[DRBD2_A_NET_CONF_MAX_BUFFERS]);
 	if (tb[DRBD2_A_NET_CONF_ALLOW_REMOTE_READ])
@@ -1765,10 +1775,8 @@ static int drbd2_overlay_rename_resource_parms(struct drbd_adm_ctx *ctx,
 	if (!tb[DRBD2_A_RENAME_PARMS_NEW_NAME])
 		return -ENOMSG;
 
-	s->new_resource_name_len = nla_strscpy(s->new_resource_name,
-					       tb[DRBD2_A_RENAME_PARMS_NEW_NAME],
-					       sizeof(s->new_resource_name));
-	return 0;
+	return drbd2_get_str(ctx, tb[DRBD2_A_RENAME_PARMS_NEW_NAME], s->new_resource_name,
+			     sizeof(s->new_resource_name), &s->new_resource_name_len);
 }
 
 static int drbd2_overlay_suspend_io_parms(struct drbd_adm_ctx *ctx,
