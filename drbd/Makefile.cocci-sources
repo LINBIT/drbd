@@ -52,7 +52,6 @@ sources += drbd_transport_lb-tcp.c
 sources += drbd_transport_rdma.c
 sources += drbd_transport_rdma2.c
 sources += drbd_transport_tcp.c
-sources += drbd_transport_template.c
 sources += kref_debug.c
 
 # no need (yet) to patch these headers, either

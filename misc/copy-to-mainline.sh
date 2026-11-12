@@ -28,7 +28,7 @@ cp drbd_actlog.c drbd_bitmap.c drbd_dax_pmem.[ch] drbd_debugfs.[ch] \
 	drbd_polymorph_printk.h drbd_proc.c drbd_receiver.c drbd_req.[ch] \
 	drbd_sender.c drbd_state.[ch] drbd_state_change.h drbd_transport.c \
 	drbd_transport_tcp.c drbd_transport_rdma.c drbd_transport_lb-tcp.c \
-	drbd_transport_template.c drbd_vli.h \
+	drbd_vli.h \
 	drbd-headers/drbd_transport.h drbd-headers/drbd_strings.[ch] \
 	drbd-headers/drbd_protocol.h drbd-headers/drbd_meta_data.h \
 	$KDIR/drivers/block/drbd/
