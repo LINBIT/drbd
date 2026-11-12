@@ -2096,7 +2096,11 @@ static void drbd_send_and_submit(struct drbd_request *req)
 		maybe_pull_ahead(device);
 	}
 
-	if (drbd_suspended(device)) {
+	/* A write admitted before a divergence-start event must not enter the old
+	 * generation; its retry waits in inc_ap_bio_cond(), which mints first.
+	 */
+	if (drbd_suspended(device) ||
+	    (rw == WRITE && req->i.size && drbd_gen_obligation_outstanding(device))) {
 		/* push back and retry: */
 		req->local_rq_state |= RQ_POSTPONED;
 		if (req->private_bio) {
