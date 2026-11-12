@@ -146,6 +146,32 @@ static int _drbd_md_sync_page_io(struct drbd_device *device,
 	return err;
 }
 
+/* Flush the volatile cache of the backing device. The caller holds the meta
+ * data buffer; the wait ends on disk-timeout or force-detach as for meta data IO.
+ */
+static int drbd_md_flush_backing_dev(struct drbd_device *device)
+{
+	struct drbd_backing_dev *bdev = device->ldev;
+	struct bio *bio;
+
+	if (!get_ldev_if_state(device, D_ATTACHING))
+		return -ENODEV;
+
+	device->md_io.done = 0;
+	device->md_io.error = -ENODEV;
+
+	bio = bio_alloc_bioset(bdev->backing_bdev, 0, REQ_OP_WRITE | REQ_PREFLUSH,
+			       GFP_NOIO, &drbd_md_io_bio_set);
+	atomic_inc(&device->md_io.in_use);
+	device->md_io.submit_jif = jiffies;
+	bio->bi_private = device;
+	bio->bi_end_io = drbd_md_endio;
+	submit_bio(bio);
+	wait_until_done_or_force_detached(device, bdev, &device->md_io.done);
+	/* ldev_ref_transfer: drbd_md_endio() does put_ldev() and drbd_md_put_buffer() */
+	return device->md_io.error;
+}
+
 int drbd_md_sync_page_io(struct drbd_device *device, struct drbd_backing_dev *bdev,
 			 sector_t sector, enum req_op op)
 {
@@ -320,6 +346,19 @@ static sector_t al_tr_number_to_on_disk_sector(struct drbd_device *device)
 	return device->ldev->md.md_offset + device->ldev->md.al_offset + t;
 }
 
+/* Writes to an evicted extent must be stable before the transaction is.
+ * With the meta data on the same disk, the PREFLUSH of the meta data write does that.
+ */
+static bool al_needs_backing_flush(struct drbd_device *device)
+{
+	struct drbd_backing_dev *bdev = device->ldev;
+
+	if (device->resource->write_ordering < WO_BDEV_FLUSH)
+		return false;
+	return bdev->md_bdev->bd_disk != bdev->backing_bdev->bd_disk ||
+		test_bit(MD_NO_FUA, &device->flags);
+}
+
 static int __al_write_transaction(struct drbd_device *device, struct al_transaction_on_disk *buffer)
 {
 	struct lc_element *e;
@@ -327,6 +366,7 @@ static int __al_write_transaction(struct drbd_device *device, struct al_transact
 	int i, mx;
 	unsigned extent_nr;
 	unsigned crc = 0;
+	bool evicts = false;
 	int err = 0;
 	ktime_var_for_accounting(start_kt);
 
@@ -356,6 +396,7 @@ static int __al_write_transaction(struct drbd_device *device, struct al_transact
 			start = al_extent_to_bm_bit(e->lc_number);
 			end = al_extent_to_bm_bit(e->lc_number + 1) - 1;
 			drbd_bm_mark_range_for_writeout(device, start, end);
+			evicts = true;
 		}
 		i++;
 	}
@@ -394,7 +435,12 @@ static int __al_write_transaction(struct drbd_device *device, struct al_transact
 	err = drbd_bm_write_hinted(device);
 	if (!err) {
 		ktime_aggregate_delta(device, start_kt, al_mid_kt);
-		if (drbd_md_sync_page_io(device, device->ldev, sector, REQ_OP_WRITE)) {
+		if (evicts && al_needs_backing_flush(device) &&
+		    drbd_md_flush_backing_dev(device)) {
+			/* a device without a volatile cache completes a flush successfully */
+			err = -EIO;
+			drbd_handle_io_error(device, DRBD_WRITE_ERROR);
+		} else if (drbd_md_sync_page_io(device, device->ldev, sector, REQ_OP_WRITE)) {
 			err = -EIO;
 			drbd_handle_io_error(device, DRBD_META_IO_ERROR);
 		} else {
