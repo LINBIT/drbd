@@ -3706,7 +3706,7 @@ int drbd_nl_detach_doit(struct sk_buff *skb, struct genl_info *info)
 	if (!compat84_req(ctx)->reply_skb)
 		return 0;
 	drbd_adm_detach(ctx);
-	if (ctx->result == NO_ERROR) {
+	if (compat84_result_ok(ctx->result)) {
 		/*
 		 * Bound the stashes to the attach that produced them, or a
 		 * detach without ever connecting followed by an attach that
