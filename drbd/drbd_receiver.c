@@ -9225,8 +9225,8 @@ static void handle_neighbor_demotion(struct drbd_connection *connection,
 		kref_get(&device->kref);
 		rcu_read_unlock();
 		if (get_ldev(device)) {
-			drbd_bitmap_io(device, &drbd_bm_write, "peer demote",
-				       BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK, NULL);
+			drbd_bitmap_io(device, &drbd_bm_write_copy_pages, "peer demote",
+				       BM_LOCK_BULK, NULL);
 			put_ldev(device);
 		}
 		rcu_read_lock();
