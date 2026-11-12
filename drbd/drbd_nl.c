@@ -1550,11 +1550,8 @@ char *ppsize(char *buf, unsigned long long size)
 	return buf;
 }
 
-/* The receiver may call drbd_suspend_io(device, WRITE_ONLY).
- * It should not call drbd_suspend_io(device, READ_AND_WRITE) since
- * if the node is an D_INCONSISTENT R_PRIMARY (L_SYNC_TARGET) it
- * may need to issue remote READs. Those is turn need the receiver
- * to complete. -> calling drbd_suspend_io(device, READ_AND_WRITE) deadlocks.
+/* Not for the receiver: a write it waits for may complete only in its own
+ * conn_disconnect(). The receiver uses drbd_suspend_io_receiver().
  */
 /* Note these are not to be confused with
  * drbd_adm_suspend_io/drbd_adm_resume_io,
@@ -1587,6 +1584,30 @@ void drbd_suspend_io(struct drbd_device *device, enum suspend_scope ss)
 {
 	__drbd_suspend_io(device);
 	wait_event(device->misc_wait, ap_bio_drained(device, ss));
+}
+
+/* Returns -ECONNABORTED, with the suspension released, once the receiver's
+ * connection goes down: only that receiver can then complete the writes.
+ */
+int drbd_suspend_io_receiver(struct drbd_peer_device *peer_device)
+{
+	struct drbd_device *device = peer_device->device;
+	struct drbd_connection *connection = peer_device->connection;
+	bool drained;
+
+	__drbd_suspend_io(device);
+	/* Do not test ap_bio_drained() again after the wait: a writer that
+	 * raced with the suspend raises ap_bio_cnt briefly before it rolls back.
+	 */
+	wait_event(device->misc_wait,
+		   (drained = ap_bio_drained(device, WRITE_ONLY)) ||
+		   READ_ONCE(connection->cstate[NOW]) < C_CONNECTING);
+	if (drained)
+		return 0;
+
+	drbd_resume_io(device);
+	drbd_warn(peer_device, "Connection lost while waiting for application writes\n");
+	return -ECONNABORTED;
 }
 
 /* For a suspend taken with __drbd_suspend_io(); the caller still owns it

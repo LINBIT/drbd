@@ -2572,6 +2572,7 @@ enum suspend_scope {
 };
 void __drbd_suspend_io(struct drbd_device *device);
 void drbd_suspend_io(struct drbd_device *device, enum suspend_scope ss);
+int drbd_suspend_io_receiver(struct drbd_peer_device *peer_device);
 bool drbd_wait_io_drained(struct drbd_device *device, enum suspend_scope ss, long timeout);
 /* in drbd_state.c */
 void twopc_suspend_io(struct drbd_device *device);
