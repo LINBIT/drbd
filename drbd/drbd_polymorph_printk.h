@@ -210,7 +210,10 @@ void drbd_dyn_dbg_with_wrong_object_type(void);
 	} while (0)
 
 /**
- * expect  -  Make an assertion
+ * expect - Make an assertion
+ * @x: The object to log the failed assertion for (resource, connection,
+ *	device or peer_device).
+ * @exp: The expression that is expected to be true.
  *
  * Unlike the assert macro, this macro returns a boolean result.
  */
