@@ -3403,7 +3403,6 @@ drbd_insert_fault_conn(struct drbd_connection *connection, unsigned int type) {
 /**
  * get_ldev() - Increase the ref count on device->ldev. Returns 0 if there is no ldev
  * @_device:		DRBD device.
- * @_min_state:		Minimum device state required for success.
  *
  * You have to call put_ldev() when finished working with device->ldev.
  */
