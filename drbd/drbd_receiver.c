@@ -8385,7 +8385,7 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 		if (peer_device->uuid_flags & UUID_FLAG_NEW_DATAGEN)
 			drbd_uuid_received_new_current(peer_device, peer_device->current_uuid, node_mask);
 
-		drbd_uuid_detect_finished_resyncs(peer_device);
+		err = drbd_uuid_detect_finished_resyncs(peer_device);
 
 		drbd_md_sync_if_dirty(device);
 		put_ldev(device);
@@ -8561,6 +8561,8 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 		check_resync_source(peer_device, node_mask);
 
 	err = __receive_uuids(peer_device, node_mask);
+	if (err)
+		return err;
 
 	if (!test_bit(RECONCILIATION_RESYNC, peer_device->flags)) {
 		if (peer_device->uuid_flags & UUID_FLAG_GOT_STABLE) {

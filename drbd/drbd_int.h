@@ -2195,7 +2195,7 @@ int drbd_day0_node_id(struct drbd_md *md, int exclude);
 void drbd_uuid_resync_starting(struct drbd_peer_device *peer_device);
 void drbd_uuid_resync_starting_source(struct drbd_peer_device *peer_device);
 u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device);
-void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device);
+int drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device);
 bool drbd_uuid_set_exposed(struct drbd_device *device, u64 val, bool log);
 u64 drbd_weak_nodes_device(struct drbd_device *device);
 bool drbd_uuid_is_day0(struct drbd_device *device);
