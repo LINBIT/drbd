@@ -7043,8 +7043,6 @@ int drbd_adm_outdate(struct drbd_adm_ctx *adm_ctx)
 	return 0;
 }
 
-static void resource_to_info(struct drbd_resource_info *, struct drbd_resource *);
-
 void resource_to_statistics(struct drbd_resource_statistics *s, struct drbd_resource *resource)
 {
 	s->res_stat_write_ordering = resource->write_ordering;
@@ -7932,8 +7930,7 @@ static enum drbd_ret_code drbd_check_resource_name(struct drbd_adm_ctx *const ad
 	return ret_code;
 }
 
-static void resource_to_info(struct drbd_resource_info *info,
-			     struct drbd_resource *resource)
+void resource_to_info(struct drbd_resource_info *info, struct drbd_resource *resource)
 {
 	info->res_role = resource->role[NOW];
 	info->res_susp = resource->susp_user[NOW];

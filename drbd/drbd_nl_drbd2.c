@@ -2163,8 +2163,47 @@ static int drbd2_dump_filter(struct netlink_callback *cb, int holder_nr)
 	return 0;
 }
 
+/*
+ * A resource-get filtered by resource name is a dump of at most one
+ * resource. It is looked up and emitted in the first call, under RCU like
+ * the unfiltered dump, so no reference is kept across calls. cb->args[0]
+ * only records that the first call is done.
+ */
+static int drbd2_dump_one_resource(struct sk_buff *skb, struct netlink_callback *cb,
+				   const char *name)
+{
+	struct drbd_resource_statistics resource_statistics;
+	struct drbd_resource_info resource_info;
+	struct drbd_resource *resource;
+	int err = -ENOENT;
+
+	if (cb->args[0])
+		return 0;
+
+	rcu_read_lock();
+	for_each_resource_rcu(resource, &drbd_resources) {
+		if (strcmp(resource->name, name))
+			continue;
+		resource_to_info(&resource_info, resource);
+		resource_to_statistics(&resource_statistics, resource);
+		err = drbd2_emit_resource(skb, cb, resource, &resource_info,
+					  &resource_statistics);
+		break;
+	}
+	rcu_read_unlock();
+	if (err)
+		return err;
+	cb->args[0] = 1;
+	return skb->len;
+}
+
 int drbd2_nl_resource_get_dumpit(struct sk_buff *skb, struct netlink_callback *cb)
 {
+	struct nlattr *filter;
+
+	filter = drbd2_find_context_attr(cb->nlh, DRBD2_A_CONTEXT_RESOURCE_NAME);
+	if (!IS_ERR_OR_NULL(filter))
+		return drbd2_dump_one_resource(skb, cb, nla_data(filter));
 	return drbd_dump_resources(skb, cb, &drbd2_dialect);
 }
 

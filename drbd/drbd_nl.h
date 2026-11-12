@@ -374,6 +374,8 @@ int drbd_dump_initial_state(struct sk_buff *skb, struct netlink_callback *cb,
 			    const struct drbd_nl_dialect *dialect, unsigned int seq);
 int drbd_dump_initial_state_done(struct netlink_callback *cb);
 
+void resource_to_info(struct drbd_resource_info *info, struct drbd_resource *resource);
+
 /* Statistics of a live object, for the dumps and for the notifications. */
 void resource_to_statistics(struct drbd_resource_statistics *s, struct drbd_resource *resource);
 void device_to_statistics(struct drbd_device_statistics *s, struct drbd_device *device);
