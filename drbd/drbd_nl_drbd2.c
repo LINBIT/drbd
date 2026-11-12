@@ -2574,6 +2574,7 @@ static int drbd2_notify_helper(struct sk_buff *skb, unsigned int seq,
 			       enum drbd_notification_type type)
 {
 	struct drbd_resource *resource = device ? device->resource : connection->resource;
+	bool response = (type & ~NOTIFY_FLAGS) == NOTIFY_RESPONSE;
 	struct nlattr *nla;
 	void *dh;
 	int err;
@@ -2592,11 +2593,11 @@ static int drbd2_notify_helper(struct sk_buff *skb, unsigned int seq,
 	nla = nla_nest_start(skb, DRBD2_A_HELPER);
 	if (!nla)
 		goto fail;
+	/* the status is only known, and only sent, in the response phase */
 	if (nla_put_string(skb, DRBD2_A_HELPER_INFO_NAME, name) ||
-	    nla_put_u32(skb, DRBD2_A_HELPER_INFO_STATUS, status) ||
+	    (response && nla_put_u32(skb, DRBD2_A_HELPER_INFO_STATUS, status)) ||
 	    nla_put_u32(skb, DRBD2_A_HELPER_INFO_PHASE,
-			(type & ~NOTIFY_FLAGS) == NOTIFY_RESPONSE ?
-			DRBD2_HELPER_PHASE_RESPONSE : DRBD2_HELPER_PHASE_CALL))
+			response ? DRBD2_HELPER_PHASE_RESPONSE : DRBD2_HELPER_PHASE_CALL))
 		goto fail;
 	nla_nest_end(skb, nla);
 	genlmsg_end(skb, dh);
