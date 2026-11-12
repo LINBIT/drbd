@@ -26,6 +26,8 @@ RB_DECLARE_CALLBACKS_MAX(static, augment_callbacks, struct drbd_interval, rb,
 static const char * const drbd_interval_type_names[] = {
 	[INTERVAL_LOCAL_WRITE]    = "LocalWrite",
 	[INTERVAL_PEER_WRITE]     = "PeerWrite",
+	[INTERVAL_LOCAL_READ]     = "LocalRead",
+	[INTERVAL_PEER_READ]      = "PeerRead",
 	[INTERVAL_RESYNC_WRITE]   = "ResyncWrite",
 	[INTERVAL_RESYNC_READ]    = "ResyncRead",
 	[INTERVAL_OV_READ_SOURCE] = "VerifySource",
