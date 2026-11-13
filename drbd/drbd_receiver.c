@@ -8253,6 +8253,8 @@ static int drbd_resync(struct drbd_peer_device *peer_device,
 		   the bitmap here explicitly */
 		peer_device->resync_again++;
 		drbd_info(peer_device, "...postponing this until current resync finished\n");
+		/* The handshake may have cleared the bits the running resync had left. */
+		drbd_check_resync_done(peer_device);
 	}
 	return 0;
 }
@@ -10264,7 +10266,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	enum drbd_disk_state peer_disk_state;
 	enum drbd_repl_state new_repl_state;
 	bool peer_was_resync_target, do_handshake = false;
-	bool consumed_resync;
+	bool consumed_resync, postponed = false;
 	enum chg_state_flags begin_state_chg_flags = CS_VERBOSE | CS_WAIT_COMPLETE;
 	unsigned long irq_flags;
 	int rv;
@@ -10676,6 +10678,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		 */
 		peer_device->resync_again++;
 		new_repl_state = old_peer_state.conn;
+		postponed = true;
 		drbd_info(peer_device, "Postponing bitmap exchange until the running resync has finished\n");
 	}
 	if (device->disk_state[NOW] != D_NEGOTIATING)
@@ -10693,6 +10696,10 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 	if (rv < SS_SUCCESS)
 		goto fail;
+
+	/* The handshake may have cleared the bits the running resync had left. */
+	if (postponed)
+		drbd_check_resync_done(peer_device);
 
 	if (old_peer_state.conn > L_OFF) {
 		if (new_repl_state > L_ESTABLISHED && peer_state.conn <= L_ESTABLISHED &&
