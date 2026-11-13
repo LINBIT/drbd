@@ -2099,6 +2099,7 @@ enum dds_flags {
 	DDSF_NO_RESYNC = 2, /* Do not run a resync for the new space */
 	DDSF_IGNORE_PEER_CONSTRAINTS = 4, /* no longer used */
 	DDSF_2PC = 8, /* local only, not on the wire */
+	DDSF_NO_IO_DRAIN = 16, /* local only: the caller is a receiver */
 };
 struct meta_data_on_disk_9;
 
