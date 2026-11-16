@@ -273,7 +273,7 @@ static void cleanup_unacked_peer_requests(struct drbd_connection *connection);
 static void cleanup_peer_ack_list(struct drbd_connection *connection);
 static u64 node_ids_to_bitmap(struct drbd_device *device, u64 node_ids);
 static void process_twopc(struct drbd_connection *, struct twopc_reply *, struct packet_info *, unsigned long);
-static void drbd_resync(struct drbd_peer_device *, enum resync_reason);
+static int drbd_resync(struct drbd_peer_device *, enum resync_reason);
 static void drbd_unplug_all_devices(struct drbd_connection *connection);
 static int decode_header(struct drbd_connection *, const void *, struct packet_info *);
 static void check_resync_source(struct drbd_peer_device *primary_pd, u64 weak_nodes);
@@ -6775,7 +6775,8 @@ static int bitmap_mod_after_handshake(struct drbd_peer_device *peer_device, enum
 		if (peer_device->bitmap_index == -1)
 			return 0;
 
-		drbd_suspend_io(device, WRITE_ONLY);
+		if (drbd_suspend_io_receiver(peer_device))
+			return -ECONNABORTED;
 		drbd_bm_slot_lock(peer_device, "copy_slot/set_many sync_handshake", BM_LOCK_BULK);
 		/* Pick the day-0 slot under the bitmap lock: cbt-start claims and
 		 * clears a vacant slot under the same lock, so a slot found here
@@ -6801,7 +6802,8 @@ static int bitmap_mod_after_handshake(struct drbd_peer_device *peer_device, enum
 		drbd_resume_io(device);
 	} else if (strategy == SYNC_TARGET_CLEAR_BITMAP) {
 		drbd_info(peer_device, "Resync source provides bitmap (node_id=%d)\n", peer_node_id);
-		drbd_suspend_io(device, WRITE_ONLY);
+		if (drbd_suspend_io_receiver(peer_device))
+			return -ECONNABORTED;
 		drbd_bm_slot_lock(peer_device, "bm_clear_many_bits sync_handshake", BM_LOCK_BULK);
 		drbd_bm_clear_many_bits(peer_device, 0, -1UL);
 		drbd_bm_write(device, NULL);
@@ -6815,6 +6817,9 @@ static int bitmap_mod_after_handshake(struct drbd_peer_device *peer_device, enum
 		    is_resync_running(device))
 			return 0;
 
+		/* drbd_bitmap_io() drains again, without waiting */
+		if (drbd_suspend_io_receiver(peer_device))
+			return -ECONNABORTED;
 		if (drbd_current_uuid(device) == UUID_JUST_CREATED) {
 			drbd_info(peer_device, "Setting and writing the whole bitmap, fresh node\n");
 			err = drbd_bitmap_io(device, &drbd_bmio_set_allocated_n_write,
@@ -6827,6 +6832,7 @@ static int bitmap_mod_after_handshake(struct drbd_peer_device *peer_device, enum
 					     BM_LOCK_CLEAR | BM_LOCK_BULK | BM_LOCK_SINGLE_SLOT,
 					     peer_device);
 		}
+		drbd_resume_io(device);
 		if (err)
 			return err;
 
@@ -8471,8 +8477,8 @@ static enum sync_strategy resolve_splitbrain_from_disk_states(struct drbd_peer_d
 		SPLIT_BRAIN_AUTO_RECOVER;
 }
 
-static void drbd_resync(struct drbd_peer_device *peer_device,
-			enum resync_reason reason)
+static int drbd_resync(struct drbd_peer_device *peer_device,
+		       enum resync_reason reason)
 {
 	enum drbd_role peer_role = peer_device->connection->peer_role[NOW];
 	enum drbd_repl_state new_repl_state;
@@ -8481,6 +8487,7 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 	enum sync_rule rule;
 	int peer_node_id;
 	enum drbd_state_rv rv;
+	int err;
 	const char *tag = reason == AFTER_UNSTABLE ? "after-unstable" : "diskless-primary";
 
 	strategy = drbd_handshake(peer_device, &rule, &peer_node_id, reason == DISKLESS_PRIMARY);
@@ -8489,7 +8496,7 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 
 	if (!is_strategy_determined(strategy)) {
 		drbd_info(peer_device, "Unexpected result of handshake() %s!\n", strategy_descriptor(strategy).name);
-		return;
+		return 0;
 	}
 
 	peer_disk_state = peer_device->disk_state[NOW];
@@ -8505,7 +8512,9 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 
 	new_repl_state = strategy_to_repl_state(peer_device, peer_role, strategy);
 	if (new_repl_state != L_ESTABLISHED) {
-		bitmap_mod_after_handshake(peer_device, strategy, peer_node_id);
+		err = bitmap_mod_after_handshake(peer_device, strategy, peer_node_id);
+		if (err)
+			return err;
 		drbd_info(peer_device, "Becoming %s %s\n", drbd_repl_str(new_repl_state),
 			  reason == AFTER_UNSTABLE ? "after unstable" : "because primary is diskless");
 	}
@@ -8538,7 +8547,7 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 		drbd_info(peer_device, "Upgrading local disk to %s after unstable/weak (and no resync).\n",
 			  drbd_disk_str(peer_disk_state));
 		change_disk_state(peer_device->device, peer_disk_state, CS_VERBOSE, tag, NULL);
-		return;
+		return 0;
 	}
 
 	rv = change_repl_state(peer_device, new_repl_state, CS_VERBOSE, tag);
@@ -8550,6 +8559,7 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 		peer_device->resync_again++;
 		drbd_info(peer_device, "...postponing this until current resync finished\n");
 	}
+	return 0;
 }
 
 /* An Outdated peer upgrades itself when we trigger it (sanitize_state()); record
@@ -8865,16 +8875,19 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 			if (peer_device->repl_state[NOW] == L_ESTABLISHED &&
 			    drbd_device_stable(device, NULL) && get_ldev(device)) {
 				drbd_send_uuids(peer_device, UUID_FLAG_RESYNC, 0);
-				drbd_resync(peer_device, AFTER_UNSTABLE);
+				err = drbd_resync(peer_device, AFTER_UNSTABLE);
 				put_ldev(device);
+				if (err)
+					return err;
 			}
 		}
 
 		if (peer_device->uuid_flags & UUID_FLAG_RESYNC) {
 			if (get_ldev(device)) {
 				bool dp = peer_device->uuid_flags & UUID_FLAG_DISKLESS_PRIMARY;
+				enum resync_reason reason = dp ? DISKLESS_PRIMARY : AFTER_UNSTABLE;
 
-				drbd_resync(peer_device, dp ? DISKLESS_PRIMARY : AFTER_UNSTABLE);
+				err = drbd_resync(peer_device, reason);
 				put_ldev(device);
 			}
 		}
@@ -10278,8 +10291,9 @@ static void drbd_try_to_get_resynced(struct drbd_device *device)
 	} else if (peer_device &&
 		   (!repl_is_sync_target(peer_device->repl_state[NOW]) ||
 		    test_bit(UNSTABLE_RESYNC, peer_device->flags))) {
-		drbd_resync(peer_device, DISKLESS_PRIMARY);
-		drbd_send_uuids(peer_device, UUID_FLAG_RESYNC | UUID_FLAG_DISKLESS_PRIMARY, 0);
+		if (!drbd_resync(peer_device, DISKLESS_PRIMARY))
+			drbd_send_uuids(peer_device,
+					UUID_FLAG_RESYNC | UUID_FLAG_DISKLESS_PRIMARY, 0);
 	}
 	put_ldev(device);
 }
