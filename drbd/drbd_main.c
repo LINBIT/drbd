@@ -5850,7 +5850,13 @@ static void drbd_propagate_uuids(struct drbd_device *device, u64 nodes)
 	rcu_read_unlock();
 }
 
-void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val, u64 weak_nodes)
+/* @previous is the current UUID the primary reported before @val.  A resync
+ * target keeps @val for the resync end only if @previous is what its sync
+ * source holds: only then does the source's data plus the primary's writes
+ * since the announcement make up @val.
+ */
+void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val,
+				    u64 previous, u64 weak_nodes)
 {
 	struct drbd_device *device = from_pd->device;
 	u64 dagtag = atomic64_read(&from_pd->connection->last_dagtag_sector);
@@ -5863,10 +5869,22 @@ void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val, u
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
-		if (peer_device->repl_state[NOW] == L_SYNC_TARGET ||
-		    peer_device->repl_state[NOW] == L_BEHIND      ||
-		    peer_device->repl_state[NOW] == L_PAUSED_SYNC_T) {
-			peer_device->current_uuid = val;
+		if (repl_defers_current_uuid(peer_device->repl_state[NOW])) {
+			unsigned int period = READ_ONCE(peer_device->deferral_period);
+			u64 prev = previous & ~UUID_PRIMARY;
+
+			if (prev && prev == (peer_device->current_uuid & ~UUID_PRIMARY)) {
+				peer_device->deferred_base_uuid = peer_device->current_uuid;
+				peer_device->deferred_period = period;
+				peer_device->deferred_current_uuid = val;
+				peer_device->deferred_weak_nodes = weak_nodes;
+			} else if (prev && peer_device->deferred_period == period &&
+				   prev == (peer_device->deferred_current_uuid & ~UUID_PRIMARY)) {
+				peer_device->deferred_current_uuid = val;
+				peer_device->deferred_weak_nodes = weak_nodes;
+			} else {
+				peer_device->deferred_current_uuid = 0;
+			}
 			set_current = false;
 		}
 		if (peer_device->repl_state[NOW] == L_WF_BITMAP_S ||
@@ -5881,7 +5899,7 @@ void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val, u
 	rcu_read_unlock();
 
 	/* Cleared above when we are a resync target: the UUID is now recorded
-	 * in the sync source's peer-device and adopted at resync end.
+	 * as deferred for the sync source and adopted at resync end.
 	 */
 	if (!set_current)
 		drbd_warn(from_pd, "received new current UUID: %016llX weak_nodes=%016llX (deferred to resync end)\n",
@@ -6100,6 +6118,68 @@ u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device)
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
 
 	return newer;
+}
+
+/*
+ * Adopt the new current UUID a primary announced while we were resync target
+ * of @peer_device, deferred by drbd_uuid_received_new_current().  The resync
+ * completed, so we hold the sync source's data.  A write the primary sent us
+ * after the announcement is either on the sync source as well, or we refused
+ * it and the primary still holds it.  That holds at an unstable resync end as
+ * well, where the disk stays Inconsistent: without adopting it there, we would
+ * return to the primary at the predecessor UUID, and the primary would not
+ * accept us.
+ *
+ * Do not adopt it when blocks are still out of sync with the sync source, or
+ * when the sync source moved on to a different generation since the
+ * announcement; that generation is not known to descend from it.  Do not adopt
+ * it either when it was deferred before this node last became resync target
+ * or Behind towards @peer_device: writes of that generation may be missing.
+ *
+ * Called with uuid_sem held for writing.
+ */
+void drbd_uuid_adopt_deferred(struct drbd_peer_device *peer_device)
+{
+	struct drbd_device *device = peer_device->device;
+	bool complete = drbd_bm_total_weight(peer_device) == 0;
+	u64 val, base, source, weak, old_current = 0;
+	unsigned long flags;
+	bool adopt;
+
+	spin_lock_irqsave(&device->ldev->md.uuid_lock, flags);
+	val = peer_device->deferred_current_uuid & ~UUID_PRIMARY;
+	base = peer_device->deferred_base_uuid & ~UUID_PRIMARY;
+	source = peer_device->current_uuid & ~UUID_PRIMARY;
+	peer_device->deferred_current_uuid = 0;
+
+	adopt = val && peer_device->deferred_period == peer_device->deferral_period &&
+		(source == val || source == base) &&
+		(drbd_current_uuid(device) & ~UUID_PRIMARY) != val && complete;
+	if (adopt) {
+		old_current = device->ldev->md.current_uuid;
+		/* The sync source holds our data as of now, at its own UUID. */
+		if (source != val)
+			__set_bitmap_slots(device, peer_device->current_uuid,
+					   NODE_MASK(peer_device->node_id));
+		/* The nodes the primary did not reach stay at the UUID we leave.
+		 * A node lost since then holds @val and keeps a free slot.
+		 */
+		weak = peer_device->deferred_weak_nodes & ~NODE_MASK(peer_device->node_id);
+		__set_bitmap_slots(device, old_current, weak & ~__test_bitmap_slots(device));
+		__drbd_uuid_set_current(device, val);
+		_drbd_uuid_push_history(device, old_current);
+	}
+	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
+
+	if (adopt) {
+		drbd_info(peer_device, "adopting deferred new current UUID %016llX (was %016llX)\n",
+			  val, old_current);
+		/* No state change sends UUIDs to the sync source at a resync end. */
+		drbd_propagate_uuids(device, ~0ULL);
+	} else if (val && source != val && source != base) {
+		drbd_info(peer_device, "dropping deferred new current UUID %016llX, sync source moved on to %016llX\n",
+			  val, source);
+	}
 }
 
 bool drbd_uuid_set_exposed(struct drbd_device *device, u64 val, bool log)
