@@ -680,7 +680,7 @@ enum device_flag {
  */
 enum drbd_gen_obl_state {
 	GEN_OBL_NONE,		/* no obligation, writes admitted */
-	GEN_OBL_ARMED,		/* obligation outstanding, writes not admitted */
+	GEN_OBL_ARMED,		/* obligation outstanding, writes held back */
 	GEN_OBL_MINTING,	/* the new generation is being made right now */
 	GEN_OBL_UNCONFIRMED,	/* diskless: the new generation is exposed and
 				 * queued in order on every established channel,
