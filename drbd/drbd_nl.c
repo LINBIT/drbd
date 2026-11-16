@@ -1541,10 +1541,10 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 	 * data in core memory, to "move" it we just write it all out, there
 	 * are no reads. */
 	__drbd_suspend_io(device);
-	/* The resize 2PC already suspended I/O and waited, bounded, for it. Here a
-	 * participant is its receiver, which completes requests pending on the peer.
+	/* A receiver completes requests pending on its peer, so it must not wait for
+	 * them. The resize 2PC already waited, bounded, for I/O to drain.
 	 */
-	if (!test_bit(TWOPC_IO_SUSPENDED, &device->flags))
+	if (!(flags & DDSF_NO_IO_DRAIN) && !test_bit(TWOPC_IO_SUSPENDED, &device->flags))
 		wait_event(device->misc_wait, ap_bio_drained(device, READ_AND_WRITE));
 
 	/* Take the AL transaction lock before the md_buffer to avoid an

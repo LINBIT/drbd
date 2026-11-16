@@ -8329,12 +8329,11 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		peer_device->bm_block_shift = BM_BLOCK_SHIFT_4k;
 	}
 
-	/* Leave drbd_reconsider_queue_parameters() before drbd_determine_dev_size().
-	   In case we cleared the QUEUE_FLAG_DISCARD from our queue in
-	   drbd_reconsider_queue_parameters(), we can be sure that after
-	   drbd_determine_dev_size() no REQ_OP_DISCARDs are in the queue. */
+	/* drbd_determine_dev_size() does not wait for requests in flight here. A
+	 * discard among them is fine: P_TRIM support is agreed at connect time.
+	 */
 	if (have_ldev) {
-		enum dds_flags local_ddsf = ddsf;
+		enum dds_flags local_ddsf = ddsf | DDSF_NO_IO_DRAIN;
 
 		drbd_reconsider_queue_parameters(device, device->ldev);
 
