@@ -3176,18 +3176,7 @@ static bool rs_depth_room(struct drbd_device *device)
 
 bool drbd_rs_depth_exceeded(struct drbd_peer_device *peer_device)
 {
-	struct drbd_device *device = peer_device->device;
-	unsigned int c_min_rate;
-
-	rcu_read_lock();
-	c_min_rate = rcu_dereference(peer_device->conf)->c_min_rate;
-	rcu_read_unlock();
-
-	/* the extra throttle is disabled, and with it this bound */
-	if (c_min_rate == 0)
-		return false;
-
-	return !rs_depth_room(device);
+	return !rs_depth_room(peer_device->device);
 }
 
 static void rs_depth_resume(struct drbd_device *device)
