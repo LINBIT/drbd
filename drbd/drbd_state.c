@@ -6735,11 +6735,9 @@ retry:
 
 	request.cmd = commit_it ? P_TWOPC_COMMIT : P_TWOPC_ABORT;
 	if (have_peers) {
-		/* A write queued behind the COMMIT on the data socket reaches
-		 * the peer only after its bitmap write, and our own drain in
-		 * drbd_determine_dev_size() would wait for that. Reads too:
-		 * this is not a receiver, and a read in flight to a peer is
-		 * answered only after the peer's bitmap write as well.
+		/* Drain before the COMMIT, so that the size change normally
+		 * starts with no request in flight; drbd_determine_dev_size()
+		 * does not drain again. Reads too: this is not a receiver.
 		 * Not earlier: a request sent during the prepare phase sits
 		 * behind the prepare on the peer's data socket and is answered
 		 * once that receiver has replied, so this drain covers it, and
