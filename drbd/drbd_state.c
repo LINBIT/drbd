@@ -66,7 +66,9 @@ static bool lost_contact_to_peer_data(enum drbd_disk_state *peer_disk_state);
 static bool peer_returns_diskless(struct drbd_peer_device *peer_device,
 				  enum drbd_disk_state os, enum drbd_disk_state ns);
 static void print_state_change(struct drbd_resource *resource, const char *prefix, const char *tag);
-static void finish_state_change(struct drbd_resource *, const char *tag);
+#define FSC_RESUME_WALK		1
+#define FSC_RESTART_SUSPENDED	2
+static unsigned int finish_state_change(struct drbd_resource *, const char *tag);
 static int w_after_state_change(struct drbd_work *w, int unused);
 static enum drbd_state_rv is_valid_soft_transition(struct drbd_resource *);
 static enum drbd_state_rv is_valid_transition(struct drbd_resource *resource);
@@ -385,9 +387,9 @@ static bool writes_held_towards_lost_peers(struct drbd_device *device, u64 only_
 }
 
 /* Called at a resume exit, before the state change that can lift the last IO
- * suspension.  If that state change leaves peers behind, finish_state_change()
- * gives up the writes still held towards them (CANCEL_SUSPENDED_IO) and then
- * completes them to the application (COMPLETION_RESUMED).  That is a
+ * suspension.  If that state change leaves peers behind, it gives up the
+ * writes still held towards them (CANCEL_SUSPENDED_IO) and then completes
+ * them to the application (COMPLETION_RESUMED).  That is a
  * completion decision on behalf of a replica which never saw the data, so the
  * data generation labelling it must exist before those completions: with such
  * writes in the log, materialize the obligation and mint here, synchronously
@@ -1302,6 +1304,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 	int vnr;
 	bool all_devs_have_quorum = true;
 	struct after_state_change_work *work;
+	unsigned int fsc;
 
 	if (flags & CS_ABORT)
 		goto out;
@@ -1319,7 +1322,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 		goto out;
 
 	update_members(resource);
-	finish_state_change(resource, tag);
+	fsc = finish_state_change(resource, tag);
 
 	/* Check whether we are establishing a connection before applying the change. */
 	is_connect = drbd_state_change_is_connect(resource);
@@ -1414,6 +1417,14 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 	resource->cached_all_devices_have_quorum = all_devs_have_quorum;
 	smp_wmb(); /* Make the new state visible before the wake-ups below! */
 
+	/* Release held completions only now: drbd_req_complete() fails them
+	 * by cached_err_io, which must be that of the new state.
+	 */
+	if (fsc & FSC_RESUME_WALK)
+		__tl_walk(resource, NULL, NULL, COMPLETION_RESUMED);
+	if (fsc & FSC_RESTART_SUSPENDED)
+		drbd_restart_suspended_reqs(resource);
+
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		struct drbd_peer_device *peer_device;
 
@@ -1459,7 +1470,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 	 * "every surviving sync peer has it, and we are quorate" picture.  Release
 	 * the held completions of any generation that just became confirmed.  Runs
 	 * post-commit (NOW reflects the new state) under state_rwlock, like the
-	 * COMPLETION_RESUMED walk in finish_state_change.
+	 * COMPLETION_RESUMED walk above.
 	 */
 	{
 		bool release_gen = false;
@@ -3663,9 +3674,12 @@ static void update_peer_md_flags(struct drbd_peer_device *peer_device)
  * finish_state_change  -  carry out actions triggered by a state change
  * @resource: DBRD resource.
  * @tag: State change tag to print in status messages.
+ *
+ * Return: FSC_* actions that ___end_state_change() runs after the commit.
  */
-static void finish_state_change(struct drbd_resource *resource, const char *tag)
+static unsigned int finish_state_change(struct drbd_resource *resource, const char *tag)
 {
+	unsigned int ret = 0;
 	enum drbd_role *role = resource->role;
 	struct drbd_device *device;
 	struct drbd_connection *connection;
@@ -4207,20 +4221,16 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 		}
 	}
 
-	/* The completion-resumed walk may drop a postponed request's last
-	 * completion reference; drbd_suspended() still reads the old,
-	 * suspended state here, so that request parks on suspended_reqs.
-	 * Restart the suspended requests after the walk, or it is missed.
-	 */
 	if ((resource_suspended[OLD] && !resource_suspended[NEW]) || unfreeze_io)
-		__tl_walk(resource, NULL, NULL, COMPLETION_RESUMED);
-
+		ret |= FSC_RESUME_WALK;
 	if (resource_suspended[OLD] && !resource_suspended[NEW])
-		drbd_restart_suspended_reqs(resource);
+		ret |= FSC_RESTART_SUSPENDED;
 
 	/* reconcile settled: a held-Consistent survivor may return to UpToDate */
 	if (reconciliation_resync_done)
 		drbd_reconcile_settled_try_up_to_date(resource);
+
+	return ret;
 }
 
 static void abw_start_sync(struct drbd_device *device,
