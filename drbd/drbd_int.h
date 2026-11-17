@@ -399,6 +399,8 @@ struct drbd_request {
 	spinlock_t rq_lock;
 	unsigned int local_rq_state;
 	u16 net_rq_state[DRBD_NODE_ID_MAX];
+	/* connection->session_nr when RQ_NET_SENT was set for that peer */
+	u8 sent_session[DRBD_NODE_ID_MAX];
 
 	/* for reclaim from transfer log */
 	struct rcu_head rcu;
@@ -1396,6 +1398,8 @@ struct drbd_connection {
 	unsigned int epochs;
 
 	unsigned long last_reconnect_jif;
+	/* incremented each time this connection reaches C_CONNECTED */
+	u8 session_nr;
 	/* empty member on older kernels without blk_start_plug() */
 	struct blk_plug receiver_plug;
 	struct drbd_thread receiver;

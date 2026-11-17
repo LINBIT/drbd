@@ -14520,9 +14520,7 @@ static void cleanup_peer_ack_list(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_ack *peer_ack, *tmp;
-	struct drbd_request *req;
-	int idx = connection->peer_node_id;
-	u64 node_id_mask = NODE_MASK(idx);
+	u64 node_id_mask = NODE_MASK(connection->peer_node_id);
 
 	spin_lock_irq(&resource->peer_ack_lock);
 	list_for_each_entry_safe(peer_ack, tmp, &resource->peer_ack_list, list) {
@@ -14531,9 +14529,6 @@ static void cleanup_peer_ack_list(struct drbd_connection *connection)
 		peer_ack->queued_mask &= ~node_id_mask;
 		drbd_destroy_peer_ack_if_done(peer_ack);
 	}
-	req = resource->peer_ack_req;
-	if (req)
-		req->net_rq_state[idx] &= ~RQ_NET_SENT;
 	spin_unlock_irq(&resource->peer_ack_lock);
 }
 

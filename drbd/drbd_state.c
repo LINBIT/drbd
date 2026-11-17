@@ -4060,8 +4060,10 @@ static unsigned int finish_state_change(struct drbd_resource *resource, const ch
 		/* remember last connect time so request_timer_fn() won't
 		 * kill newly established sessions while we are still trying to thaw
 		 * previously frozen IO */
-		if (cstate[OLD] < C_CONNECTED && cstate[NEW] == C_CONNECTED)
+		if (cstate[OLD] < C_CONNECTED && cstate[NEW] == C_CONNECTED) {
 			connection->last_reconnect_jif = jiffies;
+			connection->session_nr++;
+		}
 
 		/* A dry run that got this far had no resync handshake to
 		 * report on (a diskless side or no volumes); the connection is
