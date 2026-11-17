@@ -10394,6 +10394,18 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	if (old_peer_state.conn <= C_TEAR_DOWN)
 		return -ECONNRESET;
 
+	/* Neither of two WFBitMapT sends the first bitmap, and two sync sources
+	 * resync nothing; only a new handshake resolves either.
+	 */
+	if (connection->agreed_pro_version >= 110 &&
+	    ((old_peer_state.conn == L_WF_BITMAP_T && peer_state.conn == L_WF_BITMAP_T) ||
+	     (repl_is_sync_source(old_peer_state.conn) && repl_is_sync_source(peer_state.conn)))) {
+		drbd_err(peer_device, "Peer is %s as well; reconnecting\n",
+			 drbd_repl_str(peer_state.conn));
+		drbd_abandon_wf_bitmap_t(connection);
+		return -EPROTO;
+	}
+
 	if (!test_bit(INITIAL_STATE_RECEIVED, peer_device->flags) &&
 	    peer_state.role == R_PRIMARY && peer_device->uuid_flags & UUID_FLAG_STABLE)
 		check_resync_source(peer_device, peer_device->uuid_node_mask);

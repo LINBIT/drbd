@@ -3131,12 +3131,21 @@ void wf_bitmap_t_timer_fn(struct timer_list *t)
 /* Each side of an established connection can decide on a bitmap exchange on
  * its own; if the peer decided otherwise, only a new handshake resolves it.
  */
+/* An abandoned attempt must not keep the Outdated it set (sanitize_state()) */
+void drbd_abandon_wf_bitmap_t(struct drbd_connection *connection)
+{
+	struct drbd_peer_device *peer_device;
+	int vnr;
+
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
+		if (peer_device->repl_state[NOW] == L_WF_BITMAP_T)
+			clear_bit(RECONCILIATION_RESYNC, peer_device->flags);
+}
+
 static void check_wf_bitmap_t(struct drbd_peer_device *peer_device)
 {
 	struct drbd_connection *connection = peer_device->connection;
 	unsigned long timeout = drbd_wf_bitmap_t_timeout(connection);
-	struct drbd_peer_device *pd;
-	int vnr;
 
 	if (!test_bit(WF_BITMAP_T_WATCHED, peer_device->flags) ||
 	    peer_device->repl_state[NOW] != L_WF_BITMAP_T ||
@@ -3151,10 +3160,7 @@ static void check_wf_bitmap_t(struct drbd_peer_device *peer_device)
 
 	drbd_warn(peer_device, "No bitmap after %lus in WFBitMapT, peer is %s; reconnecting\n",
 		  timeout / HZ, drbd_repl_str(peer_device->last_repl_state));
-	/* An abandoned attempt must not keep the Outdated it set (sanitize_state()) */
-	idr_for_each_entry(&connection->peer_devices, pd, vnr)
-		if (pd->repl_state[NOW] == L_WF_BITMAP_T)
-			clear_bit(RECONCILIATION_RESYNC, pd->flags);
+	drbd_abandon_wf_bitmap_t(connection);
 	change_cstate(connection, C_PROTOCOL_ERROR, CS_HARD);
 }
 
