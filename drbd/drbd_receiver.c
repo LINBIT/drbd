@@ -4666,9 +4666,13 @@ void drbd_cleanup_after_failed_submit_peer_write(struct drbd_peer_request *peer_
 
 	drbd_remove_peer_req_interval(peer_req);
 
+	if (peer_req->flags & EE_SEND_WRITE_ACK)
+		dec_unacked(peer_device);
 	drbd_may_finish_epoch(connection, peer_req->epoch, EV_PUT + EV_CLEANUP);
 	put_ldev(device);
 	drbd_free_peer_req(peer_req);
+	if (atomic_dec_and_test(&connection->active_ee_cnt))
+		wake_up(&connection->ee_wait);
 	change_cstate(connection, C_PROTOCOL_ERROR, CS_HARD);
 }
 
