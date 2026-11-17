@@ -6657,7 +6657,7 @@ static enum sync_strategy drbd_disk_states_target_strategy(
 static bool primary_neighbor_decides(struct drbd_peer_device *peer_device,
 				     bool connecting, enum sync_strategy *strategy)
 {
-	bool we_stable = peer_device->comm_uuid_flags & UUID_FLAG_STABLE;
+	bool self_stable = peer_device->comm_uuid_flags & UUID_FLAG_STABLE;
 	bool peer_stable = peer_device->uuid_flags & UUID_FLAG_STABLE;
 
 	/*
@@ -6666,10 +6666,10 @@ static bool primary_neighbor_decides(struct drbd_peer_device *peer_device,
 	 */
 	if (peer_device->connection->agreed_pro_version < 125)
 		return false;
-	if (!connecting || we_stable == peer_stable)
+	if (!connecting || self_stable == peer_stable)
 		return false;
 
-	*strategy = we_stable ? SYNC_TARGET_USE_BITMAP : SYNC_SOURCE_USE_BITMAP;
+	*strategy = self_stable ? SYNC_TARGET_USE_BITMAP : SYNC_SOURCE_USE_BITMAP;
 	return true;
 }
 
@@ -6730,7 +6730,7 @@ static bool reconcile_equal_uuid_bitmap_strategy(struct drbd_peer_device *peer_d
 	const int node_id = device->resource->res_opts.node_id;
 	bool by_provenance = connection->agreed_pro_version >= 125;
 	bool connecting = connection->cstate[NOW] == C_CONNECTING;
-	bool we_hold, peer_holds;
+	bool self_holds, peer_holds;
 	u64 local_uuid_flags;
 
 	if (*strategy != NO_SYNC)
@@ -6751,16 +6751,16 @@ static bool reconcile_equal_uuid_bitmap_strategy(struct drbd_peer_device *peer_d
 		 * resync would pull a healthy UpToDate peer through Inconsistent
 		 * for nothing.
 		 */
-		we_hold = peer_device->comm_bm_set &&
+		self_holds = peer_device->comm_bm_set &&
 			(peer_device->comm_uuid_flags & UUID_FLAG_BITMAP_AUTHORITATIVE);
 		peer_holds = peer_device->dirty_bits &&
 			(peer_device->uuid_flags & UUID_FLAG_BITMAP_AUTHORITATIVE);
-		if (!we_hold && !peer_holds)
+		if (!self_holds && !peer_holds)
 			return false;
 
-		if (we_hold != peer_holds) {
-			enum drbd_disk_state holder = we_hold ? disk_state : peer_disk_state;
-			enum drbd_disk_state other = we_hold ? peer_disk_state : disk_state;
+		if (self_holds != peer_holds) {
+			enum drbd_disk_state holder = self_holds ? disk_state : peer_disk_state;
+			enum drbd_disk_state other = self_holds ? peer_disk_state : disk_state;
 
 			if (holder != D_UP_TO_DATE || other < D_OUTDATED)
 				return false;
@@ -6807,12 +6807,12 @@ static bool reconcile_equal_uuid_bitmap_strategy(struct drbd_peer_device *peer_d
 		    (peer_device->uuid_flags & UUID_FLAG_PRIMARY_LOST_QUORUM))
 			return false;
 
-		we_hold = peer_device->comm_bm_set != 0;
+		self_holds = peer_device->comm_bm_set != 0;
 		peer_holds = peer_device->dirty_bits != 0;
 	}
 
 	*rule = RULE_RECONCILE_BITMAP;
-	if (we_hold != peer_holds) {
+	if (self_holds != peer_holds) {
 		/*
 		 * The primary neighbor overrides the holder only between two
 		 * UpToDate copies. From protocol 125 on, the non-holder may be
@@ -6825,7 +6825,7 @@ static bool reconcile_equal_uuid_bitmap_strategy(struct drbd_peer_device *peer_d
 
 		if (!both_up_to_date ||
 		    !primary_neighbor_decides(peer_device, connecting, strategy))
-			*strategy = we_hold ?
+			*strategy = self_holds ?
 				SYNC_SOURCE_USE_BITMAP : SYNC_TARGET_USE_BITMAP;
 	} else {
 		/*
