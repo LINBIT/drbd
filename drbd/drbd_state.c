@@ -3633,8 +3633,16 @@ static unsigned int finish_state_change(struct drbd_resource *resource, const ch
 				clear_bit(B_RS_H_DONE, peer_device->flags);
 
 			if (peer_device->repl_state[OLD] != L_WF_BITMAP_T &&
-					peer_device->repl_state[NEW] == L_WF_BITMAP_T)
+					peer_device->repl_state[NEW] == L_WF_BITMAP_T) {
 				clear_bit(B_RS_H_DONE, peer_device->flags);
+				if (test_bit(WF_BITMAP_T_WATCHED, peer_device->flags)) {
+					peer_device->wf_bitmap_t_since = jiffies;
+					mod_timer(&peer_device->wf_bitmap_t_timer,
+						  jiffies + drbd_wf_bitmap_t_timeout(connection));
+				}
+			}
+			if (peer_device->repl_state[NEW] != L_WF_BITMAP_T)
+				clear_bit(WF_BITMAP_T_WATCHED, peer_device->flags);
 
 			if (!is_sync_state(peer_device, NOW) &&
 			    is_sync_state(peer_device, NEW)) {

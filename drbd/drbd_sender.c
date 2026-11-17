@@ -3108,6 +3108,56 @@ void start_resync_timer_fn(struct timer_list *t)
 	drbd_peer_device_post_work(peer_device, RS_START);
 }
 
+/* Four network timeouts: the peer has answered our decision with its state by then */
+unsigned long drbd_wf_bitmap_t_timeout(struct drbd_connection *connection)
+{
+	struct net_conf *nc;
+	unsigned long timeout;
+
+	rcu_read_lock();
+	nc = rcu_dereference(connection->transport.net_conf);
+	timeout = 4 * nc->timeout * HZ / 10;
+	rcu_read_unlock();
+	return timeout;
+}
+
+void wf_bitmap_t_timer_fn(struct timer_list *t)
+{
+	struct drbd_peer_device *peer_device = timer_container_of(peer_device, t,
+			wf_bitmap_t_timer);
+	drbd_peer_device_post_work(peer_device, WF_BITMAP_T_CHECK);
+}
+
+/* Each side of an established connection can decide on a bitmap exchange on
+ * its own; if the peer decided otherwise, only a new handshake resolves it.
+ */
+static void check_wf_bitmap_t(struct drbd_peer_device *peer_device)
+{
+	struct drbd_connection *connection = peer_device->connection;
+	unsigned long timeout = drbd_wf_bitmap_t_timeout(connection);
+	struct drbd_peer_device *pd;
+	int vnr;
+
+	if (!test_bit(WF_BITMAP_T_WATCHED, peer_device->flags) ||
+	    peer_device->repl_state[NOW] != L_WF_BITMAP_T ||
+	    time_before(jiffies, peer_device->wf_bitmap_t_since + timeout))
+		return;
+
+	if (peer_device->last_repl_state != L_ESTABLISHED &&
+	    peer_device->last_repl_state != L_WF_BITMAP_T) {
+		mod_timer(&peer_device->wf_bitmap_t_timer, jiffies + timeout);
+		return;
+	}
+
+	drbd_warn(peer_device, "No bitmap after %lus in WFBitMapT, peer is %s; reconnecting\n",
+		  timeout / HZ, drbd_repl_str(peer_device->last_repl_state));
+	/* An abandoned attempt must not keep the Outdated it set (sanitize_state()) */
+	idr_for_each_entry(&connection->peer_devices, pd, vnr)
+		if (pd->repl_state[NOW] == L_WF_BITMAP_T)
+			clear_bit(RECONCILIATION_RESYNC, pd->flags);
+	change_cstate(connection, C_PROTOCOL_ERROR, CS_HARD);
+}
+
 bool drbd_stable_sync_source_present(struct drbd_peer_device *except_peer_device, enum which_state which)
 {
 	struct drbd_device *device = except_peer_device->device;
@@ -3566,6 +3616,8 @@ static void do_peer_device_work(struct drbd_peer_device *peer_device, const unsi
 		handle_congestion(peer_device);
 	if (test_bit(SEND_RECONCILE_UUID, &todo))
 		send_reconcile_current_uuid(peer_device);
+	if (test_bit(WF_BITMAP_T_CHECK, &todo))
+		check_wf_bitmap_t(peer_device);
 }
 
 #define DRBD_DEVICE_WORK_MASK	\
@@ -3582,6 +3634,7 @@ static void do_peer_device_work(struct drbd_peer_device *peer_device, const unsi
 	|(1UL << RS_DONE)		\
 	|(1UL << HANDLE_CONGESTION)     \
 	|(1UL << SEND_RECONCILE_UUID)   \
+	|(1UL << WF_BITMAP_T_CHECK)	\
 	)
 
 static void __do_unqueued_peer_device_work(struct drbd_connection *connection)
