@@ -1784,6 +1784,19 @@ struct drbd_peer_device {
 	atomic64_t ov_left; /* in bits */
 	unsigned long ov_skipped; /* in bits */
 	u64 rs_start_uuid;
+	/* A primary's new current UUID received while resync target of this
+	 * peer, and this peer's current UUID it was received on top of.
+	 * Adopted at resync end, see drbd_uuid_adopt_deferred().
+	 */
+	u64 deferred_current_uuid;
+	u64 deferred_base_uuid;
+	/* The nodes the primary did not reach when it created that UUID. */
+	u64 deferred_weak_nodes;
+	/* Counts the entries into SyncTarget, PausedSyncT or Behind.  A UUID
+	 * deferred in one such period is not adopted at the end of a later one.
+	 */
+	unsigned int deferral_period;
+	unsigned int deferred_period;
 
 	u64 current_uuid;
 	u64 bitmap_uuids[DRBD_PEERS_MAX];
@@ -2291,7 +2304,7 @@ int drbd_md_write(struct drbd_device *device,
 int drbd_md_sync(struct drbd_device *device);
 int drbd_md_sync_if_dirty(struct drbd_device *device);
 void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val,
-				    u64 weak_nodes);
+				    u64 previous, u64 weak_nodes);
 void drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 uuid);
 void __drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val);
 void _drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val);
@@ -2305,6 +2318,7 @@ int drbd_day0_node_id(struct drbd_md *md, int exclude);
 void drbd_uuid_resync_starting(struct drbd_peer_device *peer_device);
 void drbd_uuid_resync_starting_source(struct drbd_peer_device *peer_device);
 u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device);
+void drbd_uuid_adopt_deferred(struct drbd_peer_device *peer_device);
 int drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device);
 bool drbd_uuid_set_exposed(struct drbd_device *device, u64 val, bool log);
 u64 drbd_weak_nodes_device(struct drbd_device *device);
@@ -3333,6 +3347,12 @@ static inline int __dec_unacked(struct drbd_peer_device *peer_device)
 static inline bool repl_is_sync_target(enum drbd_repl_state repl_state)
 {
 	return repl_state == L_SYNC_TARGET || repl_state == L_PAUSED_SYNC_T;
+}
+
+/* The states in which drbd_uuid_received_new_current() defers. */
+static inline bool repl_defers_current_uuid(enum drbd_repl_state repl_state)
+{
+	return repl_is_sync_target(repl_state) || repl_state == L_BEHIND;
 }
 
 static inline bool repl_is_sync_source(enum drbd_repl_state repl_state)

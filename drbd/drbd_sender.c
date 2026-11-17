@@ -2189,12 +2189,16 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 				for (i = 0; i < ARRAY_SIZE(peer_device->history_uuids); i++)
 					peer_device->history_uuids[i] =
 						drbd_history_uuid(device, i);
+
+				drbd_uuid_adopt_deferred(peer_device);
 			} else {
 				if (!test_bit(UUIDS_RECEIVED, peer_device->flags))
 					drbd_err(peer_device, "BUG: uuids were not received!\n");
 
 				if (test_bit(UNSTABLE_RESYNC, peer_device->flags))
 					drbd_info(peer_device, "Peer was unstable during resync\n");
+
+				drbd_uuid_adopt_deferred(peer_device);
 			}
 		} else if (repl_state[NOW] == L_SYNC_SOURCE || repl_state[NOW] == L_PAUSED_SYNC_S) {
 			if (new_peer_disk_state != D_MASK)

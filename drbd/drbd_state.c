@@ -3878,6 +3878,10 @@ static unsigned int finish_state_change(struct drbd_resource *resource, const ch
 			}
 
 
+			if (!repl_defers_current_uuid(repl_state[OLD]) &&
+			    repl_defers_current_uuid(repl_state[NEW]))
+				peer_device->deferral_period++;
+
 			if (repl_state[OLD] > L_ESTABLISHED && repl_state[NEW] <= L_ESTABLISHED) {
 				if (test_and_clear_bit(RECONCILIATION_RESYNC, peer_device->flags))
 					reconciliation_resync_done = true;

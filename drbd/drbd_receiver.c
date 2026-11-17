@@ -8620,7 +8620,7 @@ static void propagate_skip_initial_to_diskless(struct drbd_device *device)
 	}
 }
 
-static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
+static int __receive_uuids(struct drbd_peer_device *peer_device, u64 previous_uuid, u64 node_mask)
 {
 	enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
 	struct drbd_device *device = peer_device->device;
@@ -8677,7 +8677,8 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 		}
 
 		if (peer_device->uuid_flags & UUID_FLAG_NEW_DATAGEN)
-			drbd_uuid_received_new_current(peer_device, peer_device->current_uuid, node_mask);
+			drbd_uuid_received_new_current(peer_device, peer_device->current_uuid,
+						       previous_uuid, node_mask);
 
 		err = drbd_uuid_detect_finished_resyncs(peer_device);
 
@@ -8730,6 +8731,7 @@ static int receive_uuids(struct drbd_connection *connection, struct packet_info 
 	struct drbd_peer_device *peer_device;
 	struct p_uuids *p = pi->data;
 	int history_uuids, i;
+	u64 previous_uuid;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
 	if (!peer_device)
@@ -8738,6 +8740,7 @@ static int receive_uuids(struct drbd_connection *connection, struct packet_info 
 	history_uuids = min_t(int, HISTORY_UUIDS_V08,
 			      ARRAY_SIZE(peer_device->history_uuids));
 
+	previous_uuid = peer_device->current_uuid;
 	peer_device->current_uuid = be64_to_cpu(p->current_uuid);
 	peer_device->bitmap_uuids[node_id] = be64_to_cpu(p->bitmap_uuid);
 	for (i = 0; i < history_uuids; i++)
@@ -8748,7 +8751,7 @@ static int receive_uuids(struct drbd_connection *connection, struct packet_info 
 	peer_device->uuid_flags = be64_to_cpu(p->uuid_flags) | UUID_FLAG_STABLE;
 	set_bit(UUIDS_RECEIVED, peer_device->flags);
 
-	return __receive_uuids(peer_device, 0);
+	return __receive_uuids(peer_device, previous_uuid, 0);
 }
 
 static int receive_uuids110(struct drbd_connection *connection, struct packet_info *pi)
@@ -8756,7 +8759,7 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 	struct drbd_peer_device *peer_device;
 	struct p_uuids110 *p = pi->data;
 	int bitmap_uuids, history_uuids, rest, i, pos, err;
-	u64 bitmap_uuids_mask, node_mask;
+	u64 bitmap_uuids_mask, node_mask, previous_uuid;
 	struct drbd_peer_md *peer_md = NULL;
 	struct drbd_device *device;
 	int not_allocated = -1;
@@ -8805,6 +8808,7 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 	 * it, the peer's handshake report is the truth -- take it, so we do not
 	 * treat the peer as UpToDate at a generation it never persisted.
 	 */
+	previous_uuid = peer_device->current_uuid;
 	if (test_bit(CURRENT_UUID_UNCONFIRMED, peer_device->flags) ||
 	    device->resource->role[NOW] != R_PRIMARY ||
 	    device->disk_state[NOW] != D_DISKLESS ||
@@ -8854,7 +8858,7 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 	    peer_device->uuid_flags & UUID_FLAG_STABLE)
 		check_resync_source(peer_device, node_mask);
 
-	err = __receive_uuids(peer_device, node_mask);
+	err = __receive_uuids(peer_device, previous_uuid, node_mask);
 	if (err)
 		return err;
 
@@ -11735,7 +11739,7 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
 	struct p_current_uuid *p = pi->data;
-	u64 current_uuid, weak_nodes;
+	u64 current_uuid, previous_uuid, weak_nodes;
 	bool moved_on;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
@@ -11748,6 +11752,7 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	weak_nodes |= NODE_MASK(peer_device->node_id);
 	moved_on = drbd_diskless_moved_on(peer_device, current_uuid);
 
+	previous_uuid = peer_device->current_uuid;
 	peer_device->current_uuid = current_uuid;
 
 	if (get_ldev(device)) {
@@ -11782,7 +11787,8 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 		 * resync target (so resync-end adoption brings us to the
 		 * primary's generation), drop otherwise.
 		 */
-		drbd_uuid_received_new_current(peer_device, current_uuid, weak_nodes);
+		drbd_uuid_received_new_current(peer_device, current_uuid, previous_uuid,
+					       weak_nodes);
 		drbd_md_sync_if_dirty(device);
 		put_ldev(device);
 	} else if (peer_device->repl_state[NOW] >= L_ESTABLISHED &&
