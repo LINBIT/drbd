@@ -2435,6 +2435,17 @@ void drbd_update_mdf_al_disabled(struct drbd_device *device, enum which_state wh
 	put_ldev(device);
 }
 
+static void send_sync_param_record_verify_alg(struct drbd_peer_device *peer_device)
+{
+	struct drbd_resource *resource = peer_device->device->resource;
+
+	if (drbd_send_sync_param(peer_device))
+		return;
+	mutex_lock(&resource->conf_update);
+	drbd_record_peer_verify_alg(peer_device);
+	mutex_unlock(&resource->conf_update);
+}
+
 int drbd_adm_disk_opts(struct drbd_adm_ctx *adm_ctx)
 {
 	enum drbd_ret_code retcode = NO_ERROR;
@@ -2568,7 +2579,7 @@ int drbd_adm_disk_opts(struct drbd_adm_ctx *adm_ctx)
 
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state[NOW] >= L_ESTABLISHED)
-			drbd_send_sync_param(peer_device);
+			send_sync_param_record_verify_alg(peer_device);
 	}
 
 	kvfree_rcu_mightsleep(old_disk_conf);
@@ -4522,7 +4533,7 @@ int drbd_adm_net_opts(struct drbd_adm_ctx *adm_ctx)
 		int vnr;
 
 		idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
-			drbd_send_sync_param(peer_device);
+			send_sync_param_record_verify_alg(peer_device);
 	}
 
 	goto out;

@@ -1289,7 +1289,7 @@ int drbd_send_peer_ack(struct drbd_connection *connection, u64 mask, u64 dagtag_
 int drbd_send_sync_param(struct drbd_peer_device *peer_device)
 {
 	struct p_rs_param_95 *p;
-	int size, err;
+	int size;
 	const int apv = peer_device->connection->agreed_pro_version;
 	enum drbd_packet cmd;
 	struct drbd_net_conf *nc;
@@ -1344,23 +1344,22 @@ int drbd_send_sync_param(struct drbd_peer_device *peer_device)
 		strscpy(p->csums_alg, nc->csums_alg);
 	rcu_read_unlock();
 
-	err = drbd_send_command(peer_device, cmd, DATA_STREAM);
+	return drbd_send_command(peer_device, cmd, DATA_STREAM);
+}
 
-	/* A peer with established replication adopts the verify-alg we
-	 * advertise, see receive_SyncParam(). Keep our record of the peer's
-	 * algorithm current. Must not be called with conf_update held.
-	 */
-	if (!err && apv >= 88 && peer_device->repl_state[NOW] != L_OFF) {
-		struct drbd_connection *connection = peer_device->connection;
+/* Call after drbd_send_sync_param() succeeded. A peer with established
+ * replication adopts the verify-alg we advertise, see receive_SyncParam().
+ */
+void drbd_record_peer_verify_alg(struct drbd_peer_device *peer_device)
+{
+	struct drbd_connection *connection = peer_device->connection;
 
-		mutex_lock(&connection->resource->conf_update);
-		nc = connection->transport.net_conf;
-		strscpy(connection->peer_verify_alg, nc->verify_alg,
+	lockdep_assert_held(&connection->resource->conf_update);
+	if (connection->agreed_pro_version >= 88 &&
+	    peer_device->repl_state[NOW] != L_OFF)
+		strscpy(connection->peer_verify_alg,
+			connection->transport.net_conf->verify_alg,
 			sizeof(connection->peer_verify_alg));
-		mutex_unlock(&connection->resource->conf_update);
-	}
-
-	return err;
 }
 
 int __drbd_send_protocol(struct drbd_connection *connection, enum drbd_packet cmd)
@@ -4606,8 +4605,9 @@ enum drbd_ret_code drbd_create_device(struct drbd_adm_ctx *adm_ctx, unsigned int
 		connection = peer_device->connection;
 		peer_device->node_id = connection->peer_node_id;
 
-		if (connection->cstate[NOW] >= C_CONNECTED)
-			drbd_connected(peer_device);
+		if (connection->cstate[NOW] >= C_CONNECTED &&
+		    !drbd_connected(peer_device))
+			drbd_record_peer_verify_alg(peer_device);
 	}
 
 	drbd_debugfs_device_add(device);

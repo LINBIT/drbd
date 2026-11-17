@@ -2256,6 +2256,7 @@ int drbd_send_state(struct drbd_peer_device *peer_device,
 int drbd_send_current_state(struct drbd_peer_device *peer_device);
 void drbd_send_uuids_peer_attach(struct drbd_peer_device *peer_device);
 int drbd_send_sync_param(struct drbd_peer_device *peer_device);
+void drbd_record_peer_verify_alg(struct drbd_peer_device *peer_device);
 int drbd_send_out_of_sync(struct drbd_peer_device *peer_device,
 			  sector_t sector, unsigned int size);
 int drbd_send_block(struct drbd_peer_device *peer_device,
