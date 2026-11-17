@@ -9310,6 +9310,7 @@ static void peer_device_init_connect_state(struct drbd_peer_device *peer_device)
 {
 	clear_bit(INITIAL_STATE_SENT, peer_device->flags);
 	clear_bit(INITIAL_STATE_RECEIVED, peer_device->flags);
+	peer_device->last_repl_state = L_OFF;
 	clear_bit(HAVE_SIZES, peer_device->flags);
 	clear_bit(UUIDS_RECEIVED, peer_device->flags);
 	clear_bit(CURRENT_UUID_RECEIVED, peer_device->flags);
@@ -10335,6 +10336,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	union drbd_state old_peer_state, peer_state;
 	enum drbd_disk_state peer_disk_state;
 	enum drbd_repl_state new_repl_state;
+	enum drbd_repl_state prev_peer_repl_state;
 	bool peer_was_resync_target, do_handshake = false;
 	bool consumed_resync, postponed = false;
 	enum chg_state_flags begin_state_chg_flags = CS_VERBOSE | CS_WAIT_COMPLETE;
@@ -10381,6 +10383,12 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		drbd_info(peer_device, "real peer disk state = %s\n", drbd_disk_str(peer_disk_state));
 	}
 
+	/* Record it before acting on it: a state change below can make us
+	 * announce our own state, and drbd_send_state() checks it against this.
+	 */
+	prev_peer_repl_state = peer_device->last_repl_state;
+	WRITE_ONCE(peer_device->last_repl_state, peer_state.conn);
+
 	read_lock_irq(&resource->state_rwlock);
 	old_peer_state = drbd_get_peer_device_state(peer_device, NOW);
 	read_unlock_irq(&resource->state_rwlock);
@@ -10394,12 +10402,8 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	if (old_peer_state.conn <= C_TEAR_DOWN)
 		return -ECONNRESET;
 
-	/* Neither of two WFBitMapT sends the first bitmap, and two sync sources
-	 * resync nothing; only a new handshake resolves either.
-	 */
 	if (connection->agreed_pro_version >= 110 &&
-	    ((old_peer_state.conn == L_WF_BITMAP_T && peer_state.conn == L_WF_BITMAP_T) ||
-	     (repl_is_sync_source(old_peer_state.conn) && repl_is_sync_source(peer_state.conn)))) {
+	    repl_states_conflict(old_peer_state.conn, peer_state.conn)) {
 		drbd_err(peer_device, "Peer is %s as well; reconnecting\n",
 			 drbd_repl_str(peer_state.conn));
 		drbd_abandon_wf_bitmap_t(connection);
@@ -10412,8 +10416,8 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 	peer_was_resync_target =
 		connection->agreed_pro_version >= 110 ?
-		peer_device->last_repl_state == L_SYNC_TARGET ||
-		peer_device->last_repl_state == L_PAUSED_SYNC_T
+		prev_peer_repl_state == L_SYNC_TARGET ||
+		prev_peer_repl_state == L_PAUSED_SYNC_T
 		:
 		true;
 	/* If this is the "end of sync" confirmation, usually the peer disk
@@ -10449,10 +10453,8 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 			}
 
 			if (finish_now || old_peer_state.conn == L_SYNC_SOURCE ||
-			    old_peer_state.conn == L_PAUSED_SYNC_S) {
+			    old_peer_state.conn == L_PAUSED_SYNC_S)
 				drbd_resync_finished(peer_device, peer_state.disk);
-				peer_device->last_repl_state = peer_state.conn;
-			}
 			return 0;
 		}
 	}
@@ -10462,7 +10464,6 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	    peer_state.conn == L_ESTABLISHED && peer_disk_state == D_UP_TO_DATE) {
 		ov_out_of_sync_print(peer_device);
 		drbd_resync_finished(peer_device, D_MASK);
-		peer_device->last_repl_state = peer_state.conn;
 		return 0;
 	}
 
@@ -10799,7 +10800,6 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 	drbd_md_sync(device); /* update connected indicator, effective_size, ... */
 
-	peer_device->last_repl_state = peer_state.conn;
 	return 0;
 fail:
 	change_cstate(connection, C_DISCONNECTING, CS_HARD);
@@ -12384,6 +12384,7 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 	 */
 	clear_bit(RECONCILE_INJECT_CUR_UUID, peer_device->flags);
 	clear_bit(SEND_RECONCILE_UUID, peer_device->flags);
+	clear_bit(REPL_STATE_CONFLICT, peer_device->flags);
 	/* If a handshake reconcile armed RECONCILIATION_RESYNC but no resync
 	 * followed, drop it so it cannot mislabel a later resync.
 	 */

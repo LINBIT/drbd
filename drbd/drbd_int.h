@@ -771,6 +771,9 @@ enum peer_device_flag {
 	WF_BITMAP_T_CHECK,	/* worker: check whether WFBitMapT waits for a bitmap
 				 * the peer never sends
 				 */
+	REPL_STATE_CONFLICT,	/* worker: drbd_send_state() held back a state the
+				 * peer announced as well
+				 */
 	INITIAL_STATE_SENT,
 	INITIAL_STATE_RECEIVED,
 	RECONCILIATION_RESYNC,
@@ -3233,6 +3236,15 @@ static inline bool repl_defers_current_uuid(enum drbd_repl_state repl_state)
 static inline bool repl_is_sync_source(enum drbd_repl_state repl_state)
 {
 	return repl_state == L_SYNC_SOURCE || repl_state == L_PAUSED_SYNC_S;
+}
+
+/* Neither of two WFBitMapT sends the first bitmap, and two sync sources
+ * resync nothing; only a new handshake resolves either.
+ */
+static inline bool repl_states_conflict(enum drbd_repl_state a, enum drbd_repl_state b)
+{
+	return (a == L_WF_BITMAP_T && b == L_WF_BITMAP_T) ||
+		(repl_is_sync_source(a) && repl_is_sync_source(b));
 }
 
 static inline bool repl_is_sync(enum drbd_repl_state repl_state)

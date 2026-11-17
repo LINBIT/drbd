@@ -3164,6 +3164,26 @@ static void check_wf_bitmap_t(struct drbd_peer_device *peer_device)
 	change_cstate(connection, C_PROTOCOL_ERROR, CS_HARD);
 }
 
+/* The held-back state still conflicts, or the peer has moved on and gets it */
+static void resolve_repl_state_conflict(struct drbd_peer_device *peer_device)
+{
+	struct drbd_connection *connection = peer_device->connection;
+
+	if (connection->cstate[NOW] != C_CONNECTED)
+		return;
+
+	if (!repl_states_conflict(peer_device->repl_state[NOW], peer_device->last_repl_state)) {
+		drbd_send_current_state(peer_device);
+		return;
+	}
+
+	drbd_err(peer_device, "Not announcing %s, peer is %s as well; reconnecting\n",
+		 drbd_repl_str(peer_device->repl_state[NOW]),
+		 drbd_repl_str(peer_device->last_repl_state));
+	drbd_abandon_wf_bitmap_t(connection);
+	change_cstate(connection, C_PROTOCOL_ERROR, CS_HARD);
+}
+
 bool drbd_stable_sync_source_present(struct drbd_peer_device *except_peer_device, enum which_state which)
 {
 	struct drbd_device *device = except_peer_device->device;
@@ -3624,6 +3644,8 @@ static void do_peer_device_work(struct drbd_peer_device *peer_device, const unsi
 		send_reconcile_current_uuid(peer_device);
 	if (test_bit(WF_BITMAP_T_CHECK, &todo))
 		check_wf_bitmap_t(peer_device);
+	if (test_bit(REPL_STATE_CONFLICT, &todo))
+		resolve_repl_state_conflict(peer_device);
 }
 
 #define DRBD_DEVICE_WORK_MASK	\
@@ -3641,6 +3663,7 @@ static void do_peer_device_work(struct drbd_peer_device *peer_device, const unsi
 	|(1UL << HANDLE_CONGESTION)     \
 	|(1UL << SEND_RECONCILE_UUID)   \
 	|(1UL << WF_BITMAP_T_CHECK)	\
+	|(1UL << REPL_STATE_CONFLICT)	\
 	)
 
 static void __do_unqueued_peer_device_work(struct drbd_connection *connection)

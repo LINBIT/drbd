@@ -1790,6 +1790,13 @@ int conn_send_state(struct drbd_connection *connection, union drbd_state state)
  */
 int drbd_send_state(struct drbd_peer_device *peer_device, union drbd_state state)
 {
+	/* Announcing what the peer announced already cannot resolve; reconnect */
+	if (peer_device->connection->agreed_pro_version >= 110 &&
+	    repl_states_conflict(state.conn, READ_ONCE(peer_device->last_repl_state))) {
+		drbd_peer_device_post_work(peer_device, REPL_STATE_CONFLICT);
+		return -EPROTO;
+	}
+
 	peer_device->comm_state = state;
 	return send_state(peer_device->connection, peer_device->device->vnr, state);
 }
