@@ -4084,6 +4084,7 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	connection->after_reconciliation.lost_node_id = -1;
 	connection->reconcile_handshake.lost_node_id = -1;
 	connection->reconcile_handshake.sent_lost_node = false;
+	connection->reconcile_decided.lost_node_id = -1;
 
 	connection->reassemble_buffer.buffer = (u8 *)&connection->reassemble_buffer_bytes;
 
