@@ -2,11 +2,51 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.3.5-rc.2 (api:genl2/proto:86-101,118-125/transport:23)
+9.3.5 (api:genl2/proto:86-101,118-125/transport:23)
 --------
+ * Track changed blocks for incremental backups: a tracking bitmap slot
+   records every write to the backing device; cbt-flush and cbt-start
+   bracket a snapshot taken while I/O is suspended on all nodes
+ * suspend-io now also waits for the barrier ack of the last epoch, so
+   that with protocols A and B the writes are on the peers' stable
+   storage too; flush-to-peers=no skips that wait
+ * Add rdma2, a new RDMA transport that moves all data with one-sided
+   RDMA-WRITE, sends bios zero-copy, and fails over to a surviving path
+   when a link goes down
+ * Serve the new drbd2 netlink family next to the drbd family
+ * Optionally serve DRBD 8.4 userland over the netlink family at version
+   1 (CONFIG_DRBD_NL_DRBD1, rpmbuild --with nl_drbd1,
+   DEB_BUILD_OPTIONS=nl_drbd1); off by default
+ * Fix lb-tcp skipping a path for good after the peer closed it first
+   during a disconnect, which starved every later handshake
+ * Fix spurious and racy "bitmap locked" warnings when bitmap operations
+   on different peer slots run concurrently
  * Serve changed block tracking on the drbd netlink family too, so that
    it works on kernels without the drbd2 family (before 6.2)
- * All fixes from 9.2.21-rc.2
+ * Fix a Primary staying Ahead after the congestion clears: the peer
+   stayed Outdated and no resync started until the next write
+ * Fix rdma breaking every resync with data on kernels before 5.1
+   (RHEL 8.2)
+ * All fixes from 9.2.21
+  - Fix writes that completed with success but never reached a peer, or
+    that a later resync overwrote: a frozen write toward a peer that got
+    the new data generation from a third node, a write admitted just
+    before a peer was lost, and frozen writes resumed by a state change
+    that also starts an io-error policy
+  - Fix the receiver waiting forever for application writes after the
+    link is lost: during a handshake bitmap change, a bitmap slot clear
+    or copy, a weak-source switch, a peer demotion, an online resize
+    commit, and on P_SIZES
+  - Fix a resync target returning at the predecessor of a deferred new
+    current UUID, which left a diskless Primary suspended
+  - Fix a Primary and an UpToDate Secondary at equal current UUIDs never
+    connecting, and two such nodes that become stable together waiting
+    in WFBitMapT
+  - Fix a block missing after a power loss with external meta data: flush
+    the backing device before an AL transaction evicts an extent
+  - Fix a slow start of every resync on kernels before Linux 6.3 with
+    bio-based backing devices (LVM), and the resync queue of a slow
+    backing device growing without bound with c-min-rate 0
   - Fix a sync source running out of memory when the sync target
     requests faster than it can read: a target with rs-discard-granularity
     keeps its requests within max-buffers, and the source allocates the
@@ -27,27 +67,6 @@ Latest:
   - Fix a use-after-free of the rdma control timer on teardown
   - Fix the build on kernels before 4.17 (RHEL 7) and with Linux 7.4,
     and the send buffer not growing during a resync on Linux 7.4
-
-9.3.5-rc.1 (api:genl2/proto:86-101,118-125/transport:23)
---------
- * Track changed blocks for incremental backups: a tracking bitmap slot
-   records every write to the backing device; cbt-flush and cbt-start
-   bracket a snapshot taken while I/O is suspended on all nodes
- * suspend-io now also waits for the barrier ack of the last epoch, so
-   that with protocols A and B the writes are on the peers' stable
-   storage too; flush-to-peers=no skips that wait
- * Add rdma2, a new RDMA transport that moves all data with one-sided
-   RDMA-WRITE, sends bios zero-copy, and fails over to a surviving path
-   when a link goes down
- * Serve the new drbd2 netlink family next to the drbd family
- * Optionally serve DRBD 8.4 userland over the netlink family at version
-   1 (CONFIG_DRBD_NL_DRBD1, rpmbuild --with nl_drbd1,
-   DEB_BUILD_OPTIONS=nl_drbd1); off by default
- * Fix lb-tcp skipping a path for good after the peer closed it first
-   during a disconnect, which starved every later handshake
- * Fix spurious and racy "bitmap locked" warnings when bitmap operations
-   on different peer slots run concurrently
- * All fixes from 9.2.21-rc.1
   - Fix a resync target staying Inconsistent with nothing left to sync:
     when the Primary cannot reach the sync source, after aborting a weak
     sync source, and when P_RS_CANCEL_AHEAD overtakes the Ahead state
