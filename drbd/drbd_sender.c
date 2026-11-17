@@ -171,6 +171,7 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req)
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
 	enum drbd_interval_type type;
+	bool disconnecting = false;
 	bool do_wake;
 
 	/* if this is a failed barrier request, disable use of barriers,
@@ -237,6 +238,8 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req)
 	read_lock_irqsave(&connection->resource->state_rwlock, flags);
 	if (connection->cstate[NOW] == C_CONNECTED)
 		queue_work(connection->ack_sender, &connection->send_acks_work);
+	else
+		disconnecting = true;
 	read_unlock_irqrestore(&connection->resource->state_rwlock, flags);
 
 	if (type == INTERVAL_RESYNC_WRITE)
@@ -244,7 +247,8 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req)
 	else
 		do_wake = atomic_dec_and_test(&connection->active_ee_cnt);
 
-	if (do_wake)
+	/* conn_disconnect() finishes this write while it waits for the others. */
+	if (do_wake || disconnecting)
 		wake_up(&connection->ee_wait);
 
 	put_ldev(device);
