@@ -181,9 +181,8 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req)
 		peer_req->flags = (peer_req->flags & ~EE_WAS_ERROR) | EE_RESUBMITTED;
 		peer_req->w.cb = w_e_reissue;
 		spin_unlock_irqrestore(&connection->peer_reqs_lock, flags);
+		/* Still counted in active_ee_cnt until the resubmitted write completes. */
 		drbd_queue_work(&connection->sender_work, &peer_req->w);
-		if (atomic_dec_and_test(&connection->active_ee_cnt))
-			wake_up(&connection->ee_wait);
 		return;
 	}
 
