@@ -7250,11 +7250,11 @@ static void disk_states_to_strategy(struct drbd_peer_device *peer_device,
 }
 
 static enum sync_strategy drbd_attach_handshake(struct drbd_peer_device *peer_device,
+						  enum drbd_role peer_role,
 						  enum drbd_disk_state peer_disk_state)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
-	enum drbd_role peer_role = connection->peer_role[NOW];
 	enum sync_strategy strategy;
 	enum sync_rule rule;
 	int peer_node_id, err;
@@ -10796,7 +10796,8 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		} else if (old_peer_state.conn == L_ESTABLISHED &&
 			   (peer_state.disk == D_NEGOTIATING ||
 			    old_peer_state.disk == D_NEGOTIATING)) {
-			strategy = drbd_attach_handshake(peer_device, peer_disk_state);
+			strategy = drbd_attach_handshake(peer_device, peer_state.role,
+							  peer_disk_state);
 			new_repl_state = strategy_to_repl_state(peer_device, peer_state.role, strategy);
 			if (new_repl_state == L_ESTABLISHED && device->disk_state[NOW] == D_UP_TO_DATE)
 				peer_disk_state = D_UP_TO_DATE;
