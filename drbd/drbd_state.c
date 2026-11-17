@@ -2788,6 +2788,7 @@ stay_negotiating:
 			     peer_disk_state[NEW] <= D_FAILED)) {
 				repl_state[NEW] = L_ESTABLISHED;
 				clear_bit(RECONCILIATION_RESYNC, peer_device->flags);
+				clear_bit(RECONCILE_UNSTABLE_TARGET, peer_device->flags);
 				peer_device->resync_active[NEW] = false;
 			}
 
@@ -3883,6 +3884,7 @@ static unsigned int finish_state_change(struct drbd_resource *resource, const ch
 				peer_device->deferral_period++;
 
 			if (repl_state[OLD] > L_ESTABLISHED && repl_state[NEW] <= L_ESTABLISHED) {
+				clear_bit(RECONCILE_UNSTABLE_TARGET, peer_device->flags);
 				if (test_and_clear_bit(RECONCILIATION_RESYNC, peer_device->flags))
 					reconciliation_resync_done = true;
 				/* dagtag sender as reconcile target: it must receive the

@@ -8611,6 +8611,8 @@ static int drbd_resync(struct drbd_peer_device *peer_device,
 	}
 
 	rv = change_repl_state(peer_device, new_repl_state, CS_VERBOSE, tag);
+	if (rv == SS_SUCCESS && new_repl_state == L_WF_BITMAP_T && rule == RULE_RECONCILE_BITMAP)
+		set_bit(RECONCILE_UNSTABLE_TARGET, peer_device->flags);
 	if ((rv == SS_NOTHING_TO_DO || rv == SS_RESYNC_RUNNING) &&
 	    (new_repl_state == L_WF_BITMAP_S || new_repl_state == L_WF_BITMAP_T)) {
 		/* Those events might happen very quickly. In case we are still processing
@@ -8620,6 +8622,46 @@ static int drbd_resync(struct drbd_peer_device *peer_device,
 		drbd_info(peer_device, "...postponing this until current resync finished\n");
 	}
 	return 0;
+}
+
+/*
+ * Two nodes that become stable at about the same time send each other
+ * UUID_FLAG_GOT_STABLE, and each answers the other's with UUID_FLAG_RESYNC and
+ * an after-unstable handshake. The GOT_STABLE a node answers may carry bits its
+ * sender has forgotten since, so both can decide to reconcile as the target of
+ * the other and wait in L_WF_BITMAP_T for a bitmap neither sends.
+ *
+ * The RESYNC that follows is the peer's own answer, and with RECONCILIATION_RESYNC
+ * set no handshake runs on it. If it shows that the peer holds no authoritative
+ * bits for us, it did not decide to be our source, and the reconcile is void.
+ *
+ * Leaving L_WF_BITMAP_T ends the reconcile hold, so the handshake that was
+ * skipped can run now. Without a resync it lifts the Outdated the reconcile
+ * set, while the peer is still known by the disk state it decided with.
+ */
+static void drop_stale_reconcile_target(struct drbd_peer_device *peer_device)
+{
+	struct drbd_device *device = peer_device->device;
+	bool peer_holds = peer_device->dirty_bits &&
+		(peer_device->uuid_flags & UUID_FLAG_BITMAP_AUTHORITATIVE);
+	enum drbd_state_rv rv;
+
+	if (!test_bit(RECONCILE_UNSTABLE_TARGET, peer_device->flags) ||
+	    peer_device->repl_state[NOW] != L_WF_BITMAP_T || peer_holds)
+		return;
+
+	if (!get_ldev(device))
+		return;
+	if ((peer_device->current_uuid & ~UUID_PRIMARY) !=
+	    (drbd_current_uuid(device) & ~UUID_PRIMARY))
+		goto out;
+
+	drbd_info(peer_device, "Peer holds no out-of-sync bits for us, dropping the reconcile\n");
+	rv = change_repl_state(peer_device, L_ESTABLISHED, CS_VERBOSE, "reconcile-dropped");
+	if (rv >= SS_SUCCESS)
+		drbd_resync(peer_device, AFTER_UNSTABLE);
+out:
+	put_ldev(device);
 }
 
 /* An Outdated peer upgrades itself when we trigger it (sanitize_state()); record
@@ -8957,6 +8999,8 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 				put_ldev(device);
 			}
 		}
+	} else if (peer_device->uuid_flags & UUID_FLAG_RESYNC) {
+		drop_stale_reconcile_target(peer_device);
 	}
 
 	return err;
@@ -12679,6 +12723,7 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 	 * followed, drop it so it cannot mislabel a later resync.
 	 */
 	clear_bit(RECONCILIATION_RESYNC, peer_device->flags);
+	clear_bit(RECONCILE_UNSTABLE_TARGET, peer_device->flags);
 
 	peer_device_init_connect_state(peer_device);
 
