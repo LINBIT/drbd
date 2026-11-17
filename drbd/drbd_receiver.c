@@ -4667,40 +4667,6 @@ void drbd_cleanup_after_failed_submit_peer_write(struct drbd_peer_request *peer_
 	change_cstate(connection, C_PROTOCOL_ERROR, CS_HARD);
 }
 
-/* Possibly "cancel" and forget about all peer_requests that had still been
- * waiting for the activity log (wfa) when the connection to their peer failed,
- * and pretend we never received them.
- */
-void drbd_cleanup_peer_requests_wfa(struct drbd_device *device, struct list_head *cleanup)
-{
-	struct drbd_connection *connection;
-	struct drbd_peer_request *peer_req, *pr_tmp;
-
-	write_lock_irq(&device->resource->state_rwlock);
-	list_for_each_entry(peer_req, cleanup, w.list) {
-		atomic_dec(&peer_req->peer_device->connection->active_ee_cnt);
-		drbd_remove_peer_req_interval(peer_req);
-	}
-	write_unlock_irq(&device->resource->state_rwlock);
-
-	list_for_each_entry_safe(peer_req, pr_tmp, cleanup, w.list) {
-		atomic_sub(interval_to_al_extents(&peer_req->i), &device->wait_for_actlog_ecnt);
-		atomic_dec(&device->wait_for_actlog);
-		if (peer_req->flags & EE_SEND_WRITE_ACK)
-			dec_unacked(peer_req->peer_device);
-		list_del_init(&peer_req->w.list);
-		drbd_may_finish_epoch(peer_req->peer_device->connection, peer_req->epoch, EV_PUT | EV_CLEANUP);
-		drbd_free_peer_req(peer_req);
-		put_ldev(device);
-	}
-	/*
-	 * We changed (likely: cleared) active_ee_cnt for "at least one" connection.
-	 * We should wake potential waiters, just in case.
-	 */
-	for_each_connection(connection, device->resource)
-		wake_up(&connection->ee_wait);
-}
-
 /* We may throttle resync, if the lower device seems to be busy,
  * and current sync rate is above c_min_rate.
  *
