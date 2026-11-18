@@ -2535,9 +2535,14 @@ static void update_peers_for_interval(struct drbd_peer_device *peer_device,
 	u64 mask = NODE_MASK(peer_device->node_id), im;
 	struct drbd_peer_device *p;
 	sector_t sector_end = interval->sector + (interval->size >> SECTOR_SHIFT);
+	/* peer-device-options --bitmap=no may drop the slot after this work was queued */
+	int bitmap_index = READ_ONCE(peer_device->bitmap_index);
+
+	if (bitmap_index == -1)
+		return;
 
 	/* Only send P_PEERS_IN_SYNC if we are actually in sync with this peer. */
-	if (drbd_bm_count_bits(device, peer_device->bitmap_index,
+	if (drbd_bm_count_bits(device, bitmap_index,
 				BM_SECT_TO_BIT(interval->sector), BM_SECT_TO_BIT(sector_end - 1)))
 		return;
 
