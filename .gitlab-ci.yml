@@ -241,7 +241,14 @@ check:84-vendored:
 # harness's version check passes against /proc/drbd.
 build:nl-drbd1:
   stage: build
-  extends: [ .rules-nl-drbd1 ]
+  rules:
+    - !reference [.rules-nl-drbd1, rules]
+    # Used by the tests pipeline to run its compat84 tests against a DRBD
+    # branch: nothing publishes these modules, so it asks for them here and
+    # takes them from this job's artifacts.
+    - if: $CI_PIPELINE_SOURCE == 'pipeline' && $DRBD_BUILD_NL_DRBD1 == 'true'
+    # Useful for testing the downstream trigger used in the tests pipeline
+    - if: $CI_PIPELINE_SOURCE == 'trigger' && $DRBD_BUILD_NL_DRBD1 == 'true'
   image: $NL_DRBD1_BUILD_IMAGE
   script:
     # lbbuild containers run as an unprivileged user with passwordless sudo
