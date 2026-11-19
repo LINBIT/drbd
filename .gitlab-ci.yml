@@ -8,7 +8,7 @@ variables:
   # drbd9-tests VM tagged nl-drbd1 (virter/vms.toml): build:nl-drbd1 hands
   # its modules to that VM, and checks the two agree. NL_DRBD1_FLOOR_IMAGE
   # is any kernel below the dialect's v6.13 floor.
-  NL_DRBD1_BUILD_IMAGE: lbbuild-dists.at.linbit.com/dc-ubuntu-resolute-amd64:7.0.0-14-generic
+  NL_DRBD1_BUILD_IMAGE: lbbuild-dists.at.linbit.com/dc-ubuntu-resolute-amd64:7.0.0-43-generic
   NL_DRBD1_FLOOR_IMAGE: lbbuild-dists.at.linbit.com/dc-debian-trixie-amd64:6.12.35
   BUILD_HELPERS_VERSION: f25470fd968061a3353c114c8b7a0ea7eb567b7e
   # we have to change the way GitLab CI clones the repository.
