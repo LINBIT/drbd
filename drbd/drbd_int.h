@@ -1559,14 +1559,20 @@ struct drbd_connection {
 	unsigned int peer_node_id;
 
 	struct drbd_mutable_buffer reassemble_buffer;
-	union {
-		u8 bytes[8];
-		struct p_block_ack block_ack;
-		struct p_barrier_ack barrier_ack;
-		struct p_confirm_stable confirm_stable;
-		struct p_peer_ack peer_ack;
-		struct p_peer_block_desc peer_block_desc;
-		struct p_twopc_reply twopc_reply;
+	struct { /* one meta packet: header and payload */
+		struct p_header100 header;
+		union {
+			struct p_block_ack block_ack;
+			struct p_ov_result ov_result;
+			struct p_barrier_ack barrier_ack;
+			struct p_confirm_stable confirm_stable;
+			struct p_req_state_reply req_state_reply;
+			struct p_delay_probe93 delay_probe;
+			struct p_peer_ack peer_ack;
+			struct p_peer_block_desc peer_block_desc;
+			struct p_twopc_reply twopc_reply;
+			struct p_flush_forward flush_forward;
+		} payload;
 	} reassemble_buffer_bytes;
 
 	/* Used when a network namespace is removed to track all connections
