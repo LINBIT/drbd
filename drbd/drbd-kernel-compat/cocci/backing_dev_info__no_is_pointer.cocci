@@ -7,7 +7,7 @@ q->backing_dev_info
 + .
 x
 
-@@
+@ disable ptr_to_array @
 struct drbd_device *d;
 @@
 + &

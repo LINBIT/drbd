@@ -6,7 +6,7 @@
 // They add "BLK_FEAT_WRITE_CACHE | BLK_FEAT_FUA", "BLK_FEAT_ROTATIONAL", and
 // "BLK_FEAT_STABLE_WRITES", respectively.
 // Since these commits are all from the same series, just patch them together.
-@@
+@ disable ptr_to_array @
 struct gendisk *disk;
 @@
 disk->private_data = ...;

@@ -6,7 +6,7 @@
 + bvec->f
 ...>
 
-@@
+@ disable ptr_to_array @
 identifier iter;
 local idexpression struct bio *bio;
 @@

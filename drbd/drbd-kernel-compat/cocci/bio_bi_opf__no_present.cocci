@@ -23,7 +23,7 @@ symbol op, op_flags, rw;
 +submit_bio(rw, b);
 ...>
 
-@@
+@ disable ptr_to_array @
 struct bio *b;
 constant flag;
 @@

@@ -1,4 +1,4 @@
-@@
+@ disable ptr_to_array @
 struct drbd_device *d;
 @@
 d->ldev->backing_bdev->

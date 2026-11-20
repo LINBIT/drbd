@@ -133,7 +133,7 @@ IS_ERR(
 ...+>
 }
 
-@@
+@ disable ptr_to_array @
 struct drbd_backing_dev *nbc;
 identifier file;
 @@

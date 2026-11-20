@@ -151,7 +151,7 @@ IS_ERR(
 ...>
 }
 
-@@
+@ disable ptr_to_array @
 struct drbd_backing_dev *nbc;
 identifier handle;
 identifier bdev = bdev;
@@ -166,7 +166,7 @@ identifier bdev = bdev;
 + nbc->md_bdev = bdev;
 )
 
-@@
+@ disable ptr_to_array @
 identifier handle;
 identifier nbc;
 identifier bdev = bdev;

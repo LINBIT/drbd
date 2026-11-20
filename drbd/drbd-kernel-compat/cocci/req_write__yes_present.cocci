@@ -139,7 +139,7 @@ struct drbd_peer_request *peer_req;
 + (peer_req->rw & REQ_WRITE)
 )
 
-@@
+@ disable ptr_to_array @
 struct drbd_peer_request *peer_req;
 @@
 - peer_req->opf =
@@ -300,7 +300,7 @@ struct drbd_peer_request *peer_req;
 + !(peer_req->rw & req)
 )
 
-@@
+@ disable ptr_to_array @
 identifier find_req_ops.req_op;
 identifier transform_req_ops.req;
 struct drbd_peer_request *peer_req;
@@ -318,7 +318,7 @@ identifier o;
 @@
 -T o = bio_op(b);
 
-@@
+@ disable ptr_to_array @
 identifier peer_req;
 @@
 -peer_req->opf |=

@@ -1,4 +1,4 @@
-@@
+@ disable ptr_to_array @
 identifier q;
 identifier dev;
 type T;
