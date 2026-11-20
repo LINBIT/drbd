@@ -57,6 +57,23 @@ stages:
           --relative-path "$tarball"
       }
 
+      # Number of parallel spatch runs for the compat patches. Each run
+      # takes up to about 2.3 GiB, so fit them into the job's memory limit,
+      # or into the available memory if that is lower or there is no limit.
+      compat_jobs() {
+        local mem_mib limit jobs
+        mem_mib=$(($(awk '/^MemAvailable:/ { print $2 }' /proc/meminfo) >> 10))
+        limit=$(cat /sys/fs/cgroup/memory.max 2>/dev/null ||
+                cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null || true)
+        if [[ $limit =~ ^[0-9]+$ ]] && ((limit >> 20 < mem_mib)); then
+          mem_mib=$((limit >> 20))
+        fi
+        jobs=$(((mem_mib - 512) / 2400))
+        ((jobs > $(nproc))) && jobs=$(nproc)
+        ((jobs < 1)) && jobs=1
+        echo $jobs
+      }
+
       # parameters: [version] [release] [rel-version] [kernels]
       # kernels should be a string with lines with the format: "[distribution] [kernel version]"
       drbd_build () {
@@ -93,7 +110,7 @@ stages:
         ./build_cocci_cache.sh ${compat_hs[@]}
         popd
 
-        make -j $(nproc) -C drbd compat
+        make -j $(compat_jobs) -C drbd compat
         make FORCE=1 PRESERVE_DEBIAN=1 REL_VERSION="$rel_version" tarball
         upload_tarball
 
