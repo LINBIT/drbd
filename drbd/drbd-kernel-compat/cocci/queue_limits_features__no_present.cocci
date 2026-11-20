@@ -7,9 +7,7 @@
 // "BLK_FEAT_STABLE_WRITES", respectively.
 // Since these commits are all from the same series, just patch them together.
 @@
-expression e;
 struct gendisk *disk;
-identifier lim;
 @@
 disk->private_data = ...;
 + blk_queue_flag_set(QUEUE_FLAG_STABLE_WRITES, disk->queue);

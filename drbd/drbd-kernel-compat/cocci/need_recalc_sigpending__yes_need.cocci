@@ -1,5 +1,6 @@
 @@
 struct drbd_device *device;
+identifier kref = kref;
 @@
 int drbd_open(...)
 {

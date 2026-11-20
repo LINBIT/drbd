@@ -6,7 +6,7 @@ struct dtr_cm {
 };
 
 @ ib_get_dma_mr__free @
-identifier kref, destroy_id, cm, rdma_transport;
+identifier kref, destroy_id, cm;
 @@
 static void __dtr_destroy_cm(struct kref *kref, bool destroy_id)
 {

@@ -10,6 +10,7 @@ struct drbd_backing_dev {
 
 @@
 identifier handle;
+identifier bdev = bdev;
 @@
 static void close_backing_dev(...,
 -	struct bdev_handle *handle
@@ -99,6 +100,7 @@ return
 @@
 identifier handle;
 identifier err;
+identifier bdev = bdev;
 @@
 static int link_backing_dev(...,
 -	struct bdev_handle *handle
@@ -152,6 +154,7 @@ IS_ERR(
 @@
 struct drbd_backing_dev *nbc;
 identifier handle;
+identifier bdev = bdev;
 @@
 (
 - nbc->backing_bdev = handle->bdev;
@@ -166,6 +169,7 @@ identifier handle;
 @@
 identifier handle;
 identifier nbc;
+identifier bdev = bdev;
 @@
 // only this one comparison exists in the code, just special-case it instead of implementing the generic case
 - handle->bdev != nbc->backing_bdev
