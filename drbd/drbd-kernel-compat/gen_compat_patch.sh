@@ -64,10 +64,22 @@ try_spatch()
 			F_patch=drbd-kernel-compat/patches/$F.patch
 			cat $F_patch >> $incdir/.compat.patch.tmp
 		fi
-		sed -e "s:@COMPAT_PATCH_NAME@:$F:g" \
-			< drbd-kernel-compat/cocci/debugfs_compat_template.cocci.in \
-			>> $incdir/.compat.cocci.tmp
 	done
+
+	# One rule adds all names; spatch checks each rule against every function.
+	if [ -s $incdir/applied_cocci_files.txt ]; then
+		cat >> $incdir/.compat.cocci.tmp <<-___
+		@@
+		identifier m, ignored;
+		@@
+		static int drbd_compat_show(struct seq_file *m, void *ignored)
+		{
+			...
+		$(sed -e 's/.*/+\tseq_puts(m, "&\\n");/' < $incdir/applied_cocci_files.txt)
+			return 0;
+		}
+		___
+	fi
 
 	mv $incdir/.compat.cocci.tmp $incdir/.compat.cocci
 	mv $incdir/.compat.patch.tmp $incdir/.compat.patch
