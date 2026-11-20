@@ -367,17 +367,22 @@ static int dtt_recv_bio(struct drbd_transport *transport, struct bio_list *bios,
 		return -ENOTCONN;
 
 	do {
-		size_t len;
+		size_t len, received = 0;
 
 		page = drbd_alloc_pages(transport, GFP_KERNEL, remaining);
 		if (!page)
 			return -ENOMEM;
 		len = min(PAGE_SIZE << compound_order(page), remaining);
 
-		err = dtt_recv_short(socket, page_address(page), len, 0);
-		if (err <= 0)
-			goto fail;
-		remaining -= err;
+		/* A receive timeout or a signal ends MSG_WAITALL early. */
+		while (received < len) {
+			err = dtt_recv_short(socket, page_address(page) + received,
+					     len - received, 0);
+			if (err <= 0)
+				goto fail;
+			received += err;
+		}
+		remaining -= len;
 		err = drbd_bio_add_page(transport, bios, page, len, 0);
 		if (err < 0)
 			goto fail;
