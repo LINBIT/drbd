@@ -1,17 +1,30 @@
+@initialize:python@
+@@
+endio_fns = set()
+
 @ find_endio @
 struct bio *b;
 identifier fn;
 @@
 b->bi_end_io = fn;
 
-@@ identifier find_endio.fn, b, bio = bio; @@
+// Collect the names, so that each rule below makes one pass over the
+// code instead of one pass per inherited name.
+@script:python@
+fn << find_endio.fn;
+@@
+endio_fns.add(fn)
+
+@@ identifier fn : script:python () { fn in endio_fns };
+identifier b, bio = bio; @@
 - fn(struct bio* b)
 + fn(struct bio* b, int error)
 {
 ...
 }
 
-@@ identifier find_endio.fn, b, e, bio = bio; @@
+@@ identifier fn : script:python () { fn in endio_fns };
+identifier b, e, bio = bio; @@
 fn(struct bio *b, int e)
 {
 ...
