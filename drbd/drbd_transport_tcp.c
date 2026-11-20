@@ -373,14 +373,24 @@ static int dtt_recv_pages(struct drbd_transport *transport, struct drbd_page_cha
 
 	page_chain_for_each(page) {
 		size_t len = min_t(int, size, PAGE_SIZE);
+		size_t received = 0;
 		void *data = kmap(page);
-		err = dtt_recv_short(socket, data, len, 0);
+
+		/* A receive timeout or a signal ends MSG_WAITALL early. */
+		while (received < len) {
+			err = dtt_recv_short(socket, data + received, len - received, 0);
+			if (err <= 0)
+				break;
+			received += err;
+		}
 		kunmap(page);
 		set_page_chain_offset(page, 0);
-		set_page_chain_size(page, len);
+		set_page_chain_size(page, received);
 		if (err < 0)
 			goto fail;
-		size -= err;
+		size -= received;
+		if (received < len)
+			break;
 	}
 	if (unlikely(size)) {
 		tr_warn(transport, "Not enough data received; missing %zu bytes\n", size);
