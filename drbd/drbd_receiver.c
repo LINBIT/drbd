@@ -1936,7 +1936,7 @@ int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, u
 	return err != 0;
 }
 
-static bool can_do_reliable_discards(struct drbd_device *device)
+bool can_do_reliable_discards(struct drbd_device *device)
 {
 	struct disk_conf *dc;
 	bool can_do;

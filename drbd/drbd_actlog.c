@@ -149,7 +149,7 @@ static int _drbd_md_sync_page_io(struct drbd_device *device,
 /* Flush the volatile cache of the backing device. The caller holds the meta
  * data buffer; the wait ends on disk-timeout or force-detach as for meta data IO.
  */
-static int drbd_md_flush_backing_dev(struct drbd_device *device)
+int drbd_md_flush_backing_dev(struct drbd_device *device)
 {
 	struct drbd_backing_dev *bdev = device->ldev;
 	struct bio *bio;
