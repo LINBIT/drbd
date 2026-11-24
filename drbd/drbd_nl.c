@@ -1505,6 +1505,38 @@ void drbd_set_my_capacity(struct drbd_device *device, sector_t size)
 		ppsize(ppb, size>>1), (unsigned long long)size>>1);
 }
 
+/* The old meta data area became data area, and no resync covers it. Zero it, so
+ * that all peers hold the same bytes there; failing that, mark it out of sync.
+ */
+static void drbd_zero_old_md_area(struct drbd_device *device, sector_t start, sector_t end)
+{
+	const int my_node_id = device->resource->res_opts.node_id;
+	struct drbd_md *md = &device->ldev->md;
+	struct drbd_bitmap *bm = device->bitmap;
+	int node_id, bitmap_index, err;
+
+	if (can_do_reliable_discards(device))
+		err = drbd_issue_discard_or_zero_out(device, start, end - start, EE_TRIM);
+	else
+		err = blkdev_issue_zeroout(device->ldev->backing_bdev, start, end - start,
+					   GFP_NOIO, 0);
+	if (!err)
+		return;
+
+	drbd_err(device, "Failed to zero the old meta data area at sector %llu (%llu sectors), marking it out of sync\n",
+		 (unsigned long long)start, (unsigned long long)(end - start));
+	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+		if (node_id == my_node_id)
+			continue;
+		bitmap_index = md->peers[node_id].bitmap_index;
+		if (bitmap_index == -1)
+			continue;
+		_drbd_bm_set_many_bits(device, bitmap_index,
+				       bm_sect_to_bit(bm, start), bm_sect_to_bit(bm, end - 1));
+	}
+	drbd_bm_write(device, NULL);
+}
+
 /*
  * drbd_determine_dev_size() -  Sets the right device size obeying all constraints
  * @device:	DRBD device.
@@ -1696,6 +1728,11 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 				prev_peer_full_sync |= 1 << i;
 		}
 		drbd_md_write(device, buffer);
+		/* The writes below may overwrite the old meta data area. The new
+		 * superblock must be stable first, also with md-flushes disabled.
+		 */
+		if (md_moved && drbd_md_flush_backing_dev(device))
+			drbd_handle_io_error(device, DRBD_META_IO_ERROR);
 
 		drbd_al_initialize(device, buffer);
 
@@ -1727,6 +1764,20 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 				clear_bit(__MDF_PEER_FULL_SYNC, &md->peers[i].flags);
 		}
 		drbd_md_write(device, buffer);
+
+		/* Only after the new meta data is on disk: until then, the old
+		 * area is the only copy.
+		 */
+		if (md_moved && (flags & DDSF_NO_RESYNC) &&
+		    (md->meta_dev_idx == DRBD_MD_INDEX_INTERNAL ||
+		     md->meta_dev_idx == DRBD_MD_INDEX_FLEX_INT)) {
+			sector_t start = max_t(sector_t, prev.md_offset + prev.bm_offset,
+					       prev_size);
+			sector_t end = min_t(sector_t, prev.md_offset + (4096 >> 9), size);
+
+			if (start < end)
+				drbd_zero_old_md_area(device, start, end);
+		}
 
 		if (rs)
 			drbd_info(device, "Changed AL layout to al-stripes = %d, al-stripe-size-kB = %d\n",

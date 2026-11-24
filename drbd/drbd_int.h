@@ -2806,6 +2806,7 @@ void drbd_md_put_buffer(struct drbd_device *device);
 int drbd_md_sync_page_io(struct drbd_device *device,
 			 struct drbd_backing_dev *bdev, sector_t sector,
 			 enum req_op op);
+int drbd_md_flush_backing_dev(struct drbd_device *device);
 bool drbd_al_active(struct drbd_device *device, sector_t sector,
 		    unsigned int size);
 void drbd_ov_out_of_sync_found(struct drbd_peer_device *peer_device,
@@ -2921,6 +2922,7 @@ void drbd_queue_update_peers(struct drbd_peer_device *peer_device,
 			     sector_t sector_start, sector_t sector_end);
 int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start,
 				   unsigned int nr_sectors, int flags);
+bool can_do_reliable_discards(struct drbd_device *device);
 int drbd_send_ack_be(struct drbd_peer_device *peer_device,
 		     enum drbd_packet cmd, sector_t sector, int size,
 		     u64 block_id);
