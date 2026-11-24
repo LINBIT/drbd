@@ -1,3 +1,8 @@
+@initialize:python@
+@@
+mempool_t_names = set()
+bio_set_names = set()
+
 @find_mempool_t@
 typedef mempool_t;
 identifier mp;
@@ -6,6 +11,13 @@ identifier mp;
 + mempool_t *
 mp;
 
+// Collect the names, so that each rule below makes one pass over the
+// code instead of one pass per inherited name.
+@script:python@
+mp << find_mempool_t.mp;
+@@
+mempool_t_names.add(mp)
+
 @find_struct_bio_set@
 identifier bs;
 @@
@@ -13,8 +25,13 @@ identifier bs;
 + struct bio_set *
 bs;
 
+@script:python@
+bs << find_struct_bio_set.bs;
 @@
-identifier find_struct_bio_set.bs;
+bio_set_names.add(bs)
+
+@@
+identifier bs : script:python () { bs in bio_set_names };
 expression GFP, n;
 @@
 (
@@ -28,13 +45,13 @@ bio_alloc_bioset(GFP, n,
 )
 
 @@
-identifier find_struct_bio_set.bs;
+identifier bs : script:python () { bs in bio_set_names };
 @@
 - bioset_exit(&bs);
 + if (bs) { bioset_free(bs); bs = NULL; }
 
 @@
-identifier find_mempool_t.mp;
+identifier mp : script:python () { mp in mempool_t_names };
 expression min_nr, order, mem_cache, V, F;
 @@
 (
@@ -64,7 +81,7 @@ mempool_is_saturated(
 )
 
 @@
-identifier find_struct_bio_set.bs;
+identifier bs : script:python () { bs in bio_set_names };
 expression bio, gfp;
 @@
 bio_clone_fast(bio, gfp,
@@ -73,7 +90,7 @@ bio_clone_fast(bio, gfp,
  )
 
 @@
-identifier find_struct_bio_set.bs;
+identifier bs : script:python () { bs in bio_set_names };
 expression re, size, front_pad, flags;
 statement S;
 @@
