@@ -2955,8 +2955,6 @@ void drbd_rs_depth_exempt(struct drbd_device *device, struct drbd_interval *inte
 void drbd_conflict_submit_peer_write(struct drbd_peer_request *peer_req);
 int drbd_submit_peer_request(struct drbd_peer_request *peer_req);
 void drbd_cleanup_after_failed_submit_peer_write(struct drbd_peer_request *peer_req);
-void drbd_cleanup_peer_requests_wfa(struct drbd_device *device,
-				    struct list_head *cleanup);
 void drbd_remove_peer_req_interval(struct drbd_peer_request *peer_req);
 int drbd_free_peer_reqs(struct drbd_connection *connection,
 			struct list_head *list);

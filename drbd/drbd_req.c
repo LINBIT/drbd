@@ -2576,8 +2576,6 @@ struct incoming_pending {
 	struct list_head more_incoming;
 	/* to be submitted after next AL-transaction commit */
 	struct list_head pending;
-	/* need cleanup */
-	struct list_head cleanup;
 };
 
 struct waiting_for_act_log {
@@ -2590,7 +2588,6 @@ static void ipb_init(struct incoming_pending *ipb)
 	INIT_LIST_HEAD(&ipb->incoming);
 	INIT_LIST_HEAD(&ipb->more_incoming);
 	INIT_LIST_HEAD(&ipb->pending);
-	INIT_LIST_HEAD(&ipb->cleanup);
 }
 
 static void wfa_init(struct waiting_for_act_log *wfa)
@@ -2694,11 +2691,6 @@ static bool prepare_al_transaction_nonblock(struct drbd_device *device,
 		goto out;
 
 	while ((peer_req = wfa_next_peer_request(wfa))) {
-		if (peer_req->peer_device->connection->cstate[NOW] < C_CONNECTED) {
-			list_move_tail(&peer_req->w.list, &wfa->peer_requests.cleanup);
-			made_progress = true;
-			continue;
-		}
 		err = drbd_al_begin_io_nonblock(device, &peer_req->i);
 		if (err) {
 			if (err != -ENOBUFS && drbd_ratelimit())
@@ -2860,9 +2852,6 @@ void do_submit(struct work_struct *ws)
 			if (!made_progress)
 				break;
 		}
-		if (!list_empty(&wfa.peer_requests.cleanup))
-			drbd_cleanup_peer_requests_wfa(device, &wfa.peer_requests.cleanup);
-
 		/* ldev_safe: queued requests acquired ldev in drbd_request_prepare() */
 		drbd_al_begin_io_commit(device);
 
