@@ -269,7 +269,7 @@ static void conn_disconnect(struct drbd_connection *connection);
 
 static enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *, struct drbd_epoch *, enum epoch_event);
 static int e_end_block(struct drbd_work *, int);
-static void cleanup_unacked_peer_requests(struct drbd_connection *connection);
+static void cleanup_unacked_peer_requests(struct drbd_connection *connection, bool completed_only);
 static void cleanup_peer_ack_list(struct drbd_connection *connection);
 static u64 node_ids_to_bitmap(struct drbd_device *device, u64 node_ids);
 static void process_twopc(struct drbd_connection *, struct twopc_reply *, struct packet_info *, unsigned long);
@@ -13074,10 +13074,23 @@ static void conn_disconnect(struct drbd_connection *connection)
 		cancel_conflicting_peer_writes(peer_device);
 	rcu_read_unlock();
 
+	if (test_bit(NOTIFY_PEERS_LOST_PRIMARY, &connection->flags))
+		note_bitmaps_held_at_primary_loss(connection);
+
 	/* Wait for current activity to cease.  This includes waiting for
-	 * peer_request queued to the submitter workqueue. */
-	wait_event(connection->ee_wait,
-		atomic_read(&connection->active_ee_cnt) == 0);
+	 * peer_request queued to the submitter workqueue. Those may wait for
+	 * an activity log extent that a completed write of this connection
+	 * holds until its peer ack, so release these extents meanwhile.
+	 */
+	for (;;) {
+		drbd_finish_peer_reqs(connection);
+		cleanup_unacked_peer_requests(connection, true);
+		if (atomic_read(&connection->active_ee_cnt) == 0)
+			break;
+		wait_event(connection->ee_wait,
+			atomic_read(&connection->active_ee_cnt) == 0 ||
+			atomic_read(&connection->done_ee_cnt));
+	}
 
 	/* wait for all w_e_end_data_req, w_e_end_rsdata_req, w_send_barrier,
 	 * etc. which may still be on the worker queue to be "canceled" */
@@ -13139,9 +13152,7 @@ static void conn_disconnect(struct drbd_connection *connection)
 	if (i)
 		drbd_info(connection, "dagtag_wait_ee not empty, killed %u entries\n", i);
 
-	if (test_bit(NOTIFY_PEERS_LOST_PRIMARY, &connection->flags))
-		note_bitmaps_held_at_primary_loss(connection);
-	cleanup_unacked_peer_requests(connection);
+	cleanup_unacked_peer_requests(connection, false);
 	cleanup_peer_ack_list(connection);
 
 	i = atomic_read(&connection->pp_in_use);
@@ -14775,14 +14786,20 @@ void apply_unacked_peer_requests(struct drbd_connection *connection)
 	spin_unlock_irqrestore(&connection->peer_reqs_lock, flags);
 }
 
-static void cleanup_unacked_peer_requests(struct drbd_connection *connection)
+/* The peer ack for these writes will not come: mark them out of sync toward
+ * the other peers and release their activity log extents.
+ */
+static void cleanup_unacked_peer_requests(struct drbd_connection *connection, bool completed_only)
 {
 	struct drbd_peer_request *peer_req, *tmp;
 	LIST_HEAD(work_list);
 	u64 any_send_oos_pending = 0;
 
 	spin_lock_irq(&connection->peer_reqs_lock);
-	list_splice_init(&connection->peer_requests, &work_list);
+	list_for_each_entry_safe(peer_req, tmp, &connection->peer_requests, recv_order) {
+		if (!completed_only || test_bit(INTERVAL_COMPLETED, &peer_req->i.flags))
+			list_move_tail(&peer_req->recv_order, &work_list);
+	}
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	list_for_each_entry_safe(peer_req, tmp, &work_list, recv_order) {
