@@ -1,4 +1,4 @@
-@@
+@ disable ptr_to_array @
 local idexpression struct bio *b;
 expression ebdev, _opf, gfp_mask, nr_vecs, bioset;
 @@

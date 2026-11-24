@@ -1,4 +1,4 @@
-@@
+@ disable ptr_to_array @
 struct bio *b;
 @@
 // The only case where we really use bio->bi_bdev is when accessing its bd_disk.

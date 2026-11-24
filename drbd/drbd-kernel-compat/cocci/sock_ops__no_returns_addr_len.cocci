@@ -1,4 +1,4 @@
-@@
+@ disable ptr_to_array @
 struct socket *sock;
 struct sockaddr *uaddr;
 int peer;
@@ -13,7 +13,7 @@ int addr_len;
 ...
 }
 
-@@
+@ disable ptr_to_array @
 struct socket *sock;
 struct sockaddr *uaddr;
 int peer;

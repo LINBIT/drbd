@@ -1,4 +1,4 @@
-@@
+@ disable ptr_to_array @
 struct queue_limits lim;
 identifier q;
 identifier device = device;

@@ -20,7 +20,7 @@ expression D, P, F, G;
 - dev.ops.query_gid(D, P, F, G)
 + dev.query_gid(D, P, F, G)
 
-@@
+@ disable ptr_to_array @
 struct ib_device *dev;
 expression D, P, F, G;
 @@

@@ -36,7 +36,7 @@ out_no_disk:
 ...
 }
 
-@@
+@ disable ptr_to_array @
 identifier f, device;
 @@
 f(...) {
