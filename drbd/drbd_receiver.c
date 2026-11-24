@@ -1282,6 +1282,24 @@ static void conn_mint_before_handshake(struct drbd_connection *connection, long 
 	rcu_read_unlock();
 }
 
+static bool primary_loss_cleanup_pending(struct drbd_connection *self)
+{
+	struct drbd_connection *connection;
+	bool pending = false;
+
+	rcu_read_lock();
+	for_each_connection_rcu(connection, self->resource) {
+		if (connection != self &&
+		    test_bit(NOTIFY_PEERS_LOST_PRIMARY, &connection->flags)) {
+			pending = true;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return pending;
+}
+
 /*
  * Returns true if we have a valid connection.
  */
@@ -1441,6 +1459,15 @@ start:
 		atomic_set(&connection->ap_in_flight, 0);
 	}
 	clear_bit(DAGTAG_STREAM_GONE, &connection->flags);
+
+	/* A connection that lost a Primary may still write peer writes, and sets
+	 * their out-of-sync bits after that. The handshake needs both.
+	 */
+	wait_event(resource->state_wait,
+		   !primary_loss_cleanup_pending(connection) ||
+		   connection->cstate[NOW] != C_CONNECTING);
+	if (connection->cstate[NOW] != C_CONNECTING)
+		goto retry;
 
 	/* The last point before both the UUID exchange and arm_connect_timer():
 	 * conn_connect2() sends the UUIDs, and on every path but the pre-110 one
@@ -13189,6 +13216,8 @@ static void conn_disconnect(struct drbd_connection *connection)
 	if (test_bit(NOTIFY_PEERS_LOST_PRIMARY, &connection->flags)) {
 		drbd_notify_peers_lost_primary(connection);
 		clear_bit(NOTIFY_PEERS_LOST_PRIMARY, &connection->flags);
+		/* receive_peer_dagtag() and conn_connect() wait for this */
+		wake_up_all(&resource->state_wait);
 		reconsider = true;
 	}
 
