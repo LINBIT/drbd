@@ -5079,6 +5079,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			union drbd_state new_state =
 				state_change_word(state_change, n_device, n_connection, NEW);
 			bool send_uuids = false, send_state = false;
+			bool cancelled_leg;
 
 			/* Send UUIDs again if they changed while establishing the connection */
 			if (repl_state[OLD] == L_OFF && repl_state[NEW] > L_OFF &&
@@ -5318,9 +5319,14 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			if (send_state && cstate[NEW] == C_CONNECTED)
 				drbd_send_state(peer_device, new_state);
 
+			/* A paused leg that ended without resync may still hold bits */
+			cancelled_leg = repl_state[OLD] == L_PAUSED_SYNC_T &&
+				repl_state[NEW] == L_ESTABLISHED &&
+				(drbd_bm_total_weight(peer_device) || peer_device->dirty_bits);
 			if (((!device_stable[OLD] && device_stable[NEW]) ||
 			     (resync_target[OLD] && !resync_target[NEW] && device_stable[NEW])) &&
-			    !(repl_state[OLD] == L_SYNC_TARGET || repl_state[OLD] == L_PAUSED_SYNC_T) &&
+			    (cancelled_leg || !(repl_state[OLD] == L_SYNC_TARGET ||
+						repl_state[OLD] == L_PAUSED_SYNC_T)) &&
 			    !(peer_role[OLD] == R_PRIMARY) && disk_state[NEW] >= D_OUTDATED &&
 			    repl_state[NEW] >= L_ESTABLISHED &&
 			    get_ldev(device)) {
