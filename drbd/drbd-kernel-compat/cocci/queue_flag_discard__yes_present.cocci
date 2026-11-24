@@ -1,7 +1,7 @@
 @@
 struct queue_limits lim;
 identifier q;
-identifier device;
+identifier device = device;
 @@
 struct request_queue *q = device->rq_queue;
 ...

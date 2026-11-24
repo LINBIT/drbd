@@ -44,6 +44,7 @@ drbd_bm_endio(...)
 @ own_io_peer_req_submit_zeroout @
 identifier P;
 symbol jiffies;
+identifier flags = flags;
 @@
 drbd_submit_peer_request(struct drbd_peer_request *P)
 {
@@ -76,6 +77,7 @@ drbd_submit_peer_request(struct drbd_peer_request *P)
 @ own_io_bm_submit @
 identifier D, ctx;
 symbol len;
+identifier device = device;
 @@
 bm_page_io_async(struct drbd_bm_aio_ctx *ctx, ...)
 {
