@@ -2886,6 +2886,7 @@ void resync_timer_fn(struct timer_list *t);
 void start_resync_timer_fn(struct timer_list *t);
 void wf_bitmap_t_timer_fn(struct timer_list *t);
 unsigned long drbd_wf_bitmap_t_timeout(struct drbd_connection *connection);
+void drbd_abandon_wf_bitmap_t(struct drbd_connection *connection);
 
 int drbd_unmerge_discard(struct drbd_peer_request *peer_req_main,
 			 struct list_head *list);
