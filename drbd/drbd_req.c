@@ -112,7 +112,11 @@ static void queue_peer_ack_send(struct drbd_resource *resource,
 			continue;
 		}
 
-		if (req->net_rq_state[node_id] & RQ_NET_SENT)
+		/* The peer frees its peer requests when a connection ends, so
+		 * it expects a peer ack only for a request sent in this session.
+		 */
+		if (req->net_rq_state[node_id] & RQ_NET_SENT &&
+		    req->sent_session[node_id] == connection->session_nr)
 			peer_ack->pending_mask |= NODE_MASK(node_id);
 
 		peer_ack->queued_mask |= NODE_MASK(node_id);
@@ -181,10 +185,23 @@ static bool peer_ack_differs(struct drbd_request *req1, struct drbd_request *req
 	unsigned int max_node_id = req1->device->resource->max_node_id;
 	unsigned int node_id;
 
-	for (node_id = 0; node_id <= max_node_id; node_id++)
-		if ((req1->net_rq_state[node_id] & RQ_NET_OK) !=
-		    (req2->net_rq_state[node_id] & RQ_NET_OK))
+	for (node_id = 0; node_id <= max_node_id; node_id++) {
+		unsigned int s1 = req1->net_rq_state[node_id];
+		unsigned int s2 = req2->net_rq_state[node_id];
+
+		if ((s1 & RQ_NET_OK) != (s2 & RQ_NET_OK))
 			return true;
+
+		/* One peer ack stands for all requests it covers, and
+		 * queue_peer_ack_send() decides by the last one whether a peer
+		 * gets it. Requests sent to a peer in different sessions must
+		 * not share a peer ack: the peer may hold a peer request for
+		 * one of them only.
+		 */
+		if (s1 & s2 & RQ_NET_SENT &&
+		    req1->sent_session[node_id] != req2->sent_session[node_id])
+			return true;
+	}
 	return false;
 }
 
@@ -1402,7 +1419,7 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		break;
 
 	case HANDED_OVER_TO_NETWORK:
-		/* assert something? */
+		req->sent_session[idx] = peer_device->connection->session_nr;
 		if (is_pending_write_protocol_A(req, idx))
 			/* this is what is dangerous about protocol A:
 			 * pretend it was successfully written on the peer. */
