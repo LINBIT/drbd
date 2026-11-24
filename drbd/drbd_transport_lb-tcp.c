@@ -1032,7 +1032,10 @@ static bool dtl_path_established(struct drbd_transport *transport, struct dtl_pa
 	mutex_lock(&dtl_transport->sockets_mutex);
 	established = _dtl_path_established(transport, path);
 
-	if (established && !lb) {
+	/* The connect worker and the accept worker both get here for the same
+	 * path; the one that comes second finds it established already.
+	 */
+	if (established && !lb && !test_bit(TR_ESTABLISHED, &drbd_path->flags)) {
 		established = dtl_deactivate_other_paths(path);
 
 		if (!established) {
