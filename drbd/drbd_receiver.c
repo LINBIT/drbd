@@ -2320,6 +2320,7 @@ int w_e_reissue(struct drbd_work *w, int cancel)
 		drbd_remove_peer_req_interval(peer_req);
 		drbd_al_complete_io(device, &peer_req->i);
 		drbd_may_finish_epoch(connection, peer_req->epoch, EV_PUT | EV_CLEANUP);
+		put_ldev(device);
 		drbd_free_peer_req(peer_req);
 		drbd_err(device, "submit failed, triggering re-connect\n");
 		return err;
