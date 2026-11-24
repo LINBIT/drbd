@@ -8567,9 +8567,13 @@ static int drbd_resync(struct drbd_peer_device *peer_device,
 		return 0;
 	}
 
+	if (new_repl_state == L_WF_BITMAP_T)
+		set_bit(WF_BITMAP_T_WATCHED, peer_device->flags);
 	rv = change_repl_state(peer_device, new_repl_state, CS_VERBOSE, tag);
 	if (rv == SS_SUCCESS && new_repl_state == L_WF_BITMAP_T && rule == RULE_RECONCILE_BITMAP)
 		set_bit(RECONCILE_UNSTABLE_TARGET, peer_device->flags);
+	if (rv < SS_SUCCESS)
+		clear_bit(WF_BITMAP_T_WATCHED, peer_device->flags);
 	if ((rv == SS_NOTHING_TO_DO || rv == SS_RESYNC_RUNNING) &&
 	    (new_repl_state == L_WF_BITMAP_S || new_repl_state == L_WF_BITMAP_T)) {
 		/* Those events might happen very quickly. In case we are still processing
@@ -12458,6 +12462,7 @@ static void cleanup_resync_leftovers(struct drbd_peer_device *peer_device)
 	timer_delete_sync(&peer_device->resync_timer);
 	resync_timer_fn(&peer_device->resync_timer);
 	timer_delete_sync(&peer_device->start_resync_timer);
+	timer_delete_sync(&peer_device->wf_bitmap_t_timer);
 }
 
 static void free_waiting_resync_requests(struct drbd_connection *connection)

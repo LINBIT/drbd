@@ -794,6 +794,9 @@ enum peer_device_flag {
 				 * must stay below 32 so get_work_bits() finds it in
 				 * flags[0] on 32-bit kernels.
 				 */
+	WF_BITMAP_T_CHECK,	/* worker: check whether WFBitMapT waits for a bitmap
+				 * the peer never sends
+				 */
 	INITIAL_STATE_SENT,
 	INITIAL_STATE_RECEIVED,
 	RECONCILIATION_RESYNC,
@@ -805,6 +808,7 @@ enum peer_device_flag {
 				 */
 	BITMAP_HELD_AT_PRIMARY_LOSS, /* had bits before the last lost primary */
 	UNSTABLE_RESYNC,	/* Sync source went unstable during resync. */
+	WF_BITMAP_T_WATCHED,	/* drbd_resync() decided L_WF_BITMAP_T on its own */
 	PEER_UPGRADE_PREDICTED,	/* Recorded the peer UpToDate before its P_STATE */
 	SEND_UUIDS_PEER_ATTACH,	/* Peer attached: receiver or worker, whichever is
 				 * first, sends P_UUIDS and P_STATE before we decide
@@ -1723,6 +1727,8 @@ struct drbd_peer_device {
 	enum drbd_repl_state start_resync_side;
 	enum drbd_repl_state last_repl_state; /* What we received from the peer */
 	struct timer_list start_resync_timer;
+	struct timer_list wf_bitmap_t_timer;
+	unsigned long wf_bitmap_t_since; /* jiffies when we entered L_WF_BITMAP_T */
 	struct drbd_work resync_work;
 	struct timer_list resync_timer;
 	struct drbd_work propagate_uuids_work;
@@ -2878,6 +2884,8 @@ bool drbd_flush_connect_needs_restart(struct drbd_resource *resource);
 void drbd_flush_ack_for_lost_peer(struct drbd_connection *lost_connection);
 void resync_timer_fn(struct timer_list *t);
 void start_resync_timer_fn(struct timer_list *t);
+void wf_bitmap_t_timer_fn(struct timer_list *t);
+unsigned long drbd_wf_bitmap_t_timeout(struct drbd_connection *connection);
 
 int drbd_unmerge_discard(struct drbd_peer_request *peer_req_main,
 			 struct list_head *list);
