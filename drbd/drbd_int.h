@@ -1633,6 +1633,17 @@ struct drbd_connection {
 		bool sent_lost_node;
 	} reconcile_handshake;
 
+	/*
+	 * The peer's position in a lost primary's change stream that
+	 * receive_peer_dagtag() last decided on. The peer answers our answer
+	 * with the same position, and that is not decided again.
+	 * lost_node_id == -1 if none.
+	 */
+	struct {
+		u64 dagtag_sector;
+		int lost_node_id;
+	} reconcile_decided;
+
 	unsigned int peer_node_id;
 
 	struct drbd_mutable_buffer reassemble_buffer;

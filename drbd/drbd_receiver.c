@@ -11672,6 +11672,13 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 	wait_event(resource->state_wait,
 		   !test_bit(NOTIFY_PEERS_LOST_PRIMARY, &lost_peer->flags));
 
+	/* The peer's answer to our answer repeats the position we decided on */
+	if (connection->reconcile_decided.lost_node_id == be32_to_cpu(p->node_id) &&
+	    connection->reconcile_decided.dagtag_sector == be64_to_cpu(p->dagtag))
+		goto out;
+	connection->reconcile_decided.lost_node_id = be32_to_cpu(p->node_id);
+	connection->reconcile_decided.dagtag_sector = be64_to_cpu(p->dagtag);
+
 	dagtag_offset = atomic64_read(&lost_peer->last_dagtag_sector) - (s64)be64_to_cpu(p->dagtag);
 	if (strategy == SYNC_SOURCE_USE_BITMAP)  {
 		new_repl_state = L_WF_BITMAP_S;
@@ -11722,6 +11729,9 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 	} else {
 		drbd_info(connection, "No reconciliation resync even though \'%s\' disappeared. (o=%d)\n",
 			  lost_peer->transport.net_conf->name, (int)dagtag_offset);
+
+		/* As with L_WF_BITMAP_S: the peer may have dropped ours, so it decides too */
+		drbd_send_peer_dagtag(connection, lost_peer);
 
 		/* Only bits this loss set are covered by the equal dagtags.
 		 * Do not consume the flag: a second primary lost at the same
@@ -12872,6 +12882,8 @@ static void drbd_notify_peers_lost_primary(struct drbd_connection *lost_peer)
 
 		if (connection == lost_peer)
 			continue;
+		/* A new loss: the peer's next position is decided anew */
+		connection->reconcile_decided.lost_node_id = -1;
 		if (connection->cstate[NOW] != C_CONNECTED)
 			continue;
 
@@ -13059,6 +13071,7 @@ static void conn_disconnect(struct drbd_connection *connection)
 	connection->after_reconciliation.lost_node_id = -1;
 	connection->reconcile_handshake.lost_node_id = -1;
 	connection->reconcile_handshake.sent_lost_node = false;
+	connection->reconcile_decided.lost_node_id = -1;
 
 	if (test_bit(NOTIFY_PEERS_LOST_PRIMARY, &connection->flags))
 		note_bitmaps_held_at_primary_loss(connection);
