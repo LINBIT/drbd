@@ -217,7 +217,7 @@ check:84-vendored:
     - if: $CI_COMMIT_BRANCH == $RELEASE_BRANCH
   image: docker.io/library/alpine:3
   variables:
-    MAINLINE_COMMIT: 8098eeb693c4cc4e774c62fbd4875197cb5578ce
+    MAINLINE_COMMIT: d431e03d831c043707e22311c4bdea1907166c34
   script:
     - apk add --no-cache git bash diffutils
     - git init -q /tmp/linux

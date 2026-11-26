@@ -10,7 +10,7 @@
 #   KDIR=/path/to/linux drbd-84/check-84-vendored.sh
 set -euo pipefail
 
-MAINLINE_COMMIT=8098eeb693c4cc4e774c62fbd4875197cb5578ce
+MAINLINE_COMMIT=d431e03d831c043707e22311c4bdea1907166c34
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 : "${KDIR:?set KDIR to a Linux kernel git checkout containing $MAINLINE_COMMIT}"
