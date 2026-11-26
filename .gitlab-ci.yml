@@ -4,6 +4,9 @@ variables:
   DRBD9_TESTS_REF: master
   DRBD_MSIM_TESTS_REF: main
   BUILD_HELPERS_VERSION: f25470fd968061a3353c114c8b7a0ea7eb567b7e
+  # linux-build from the linux-tests project: checkpatch.pl and kernel-doc of
+  # a Linux release on $PATH.
+  LINUX_BUILD_VERSION: 8ccb48bf8972d3b21cfa7cb70d28b305a22e2928
   # we have to change the way GitLab CI clones the repository.
   # by default, it is shallow, which gives us a wrong commit count when
   # we do `git rev-list --count origin/master` below.
@@ -163,21 +166,24 @@ check:check-compat:
   script:
     - make check-compat
 
+# kernel-doc as a W=1 build of the in-tree driver runs it. Kbuild skips it for
+# external modules, so no out-of-tree build here would report these.
+check:kernel-doc:
+  stage: check
+  extends: [ .rules-build ]
+  image: $LINBIT_DOCKER_REGISTRY/linux-build:$LINUX_BUILD_VERSION
+  script:
+    - make kernel-doc
+
 check:checkpatch.pl:
   stage: check
   rules:
     - if: $CI_MERGE_REQUEST_ID
-  image: docker.io/library/perl:5
-  variables:
-    LINUX_SCRIPTS: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/scripts
+  image: $LINBIT_DOCKER_REGISTRY/linux-build:$LINUX_BUILD_VERSION
   script:
-    - curl -sSfLO $LINUX_SCRIPTS/checkpatch.pl
-    - curl -sSfLO $LINUX_SCRIPTS/spelling.txt
-    - curl -sSfLO $LINUX_SCRIPTS/const_structs.checkpatch
-    - chmod +x checkpatch.pl
     - git fetch --no-tags origin $CI_MERGE_REQUEST_TARGET_BRANCH_NAME
     - base=$(git merge-base remotes/origin/${CI_MERGE_REQUEST_TARGET_BRANCH_NAME} HEAD)
-    - CHECKPATCH=./checkpatch.pl misc/checkpatch.sh commits "$base"
+    - misc/checkpatch.sh commits "$base"
 
 build:for-tests:
   stage: build

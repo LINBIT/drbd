@@ -357,6 +357,20 @@ pychecks: checks/*.py
 .PHONY: checks
 checks: coccicheck pychecks
 
+# The kernel-doc check that a W=1 kernel build runs on every file it compiles,
+# and that the kernel test robot reports. Kbuild skips it for external modules,
+# so an out-of-tree W=1 build never shows these. Uses kernel-doc from $PATH
+# (as in the linux-build image), or KERNELDOC=<a kernel tree>/scripts/kernel-doc.
+KERNELDOC ?= kernel-doc
+KERNELDOC_FILES = $(wildcard drbd/*.c drbd/*.h drbd/linux/*.h \
+	drbd/drbd-headers/*.c drbd/drbd-headers/*.h \
+	drbd/drbd-headers/linux/*.h drbd/drbd-headers/uapi/linux/*.h)
+
+.PHONY: kernel-doc
+kernel-doc: check-submods
+	@echo "  KERNELDOC"
+	@PYTHONDONTWRITEBYTECODE=1 $(KERNELDOC) -none -Werror $(KERNELDOC_FILES)
+
 .PHONY: check-compat
 check-compat:
 	@echo "  COMPATCHECK";
