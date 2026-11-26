@@ -389,20 +389,8 @@ __drbd_alloc_pages(struct drbd_connection *connection, gfp_t gfp_mask, int order
 	return page;
 }
 
-/**
- * drbd_alloc_pages() - Returns a page, which might be a single or compound page
- * @transport:	DRBD transport
- * @gfp_mask:	how to allocate and whether to loop until we succeed
- * @size:	Desired size, gets rounded down to the closest power of two
- *
- * Allocates a page from the kernel or from the private mempool. When this
- * allocation exceeds the max_buffers setting, throttle the allocation via
- * schedule_timeout.
- *
- * We do not use max-buffers as a hard limit, because it could lead to
- * congestion and, further, to a distributed deadlock during online-verify or
- * (checksum-based) resync, if the max-buffers, socket buffer sizes, and
- * resync-rate settings are mis-configured.
+/* drbd_alloc_pages(), with the max-buffers throttling optional: the resync
+ * read path allocates without it, as it may run on the conflict submitter.
  */
 static struct page *alloc_pages_throttled(struct drbd_connection *connection, gfp_t gfp_mask,
 					  unsigned int size, bool throttle)
@@ -420,6 +408,21 @@ static struct page *alloc_pages_throttled(struct drbd_connection *connection, gf
 	return page;
 }
 
+/**
+ * drbd_alloc_pages() - Returns a page, which might be a single or compound page
+ * @transport:	DRBD transport
+ * @gfp_mask:	how to allocate and whether to loop until we succeed
+ * @size:	Desired size, gets rounded down to the closest power of two
+ *
+ * Allocates a page from the kernel or from the private mempool. When this
+ * allocation exceeds the max_buffers setting, throttle the allocation via
+ * schedule_timeout.
+ *
+ * We do not use max-buffers as a hard limit, because it could lead to
+ * congestion and, further, to a distributed deadlock during online-verify or
+ * (checksum-based) resync, if the max-buffers, socket buffer sizes, and
+ * resync-rate settings are mis-configured.
+ */
 struct page *drbd_alloc_pages(struct drbd_transport *transport, gfp_t gfp_mask, unsigned int size)
 {
 	struct drbd_connection *connection =
