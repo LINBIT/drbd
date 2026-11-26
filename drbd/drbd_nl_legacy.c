@@ -56,10 +56,6 @@ static inline struct legacy_req *legacy_req(struct drbd_adm_ctx *ctx)
  */
 #define nla_type_mandatory(type) ((type) | 0x4000)
 
-static const struct genl_multicast_group drbd_nl_mcgrps[] = {
-	[DRBD_NLGRP_EVENTS] = { .name = "events", },
-};
-
 static struct genl_family drbd_nl_family __ro_after_init = {
 	.name		= "drbd",
 	.version	= DRBD_FAMILY_VERSION,
